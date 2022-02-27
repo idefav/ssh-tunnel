@@ -7,7 +7,7 @@ open ssh tunnel tool
 ./ssh-tunnel -s xx.xx.xx.xx
 ```
 
-## 命令列表
+## commands
 ```bash
 ./ssh-tunnel -h
 Usage of ./ssh-tunnel:
