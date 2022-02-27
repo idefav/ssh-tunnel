@@ -1,5 +1,5 @@
 # ssh-tunnel
-open ssh tunnel tool
+Open ssh tunnel tool
 
 ## quick start
 
