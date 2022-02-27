@@ -12,9 +12,9 @@ Usage of ./ssh-tunnel:
   -p int
         服务器SSH端口(短命令) (default 22)
   -pk string
-        私钥地址(短命令) (default "/Users/wuzishu/.ssh/id_rsa")
+        私钥地址(短命令) (default "/Users/idefav/.ssh/id_rsa")
   -pkh string
-        已知主机地址(短命令) (default "/Users/wuzishu/.ssh/known_hosts")
+        已知主机地址(短命令) (default "/Users/idefav/.ssh/known_hosts")
   -s string
         服务器IP地址(短命令)
   -server.ip string
@@ -22,9 +22,9 @@ Usage of ./ssh-tunnel:
   -server.ssh.port int
         服务器SSH端口 (default 22)
   -ssh.path.known_hosts string
-        已知主机地址 (default "/Users/wuzishu/.ssh/known_hosts")
+        已知主机地址 (default "/Users/idefav/.ssh/known_hosts")
   -ssh.path.private_key string
-        私钥地址 (default "/Users/wuzishu/.ssh/id_rsa")
+        私钥地址 (default "/Users/idefav/.ssh/id_rsa")
   -u string
         用户名(短命令) (default "root")
   -user string
