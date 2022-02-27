@@ -1,6 +1,12 @@
 # ssh-tunnel
 open ssh tunnel tool
 
+## quick start
+
+```bash
+./ssh-tunnel -s xx.xx.xx.xx
+```
+
 ## 命令列表
 ```bash
 ./ssh-tunnel -h
