@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,6 +36,8 @@ type Tunnel struct {
 
 	retryInterval time.Duration
 	keepAlive     KeepAliveConfig
+	needReBind    bool
+	client        *ssh.Client
 }
 
 func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
@@ -53,14 +56,36 @@ func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
 					log.Printf("(%v) SSH dial error: %v", t, err)
 				})
 			}
+			go func() {
+				for {
+					if t.needReBind {
+						cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+							User:            t.user,
+							Auth:            t.auth,
+							HostKeyCallback: t.hostKeys,
+							Timeout:         5 * time.Second,
+						})
+						if err != nil {
+							once.Do(func() {
+								log.Printf("(%v) SSH dial error: %v", t, err)
+							})
+						}
+						t.needReBind = false
+						t.client = cl
+					}
+					time.Sleep(time.Second)
+				}
+
+			}()
 			wg.Add(1)
+			t.client = cl
 			// keep alive
-			go t.keepAliveMonitor(&once, wg, cl)
-			defer cl.Close()
+			go t.keepAliveMonitor(&once, wg)
+			defer t.client.Close()
 
 			log.Println("Connected to ssh server")
 			// Accept all incoming connections.
-			t.socks5ProxyStart(ctx, cl)
+			t.socks5ProxyStart(ctx)
 		}()
 		select {
 		case <-ctx.Done():
@@ -70,7 +95,7 @@ func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
 		}
 	}
 }
-func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn, client *ssh.Client) {
+func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
@@ -83,7 +108,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn, client *ssh.Cli
 	n, err := conn.Read(b[:])
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
 
 	conn.Write([]byte{0x05, 0x00})
@@ -91,7 +116,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn, client *ssh.Cli
 	n, err = conn.Read(b[:])
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
 
 	var addr string
@@ -100,7 +125,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn, client *ssh.Cli
 		sip := sockIP{}
 		if err := binary.Read(bytes.NewReader(b[4:n]), binary.BigEndian, &sip); err != nil {
 			log.Println("Request parsing error")
-			return
+			return err
 		}
 		addr = sip.toAddr()
 	case 0x03:
@@ -109,19 +134,20 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn, client *ssh.Cli
 		err = binary.Read(bytes.NewReader(b[n-2:n]), binary.BigEndian, &port)
 		if err != nil {
 			log.Println(err)
-			return
+			return err
 		}
 		addr = fmt.Sprintf("%s:%d", host, port)
 	}
 
-	server, err := client.Dial("tcp", addr)
+	server, err := t.client.Dial("tcp", addr)
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	go io.Copy(server, conn)
 	io.Copy(conn, server)
+	return nil
 }
 
 type sockIP struct {
@@ -133,7 +159,7 @@ func (ip sockIP) toAddr() string {
 	return fmt.Sprintf("%d.%d.%d.%d:%d", ip.A, ip.B, ip.C, ip.D, ip.PORT)
 }
 
-func (t *Tunnel) socks5ProxyStart(ctx context.Context, client *ssh.Client) {
+func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -153,7 +179,12 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context, client *ssh.Client) {
 			log.Println(err)
 			return
 		}
-		go t.socks5Proxy(ctx, conn, client)
+		go func() {
+			resolveErr := t.socks5Proxy(ctx, conn)
+			if resolveErr != nil && strings.Contains(resolveErr.Error(), "operation timed out") {
+				t.needReBind = true
+			}
+		}()
 	}
 }
 
@@ -209,7 +240,7 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 	wg2.Wait()
 }
 
-func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup, client *ssh.Client) {
+func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup) {
 	defer wg.Done()
 	if t.keepAlive.Interval == 0 || t.keepAlive.CountMax == 0 {
 		return
@@ -218,7 +249,7 @@ func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup, client *ss
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		wait <- client.Wait()
+		wait <- t.client.Wait()
 	}()
 	var aliveCount int32
 	ticker := time.NewTicker(time.Duration(t.keepAlive.Interval) * time.Second)
@@ -233,7 +264,7 @@ func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup, client *ss
 		case <-ticker.C:
 			if n := atomic.AddInt32(&aliveCount, 1); n > int32(t.keepAlive.CountMax) {
 				once.Do(func() { log.Printf("(%v) SSH keep-alive termination", t) })
-				client.Close()
+				t.client.Close()
 				return
 			}
 		}
@@ -241,7 +272,7 @@ func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup, client *ss
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+			_, _, err := t.client.SendRequest("keepalive@openssh.com", true, nil)
 			if err == nil {
 				atomic.StoreInt32(&aliveCount, 0)
 			}
