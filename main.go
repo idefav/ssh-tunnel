@@ -79,17 +79,19 @@ func main() {
 	tunnel.retryInterval = 30 * time.Second
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
+	GO(func() {
 		sigc := make(chan os.Signal, 1)
 		signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
 		log.Printf("received %v - initiating shutdown", <-sigc)
 		cancel()
-	}()
+	})
 
 	var wg sync.WaitGroup
 	log.Printf("%s starting", path.Base(os.Args[0]))
 	defer log.Printf("%s shutdown", path.Base(os.Args[0]))
 	wg.Add(1)
-	go tunnel.bindTunnel(ctx, &wg)
+	GO(func() {
+		tunnel.bindTunnel(ctx, &wg)
+	})
 	wg.Wait()
 }
