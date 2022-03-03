@@ -56,7 +56,7 @@ func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
 					log.Printf("(%v) SSH dial error: %v", t, err)
 				})
 			}
-			go func() {
+			GO(func() {
 				for {
 					if t.needReBind {
 						cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
@@ -76,7 +76,7 @@ func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
 					time.Sleep(time.Second)
 				}
 
-			}()
+			})
 			wg.Add(1)
 			t.client = cl
 			// keep alive
@@ -145,7 +145,9 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	go io.Copy(server, conn)
+	GO(func() {
+		io.Copy(server, conn)
+	})
 	io.Copy(conn, server)
 	return nil
 }
@@ -168,10 +170,10 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 		log.Panic(err)
 	}
 
-	go func() {
+	GO(func() {
 		<-connCtx.Done()
 		server.Close()
-	}()
+	})
 	log.Println("Start accepting connections")
 	for {
 		conn, err := server.Accept()
@@ -179,12 +181,12 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 			log.Println(err)
 			return
 		}
-		go func() {
+		GO(func() {
 			resolveErr := t.socks5Proxy(ctx, conn)
 			if resolveErr != nil && strings.Contains(resolveErr.Error(), "operation timed out") {
 				t.needReBind = true
 			}
-		}()
+		})
 	}
 }
 
@@ -194,10 +196,11 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 	// The inbound connection is established. Make sure we close it eventually.
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go func() {
+
+	GO(func() {
 		<-connCtx.Done()
 		cn1.Close()
-	}()
+	})
 
 	// Establish the outbound connection.
 	var cn2 net.Conn
@@ -209,10 +212,10 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 		return
 	}
 
-	go func() {
+	GO(func() {
 		<-connCtx.Done()
 		cn2.Close()
-	}()
+	})
 
 	log.Printf("(%v) connection established", t)
 	defer log.Printf("(%v) connection closed", t)
@@ -221,22 +224,22 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 	var once sync.Once
 	var wg2 sync.WaitGroup
 	wg2.Add(2)
-	go func() {
+	GO(func() {
 		defer wg2.Done()
 		defer cancel()
 		if _, err := io.Copy(cn1, cn2); err != nil {
 			once.Do(func() { log.Printf("(%v) connection error: %v", t, err) })
 		}
 		once.Do(func() {}) // Suppress future errors
-	}()
-	go func() {
+	})
+	GO(func() {
 		defer wg2.Done()
 		defer cancel()
 		if _, err := io.Copy(cn2, cn1); err != nil {
 			once.Do(func() { log.Printf("(%v) connection error: %v", t, err) })
 		}
 		once.Do(func() {}) // Suppress future errors
-	}()
+	})
 	wg2.Wait()
 }
 
@@ -247,10 +250,10 @@ func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup) {
 	}
 	wait := make(chan error, 1)
 	wg.Add(1)
-	go func() {
+	GO(func() {
 		defer wg.Done()
 		wait <- t.client.Wait()
-	}()
+	})
 	var aliveCount int32
 	ticker := time.NewTicker(time.Duration(t.keepAlive.Interval) * time.Second)
 	defer ticker.Stop()
@@ -270,12 +273,12 @@ func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup) {
 		}
 
 		wg.Add(1)
-		go func() {
+		GO(func() {
 			defer wg.Done()
 			_, _, err := t.client.SendRequest("keepalive@openssh.com", true, nil)
 			if err == nil {
 				atomic.StoreInt32(&aliveCount, 0)
 			}
-		}()
+		})
 	}
 }
