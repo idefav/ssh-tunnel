@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"golang.org/x/crypto/ssh"
 	"io"
 	"log"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+)
+
+var (
+	NetworkError = errors.New("network error")
 )
 
 type KeepAliveConfig struct {
@@ -59,19 +63,34 @@ func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
 			GO(func() {
 				for {
 					if t.needReBind {
-						cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-							User:            t.user,
-							Auth:            t.auth,
-							HostKeyCallback: t.hostKeys,
-							Timeout:         5 * time.Second,
-						})
-						if err != nil {
-							once.Do(func() {
-								log.Printf("(%v) SSH dial error: %v", t, err)
+						var sleepTime = 1
+						var loopCount = 1
+						log.Println("Reconnecting ...")
+						for {
+							log.Printf("retry count: %d", loopCount)
+							cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+								User:            t.user,
+								Auth:            t.auth,
+								HostKeyCallback: t.hostKeys,
+								Timeout:         5 * time.Second,
 							})
+							if err != nil {
+								once.Do(func() {
+									log.Printf("(%v) SSH dial error: %v", t, err)
+								})
+								time.Sleep(time.Second * time.Duration(sleepTime))
+								sleepTime = (sleepTime + 1) * 2
+								loopCount++
+							} else {
+								log.Println("Reconnect success!")
+								t.needReBind = false
+								t.client = cl
+								sleepTime = 1
+								break
+							}
+
 						}
-						t.needReBind = false
-						t.client = cl
+
 					}
 					time.Sleep(time.Second)
 				}
@@ -142,7 +161,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 	server, err := t.client.Dial("tcp", addr)
 	if err != nil {
 		log.Println(err)
-		return err
+		return NetworkError
 	}
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	GO(func() {
@@ -183,7 +202,7 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 		}
 		GO(func() {
 			resolveErr := t.socks5Proxy(ctx, conn)
-			if resolveErr != nil && strings.Contains(resolveErr.Error(), "operation timed out") {
+			if resolveErr != nil && errors.Is(resolveErr, NetworkError) {
 				t.needReBind = true
 			}
 		})
