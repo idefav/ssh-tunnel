@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	_ "github.com/codyguo/godaemon"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 	"io/ioutil"
