@@ -1,5 +1,5 @@
-# ssh-tunnel
-Open ssh tunnel tool
+# Introduction
+Open ssh tunnel, start Sock5 port locally by default 1081
 
 ## quick start
 
@@ -35,4 +35,55 @@ Usage of ./ssh-tunnel:
         用户名(短命令) (default "root")
   -user string
         用户名 (default "root")
+```
+
+## MacOS boot auto-start settings
+
+把 ssh-tunnel 放到 /usr/local/bin 目录下
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.idefav.macos.ssh-tunnel</string>
+    <key>Disabled</key>
+    <false/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/local/bin/ssh-tunnel</string>
+      <string>-s</string>
+      <string>x.x.x.x</string>
+    </array>
+    <key>UserName</key>
+    <string>root</string>
+    <key>GroupName</key>
+    <string>wheel</string>
+  </dict>
+</plist>
+```
+
+把这个文件保持到 `com.idefav.macos.ssh-tunnel.plist` 注意文件名要和`label` 相同
+
+放到 `/Library/LaunchAgents` 目录下
+
+```bash
+sudo chown -R root /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+```
+
+```bash
+# 加载配置
+launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+
+# 卸载配置
+launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+
+# 修改配置后重载配置
+launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist && \
+launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 ```
