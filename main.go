@@ -114,9 +114,21 @@ func main() {
 	var wg sync.WaitGroup
 	log.Printf("%s starting", path.Base(os.Args[0]))
 	defer log.Printf("%s shutdown", path.Base(os.Args[0]))
-	wg.Add(1)
-	GO(func() {
-		tunnel.bindTunnel(ctx, &wg)
-	})
+	if tunnel.enableSocks5 {
+		wg.Add(1)
+		GO(func() {
+			defer wg.Done()
+			tunnel.bindSocks5Tunnel(ctx, &wg)
+		})
+	}
+
+	if tunnel.enableHttp {
+		wg.Add(1)
+		GO(func() {
+			defer wg.Done()
+			tunnel.bindHttpTunnel(ctx, &wg)
+		})
+	}
+
 	wg.Wait()
 }

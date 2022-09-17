@@ -54,82 +54,80 @@ type Tunnel struct {
 	client        *ssh.Client
 }
 
-func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (t *Tunnel) bindHttpTunnel(ctx context.Context, wg *sync.WaitGroup) {
+	t.httpProxyStart(ctx, wg)
+}
+
+func (t Tunnel) bindSocks5Tunnel(ctx context.Context, wg *sync.WaitGroup) {
+	//defer wg.Done()
 	for {
 		var once sync.Once
-		if t.enableHttp {
-			GO(func() {
-				t.httpProxyStart(ctx)
+		func() {
+			cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+				User:            t.user,
+				Auth:            t.auth,
+				HostKeyCallback: t.hostKeys,
+				Timeout:         5 * time.Second,
 			})
-		}
-		if t.enableSocks5 {
-			func() {
-				cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-					User:            t.user,
-					Auth:            t.auth,
-					HostKeyCallback: t.hostKeys,
-					Timeout:         5 * time.Second,
+			if err != nil {
+				once.Do(func() {
+					log.Printf("(%v) SSH dial error: %v", t, err)
 				})
-				if err != nil {
-					once.Do(func() {
-						log.Printf("(%v) SSH dial error: %v", t, err)
-					})
-				}
-				GO(func() {
-					for {
-						if t.needReBind {
-							var sleepTime = 1
-							var loopCount = 1
-							log.Println("Reconnecting ...")
-							for {
-								log.Printf("retry count: %d", loopCount)
-								cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-									User:            t.user,
-									Auth:            t.auth,
-									HostKeyCallback: t.hostKeys,
-									Timeout:         5 * time.Second,
+			}
+			GO(func() {
+				for {
+					if t.needReBind {
+						var sleepTime = 1
+						var loopCount = 1
+						log.Println("Reconnecting ...")
+						for {
+							log.Printf("retry count: %d", loopCount)
+							cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+								User:            t.user,
+								Auth:            t.auth,
+								HostKeyCallback: t.hostKeys,
+								Timeout:         5 * time.Second,
+							})
+							if err != nil {
+								once.Do(func() {
+									log.Printf("(%v) SSH dial error: %v", t, err)
 								})
-								if err != nil {
-									once.Do(func() {
-										log.Printf("(%v) SSH dial error: %v", t, err)
-									})
-									time.Sleep(time.Second * time.Duration(sleepTime))
-									sleepTime = (sleepTime + 1) * 2
-									loopCount++
-								} else {
-									log.Println("Reconnect success!")
-									t.needReBind = false
-									t.client = cl
-									sleepTime = 1
-									break
-								}
-
+								time.Sleep(time.Second * time.Duration(sleepTime))
+								sleepTime = (sleepTime + 1) * 2
+								loopCount++
+							} else {
+								log.Println("Reconnect success!")
+								t.needReBind = false
+								t.client = cl
+								sleepTime = 1
+								break
 							}
 
 						}
-						time.Sleep(time.Second)
+
 					}
+					time.Sleep(time.Second)
+				}
 
-				})
-				wg.Add(1)
-				t.client = cl
-				// keep alive
-				go t.keepAliveMonitor(&once, wg)
-				defer t.client.Close()
+			})
+			//wg.Add(1)
+			t.client = cl
+			// keep alive
+			go t.keepAliveMonitor(&once, wg)
+			defer t.client.Close()
 
-				log.Println("Connected to ssh server")
-				// Accept all incoming connections.
-				t.socks5ProxyStart(ctx)
-			}()
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(t.retryInterval):
-			log.Printf("(%v) retrying...", t)
-		}
+			log.Println("Connected to ssh server")
+			// Accept all incoming connections.
+			t.socks5ProxyStart(ctx)
+		}()
 	}
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(t.retryInterval):
+		log.Printf("(%v) retrying...", t)
+	}
+
 }
 func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -240,7 +238,7 @@ func (t *Tunnel) basicAuth(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-func (t *Tunnel) httpProxyStart(ctx context.Context) {
+func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -261,17 +259,29 @@ func (t *Tunnel) httpProxyStart(ctx context.Context) {
 		// Disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
-	log.Printf("Http Server Started at %s", t.httpLocalAddress)
-	err := server.ListenAndServe()
-
-	if err != nil {
-		log.Panic(err)
-	}
 
 	GO(func() {
-		<-connCtx.Done()
-		server.Close()
+		err := server.ListenAndServe()
+		if err != nil {
+			log.Fatalln(err)
+		}
 	})
+	log.Printf("Http Server Started at %s", t.httpLocalAddress)
+	<-connCtx.Done()
+	ctx, timeOutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer func() {
+		// extra handling here
+		timeOutCancel()
+	}()
+	log.Println("Server Stopped!")
+	err := server.Shutdown(ctx)
+
+	if err != nil {
+		log.Fatalf("Server Shutdown Failed:%+v", err)
+	}
+
+	log.Print("Server Exited Properly")
+
 }
 
 func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
