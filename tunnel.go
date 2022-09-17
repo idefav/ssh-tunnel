@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,11 +36,17 @@ type KeepAliveConfig struct {
 }
 
 type Tunnel struct {
-	serverAddress string
-	localAddress  string
-	user          string
-	auth          []ssh.AuthMethod
-	hostKeys      ssh.HostKeyCallback
+	enableSocks5      bool
+	enableHttp        bool
+	enableHttpBasic   bool
+	httpLocalAddress  string
+	httpBasicUserName string
+	httpBasicPassword string
+	serverAddress     string
+	localAddress      string
+	user              string
+	auth              []ssh.AuthMethod
+	hostKeys          ssh.HostKeyCallback
 
 	retryInterval time.Duration
 	keepAlive     KeepAliveConfig
@@ -48,64 +58,71 @@ func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		var once sync.Once
-		func() {
-			cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-				User:            t.user,
-				Auth:            t.auth,
-				HostKeyCallback: t.hostKeys,
-				Timeout:         5 * time.Second,
-			})
-			if err != nil {
-				once.Do(func() {
-					log.Printf("(%v) SSH dial error: %v", t, err)
-				})
-			}
+		if t.enableHttp {
 			GO(func() {
-				for {
-					if t.needReBind {
-						var sleepTime = 1
-						var loopCount = 1
-						log.Println("Reconnecting ...")
-						for {
-							log.Printf("retry count: %d", loopCount)
-							cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-								User:            t.user,
-								Auth:            t.auth,
-								HostKeyCallback: t.hostKeys,
-								Timeout:         5 * time.Second,
-							})
-							if err != nil {
-								once.Do(func() {
-									log.Printf("(%v) SSH dial error: %v", t, err)
+				t.httpProxyStart(ctx)
+			})
+		}
+		if t.enableSocks5 {
+			func() {
+				cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+					User:            t.user,
+					Auth:            t.auth,
+					HostKeyCallback: t.hostKeys,
+					Timeout:         5 * time.Second,
+				})
+				if err != nil {
+					once.Do(func() {
+						log.Printf("(%v) SSH dial error: %v", t, err)
+					})
+				}
+				GO(func() {
+					for {
+						if t.needReBind {
+							var sleepTime = 1
+							var loopCount = 1
+							log.Println("Reconnecting ...")
+							for {
+								log.Printf("retry count: %d", loopCount)
+								cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+									User:            t.user,
+									Auth:            t.auth,
+									HostKeyCallback: t.hostKeys,
+									Timeout:         5 * time.Second,
 								})
-								time.Sleep(time.Second * time.Duration(sleepTime))
-								sleepTime = (sleepTime + 1) * 2
-								loopCount++
-							} else {
-								log.Println("Reconnect success!")
-								t.needReBind = false
-								t.client = cl
-								sleepTime = 1
-								break
+								if err != nil {
+									once.Do(func() {
+										log.Printf("(%v) SSH dial error: %v", t, err)
+									})
+									time.Sleep(time.Second * time.Duration(sleepTime))
+									sleepTime = (sleepTime + 1) * 2
+									loopCount++
+								} else {
+									log.Println("Reconnect success!")
+									t.needReBind = false
+									t.client = cl
+									sleepTime = 1
+									break
+								}
+
 							}
 
 						}
-
+						time.Sleep(time.Second)
 					}
-					time.Sleep(time.Second)
-				}
 
-			})
-			wg.Add(1)
-			t.client = cl
-			// keep alive
-			go t.keepAliveMonitor(&once, wg)
-			defer t.client.Close()
+				})
+				wg.Add(1)
+				t.client = cl
+				// keep alive
+				go t.keepAliveMonitor(&once, wg)
+				defer t.client.Close()
 
-			log.Println("Connected to ssh server")
-			// Accept all incoming connections.
-			t.socks5ProxyStart(ctx)
-		}()
+				log.Println("Connected to ssh server")
+				// Accept all incoming connections.
+				t.socks5ProxyStart(ctx)
+			}()
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -114,7 +131,207 @@ func (t Tunnel) bindTunnel(ctx context.Context, wg *sync.WaitGroup) {
 		}
 	}
 }
+func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	server, err := net.Listen("tcp", t.localAddress)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	GO(func() {
+		<-connCtx.Done()
+		server.Close()
+	})
+	log.Println("Start accepting connections")
+	for {
+		conn, err := server.Accept()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		GO(func() {
+			resolveErr := t.socks5Proxy(ctx, conn)
+			if resolveErr != nil && errors.Is(resolveErr, NetworkError) {
+				t.needReBind = true
+			}
+		})
+	}
+}
+
+func handleHTTP(w http.ResponseWriter, req *http.Request) {
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	defer resp.Body.Close()
+	copyHeader(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+func handleHTTPS(w http.ResponseWriter, r *http.Request) {
+	destConn, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
+		return
+	}
+	clientConn, _, err := hijacker.Hijack()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	}
+
+	GO(func() {
+		transfer(destConn, clientConn)
+	})
+	GO(func() {
+		transfer(clientConn, destConn)
+	})
+}
+
+func copyHeader(dst, src http.Header) {
+	for k, vv := range src {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
+}
+
+func transfer(destination io.WriteCloser, source io.ReadCloser) {
+	defer destination.Close()
+	defer source.Close()
+	io.Copy(destination, source)
+}
+
+func (t *Tunnel) basicAuth(w http.ResponseWriter, r *http.Request) bool {
+	if !t.enableHttpBasic {
+		return true
+	}
+	var auth = r.Header.Get("Proxy-Authorization")
+	if ms := strings.Split(auth, " "); len(ms) == 2 && ms[0] == "Basic" {
+		// check user:password
+		up, err := base64.StdEncoding.DecodeString(ms[1])
+		if err == nil {
+			if ms := strings.Split(string(up), ":"); len(ms) == 2 {
+				var user, password = ms[0], ms[1]
+				var ok = false
+				if user == t.httpBasicUserName && password == t.httpBasicPassword {
+					ok = true
+				}
+				if ok {
+					return true
+				}
+			}
+		}
+		w.WriteHeader(http.StatusProxyAuthRequired)
+	} else {
+
+		w.WriteHeader(http.StatusProxyAuthRequired)
+		w.Header().Set("Proxy-Authenticate", `Basic realm="Http Proxy"`)
+	}
+	return false
+}
+
+func (t *Tunnel) httpProxyStart(ctx context.Context) {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	server := &http.Server{
+		Addr: t.httpLocalAddress,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			result := t.basicAuth(w, r)
+			if !result {
+				return
+			}
+			if r.Method == http.MethodConnect {
+				handleHTTPS(w, r)
+			} else {
+
+				handleHTTP(w, r)
+			}
+		}),
+		// Disable HTTP/2.
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+	}
+	log.Printf("Http Server Started at %s", t.httpLocalAddress)
+	err := server.ListenAndServe()
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	GO(func() {
+		<-connCtx.Done()
+		server.Close()
+	})
+}
+
 func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		<-connCtx.Done()
+		conn.Close()
+	}()
+
+	var b [1024]byte
+
+	n, err := conn.Read(b[:])
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	conn.Write([]byte{0x05, 0x00})
+
+	n, err = conn.Read(b[:])
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	var addr string
+	switch b[3] {
+	case 0x01:
+		sip := sockIP{}
+		if err := binary.Read(bytes.NewReader(b[4:n]), binary.BigEndian, &sip); err != nil {
+			log.Println("Request parsing error")
+			return err
+		}
+		addr = sip.toAddr()
+	case 0x03:
+		host := string(b[5 : n-2])
+		var port uint16
+		err = binary.Read(bytes.NewReader(b[n-2:n]), binary.BigEndian, &port)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		addr = fmt.Sprintf("%s:%d", host, port)
+	}
+
+	server, err := t.client.Dial("tcp", addr)
+	if err != nil {
+		log.Println(err)
+		return NetworkError
+	}
+	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+	GO(func() {
+		io.Copy(server, conn)
+	})
+	io.Copy(conn, server)
+	return nil
+}
+
+func (t *Tunnel) httpProxy(ctx context.Context, conn net.Conn) error {
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
@@ -178,35 +395,6 @@ type sockIP struct {
 
 func (ip sockIP) toAddr() string {
 	return fmt.Sprintf("%d.%d.%d.%d:%d", ip.A, ip.B, ip.C, ip.D, ip.PORT)
-}
-
-func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	connCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	server, err := net.Listen("tcp", t.localAddress)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	GO(func() {
-		<-connCtx.Done()
-		server.Close()
-	})
-	log.Println("Start accepting connections")
-	for {
-		conn, err := server.Accept()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		GO(func() {
-			resolveErr := t.socks5Proxy(ctx, conn)
-			if resolveErr != nil && errors.Is(resolveErr, NetworkError) {
-				t.needReBind = true
-			}
-		})
-	}
 }
 
 func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.Client, cn1 net.Conn) {
