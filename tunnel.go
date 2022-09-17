@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -115,7 +116,7 @@ func (t *Tunnel) bindHttpTunnel(ctx context.Context, wg *sync.WaitGroup) {
 
 				log.Println("Connected to ssh server")
 				// Accept all incoming connections.
-				t.httpProxyStart(ctx, wg)
+				t.httpProxyStartEx(ctx, wg)
 			}()
 
 		}
@@ -126,7 +127,7 @@ func (t *Tunnel) bindHttpTunnel(ctx context.Context, wg *sync.WaitGroup) {
 			log.Printf("(%v) retrying...", t)
 		}
 	} else {
-		t.httpProxyStart(ctx, wg)
+		t.httpProxyStartEx(ctx, wg)
 	}
 
 }
@@ -241,6 +242,7 @@ func (t *Tunnel) handleHTTP(w http.ResponseWriter, req *http.Request) {
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+
 }
 
 func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
@@ -319,6 +321,75 @@ func (t *Tunnel) basicAuth(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
+func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	l, err := net.Listen("tcp", t.httpLocalAddress)
+	if err != nil {
+		log.Panic(err)
+	}
+	GO(func() {
+		log.Println("Http Server Started at: " + t.httpLocalAddress)
+		for {
+			client, err := l.Accept()
+			if err != nil {
+				log.Panic(err)
+			}
+
+			go t.handleClientRequest(client)
+		}
+	})
+
+	<-connCtx.Done()
+	ctx, timeOutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer func() {
+		// extra handling here
+		timeOutCancel()
+	}()
+	log.Println("Server Stopped!")
+}
+
+func (t *Tunnel) handleClientRequest(client net.Conn) {
+	defer client.Close()
+	var b [1024]byte
+	n, err := client.Read(b[:])
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	var method, host, address string
+	fmt.Sscanf(string(b[:bytes.IndexByte(b[:], '\n')]), "%s%s", &method, &host)
+	hostPortURL, err := url.Parse(host)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	if hostPortURL.Opaque == "443" { //https访问
+		address = hostPortURL.Scheme + ":443"
+	} else { //http访问
+		if strings.Index(hostPortURL.Host, ":") == -1 { //host不带端口， 默认80
+			address = hostPortURL.Host + ":80"
+		} else {
+			address = hostPortURL.Host
+		}
+	}
+
+	destConn, err := t.getDestConn(address)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	if method == "CONNECT" {
+		fmt.Fprint(client, "HTTP/1.1 200 Connection established\r\n\r\n")
+	} else {
+		destConn.Write(b[:n])
+	}
+	//进行转发
+	go io.Copy(destConn, client)
+	io.Copy(client, destConn)
+}
+
 func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	connCtx, cancel := context.WithCancel(ctx)
@@ -333,8 +404,7 @@ func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 			if r.Method == http.MethodConnect {
 				t.handleHTTPS(w, r)
 			} else {
-
-				t.handleHTTPS(w, r)
+				t.handleHTTP(w, r)
 			}
 		}),
 		// Disable HTTP/2.
