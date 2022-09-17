@@ -39,6 +39,7 @@ type Tunnel struct {
 	enableSocks5      bool
 	enableHttp        bool
 	enableHttpBasic   bool
+	enableHttpOverSSH bool
 	httpLocalAddress  string
 	httpBasicUserName string
 	httpBasicPassword string
@@ -55,7 +56,79 @@ type Tunnel struct {
 }
 
 func (t *Tunnel) bindHttpTunnel(ctx context.Context, wg *sync.WaitGroup) {
-	t.httpProxyStart(ctx, wg)
+	if t.enableHttpOverSSH {
+		for {
+			var once sync.Once
+			func() {
+				cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+					User:            t.user,
+					Auth:            t.auth,
+					HostKeyCallback: t.hostKeys,
+					Timeout:         5 * time.Second,
+				})
+				if err != nil {
+					once.Do(func() {
+						log.Printf("(%v) SSH dial error: %v", t, err)
+					})
+				}
+				GO(func() {
+					for {
+						if t.needReBind {
+							var sleepTime = 1
+							var loopCount = 1
+							log.Println("Reconnecting ...")
+							for {
+								log.Printf("retry count: %d", loopCount)
+								cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+									User:            t.user,
+									Auth:            t.auth,
+									HostKeyCallback: t.hostKeys,
+									Timeout:         1 * time.Second,
+								})
+								if err != nil {
+									once.Do(func() {
+										log.Printf("(%v) SSH dial error: %v", t, err)
+									})
+									time.Sleep(time.Second * time.Duration(sleepTime))
+									sleepTime = (sleepTime + 1) * 2
+									loopCount++
+								} else {
+									log.Println("Reconnect success!")
+									t.needReBind = false
+									t.client = cl
+									sleepTime = 1
+									break
+								}
+
+							}
+
+						}
+						time.Sleep(time.Second)
+					}
+
+				})
+				//wg.Add(1)
+				t.client = cl
+				// keep alive
+				go t.keepAliveMonitor(&once, wg)
+				defer t.client.Close()
+
+				log.Println("Connected to ssh server")
+				// Accept all incoming connections.
+				t.httpProxyStart(ctx, wg)
+			}()
+
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(t.retryInterval):
+			log.Printf("(%v) retrying...", t)
+		}
+	} else {
+		t.httpProxyStart(ctx, wg)
+	}
+
 }
 
 func (t Tunnel) bindSocks5Tunnel(ctx context.Context, wg *sync.WaitGroup) {
@@ -86,7 +159,7 @@ func (t Tunnel) bindSocks5Tunnel(ctx context.Context, wg *sync.WaitGroup) {
 								User:            t.user,
 								Auth:            t.auth,
 								HostKeyCallback: t.hostKeys,
-								Timeout:         5 * time.Second,
+								Timeout:         1 * time.Second,
 							})
 							if err != nil {
 								once.Do(func() {
@@ -158,7 +231,7 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 	}
 }
 
-func handleHTTP(w http.ResponseWriter, req *http.Request) {
+func (t *Tunnel) handleHTTP(w http.ResponseWriter, req *http.Request) {
 	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -170,8 +243,16 @@ func handleHTTP(w http.ResponseWriter, req *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-func handleHTTPS(w http.ResponseWriter, r *http.Request) {
-	destConn, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
+func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
+	if t.enableHttpOverSSH {
+		return t.client.Dial("tcp", host)
+	} else {
+		return net.DialTimeout("tcp", host, 10*time.Second)
+	}
+}
+
+func (t *Tunnel) handleHTTPS(w http.ResponseWriter, r *http.Request) {
+	destConn, err := t.getDestConn(r.Host)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -250,10 +331,10 @@ func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 				return
 			}
 			if r.Method == http.MethodConnect {
-				handleHTTPS(w, r)
+				t.handleHTTPS(w, r)
 			} else {
 
-				handleHTTP(w, r)
+				t.handleHTTPS(w, r)
 			}
 		}),
 		// Disable HTTP/2.

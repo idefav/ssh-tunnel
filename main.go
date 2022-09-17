@@ -42,6 +42,7 @@ func main() {
 	var httpBasicPassword string
 	var enableHttp bool
 	var enableSocks5 bool
+	var enableHttpOverSSH bool
 
 	tunnel := Tunnel{}
 	flag.StringVar(&serverIp, "server.ip", "", "服务器IP地址")
@@ -62,6 +63,7 @@ func main() {
 	flag.BoolVar(&enableHttp, "http.enable", false, "是否开启Http代理")
 	flag.BoolVar(&enableSocks5, "socks5.enable", true, "是否开启Socks5代理")
 	flag.BoolVar(&httpBasicAuthEnable, "http.basic.enable", false, "是否开启Http的Basic认证")
+	flag.BoolVar(&enableHttpOverSSH, "http.over.ssh.enable", false, "是否开启Http Over SSH")
 	log.Printf("%v", os.Args)
 
 	flag.Parse()
@@ -101,6 +103,36 @@ func main() {
 		tunnel.httpBasicUserName = httpBasicUserName
 		tunnel.httpBasicPassword = httpBasicPassword
 		tunnel.enableHttpBasic = httpBasicAuthEnable
+		tunnel.enableHttpOverSSH = enableHttpOverSSH
+
+		if enableHttpOverSSH {
+			tunnel.serverAddress = serverIp + ":" + strconv.Itoa(serverSshPort)
+			tunnel.localAddress = localAddress
+			tunnel.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
+
+			var keys []ssh.Signer
+			b, err := ioutil.ReadFile(sshPrivateKeyPath)
+			if err != nil {
+				log.Fatalf("private key error: %v", err)
+			}
+			k, err := ssh.ParsePrivateKey(b)
+			if err != nil {
+				log.Fatalf("private key error: %v", err)
+			}
+			keys = append(keys, k)
+			auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
+
+			hostKeys, err := knownhosts.New(sshKnownHostsPath)
+			if err != nil {
+				log.Fatalf("public key error: %v", err)
+			}
+
+			tunnel.auth = auth
+			tunnel.hostKeys = hostKeys
+			tunnel.user = loginUser
+			tunnel.retryInterval = 30 * time.Second
+		}
+
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
