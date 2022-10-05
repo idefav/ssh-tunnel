@@ -10,43 +10,45 @@ Open ssh tunnel, start Sock5 port locally by default 1081
 ## commands
 ```bash
 ./ssh-tunnel -h
-Usage of bin/ssh-tunnel-amd64-darwin:
+Usage of /usr/local/bin/ssh-tunnel-ex:
   -http.basic.enable
-        是否开启Http的Basic认证
+    	是否开启Http的Basic认证
   -http.basic.password string
-        Http Basic认证, 密码
+    	Http Basic认证, 密码
   -http.basic.username string
-        Basic认证, 用户名
+    	Basic认证, 用户名
   -http.enable
-        是否开启Http代理
+    	是否开启Http代理
   -http.local.addr string
-        Http监听地址 (default "0.0.0.0:1082")
+    	Http监听地址 (default "0.0.0.0:1082")
+  -http.over.ssh.enable
+    	是否开启Http Over SSH
   -l string
-        本地地址(短命令) (default "0.0.0.0:1081")
+    	本地地址(短命令) (default "0.0.0.0:1081")
   -local.addr string
-        本地地址 (default "0.0.0.0:1081")
+    	本地地址 (default "0.0.0.0:1081")
   -p int
-        服务器SSH端口(短命令) (default 22)
+    	服务器SSH端口(短命令) (default 22)
   -pk string
-        私钥地址(短命令) (default "/Users/wuzishu/.ssh/id_rsa")
+    	私钥地址(短命令) (default "/Users/wuzishu/.ssh/id_rsa")
   -pkh string
-        已知主机地址(短命令) (default "/Users/wuzishu/.ssh/known_hosts")
+    	已知主机地址(短命令) (default "/Users/wuzishu/.ssh/known_hosts")
   -s string
-        服务器IP地址(短命令)
+    	服务器IP地址(短命令)
   -server.ip string
-        服务器IP地址
+    	服务器IP地址
   -server.ssh.port int
-        服务器SSH端口 (default 22)
+    	服务器SSH端口 (default 22)
   -socks5.enable
-        是否开启Socks5代理 (default true)
+    	是否开启Socks5代理 (default true)
   -ssh.path.known_hosts string
-        已知主机地址 (default "/Users/wuzishu/.ssh/known_hosts")
+    	已知主机地址 (default "/Users/wuzishu/.ssh/known_hosts")
   -ssh.path.private_key string
-        私钥地址 (default "/Users/wuzishu/.ssh/id_rsa")
+    	私钥地址 (default "/Users/wuzishu/.ssh/id_rsa")
   -u string
-        用户名(短命令) (default "root")
+    	用户名(短命令) (default "root")
   -user string
-        用户名 (default "root")
+    	用户名 (default "root")
 
 ```
 
