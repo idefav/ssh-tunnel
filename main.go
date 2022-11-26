@@ -180,23 +180,6 @@ func main() {
 	wg.Wait()
 }
 
-func domainFilterReload(filePath string, tunnel *Tunnel) error {
-	err := loadDomainFilterFile(filePath, tunnel)
-	if err != nil {
-		return err
-	}
-	//热更新配置可能有多种触发方式，这里使用系统信号量sigusr1实现
-	s := make(chan os.Signal, 1)
-	signal.Notify(s, syscall.SIGUSR1)
-	GO(func() {
-		for {
-			<-s
-			log.Println("Reloaded domain filter:", loadDomainFilterFile(filePath, tunnel))
-		}
-	})
-	return nil
-}
-
 func loadDomainFilterFile(filePath string, tunnel *Tunnel) error {
 	file, err := os.ReadFile(filePath)
 	if err != nil {
