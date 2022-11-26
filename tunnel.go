@@ -37,18 +37,20 @@ type KeepAliveConfig struct {
 }
 
 type Tunnel struct {
-	enableSocks5      bool
-	enableHttp        bool
-	enableHttpBasic   bool
-	enableHttpOverSSH bool
-	httpLocalAddress  string
-	httpBasicUserName string
-	httpBasicPassword string
-	serverAddress     string
-	localAddress      string
-	user              string
-	auth              []ssh.AuthMethod
-	hostKeys          ssh.HostKeyCallback
+	enableSocks5           bool
+	enableHttp             bool
+	enableHttpBasic        bool
+	enableHttpOverSSH      bool
+	enableHttpDomainFilter bool
+	httpLocalAddress       string
+	httpBasicUserName      string
+	httpBasicPassword      string
+	serverAddress          string
+	localAddress           string
+	user                   string
+	auth                   []ssh.AuthMethod
+	hostKeys               ssh.HostKeyCallback
+	domains                []string
 
 	retryInterval time.Duration
 	keepAlive     KeepAliveConfig
@@ -247,10 +249,27 @@ func (t *Tunnel) handleHTTP(w http.ResponseWriter, req *http.Request) {
 
 func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 	if t.enableHttpOverSSH {
+		if t.enableHttpDomainFilter {
+			if t.domains != nil && len(t.domains) > 0 {
+				for _, domain := range t.domains {
+					if domain != "" {
+						split := strings.Split(host, ":")
+						if split != nil && len(split) > 0 {
+							hasSuffix := strings.HasSuffix(strings.ToLower(split[0]), strings.ToLower(domain))
+							if hasSuffix {
+								return t.client.Dial("tcp", host)
+							}
+						}
+					}
+				}
+			}
+			return net.DialTimeout("tcp", host, 10*time.Second)
+		}
 		return t.client.Dial("tcp", host)
 	} else {
 		return net.DialTimeout("tcp", host, 10*time.Second)
 	}
+
 }
 
 func (t *Tunnel) handleHTTPS(w http.ResponseWriter, r *http.Request) {
@@ -356,6 +375,7 @@ func (t *Tunnel) handleClientRequest(client net.Conn) {
 	n, err := client.Read(b[:])
 	if err != nil {
 		log.Println(err)
+		fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
 		return
 	}
 	var method, host, address string
@@ -363,6 +383,7 @@ func (t *Tunnel) handleClientRequest(client net.Conn) {
 	hostPortURL, err := url.Parse(host)
 	if err != nil {
 		log.Println(err)
+		fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
 		return
 	}
 	if hostPortURL.Opaque == "443" { //https访问
@@ -378,6 +399,7 @@ func (t *Tunnel) handleClientRequest(client net.Conn) {
 	destConn, err := t.getDestConn(address)
 	if err != nil {
 		log.Println(err)
+		fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
 		return
 	}
 	if method == "CONNECT" {

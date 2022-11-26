@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 	"io/ioutil"
@@ -13,6 +14,7 @@ import (
 	"os/user"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -43,6 +45,8 @@ func main() {
 	var enableHttp bool
 	var enableSocks5 bool
 	var enableHttpOverSSH bool
+	var enableHttpDomainFilter bool
+	var httpDomainFilterFilePath string
 
 	tunnel := Tunnel{}
 	flag.StringVar(&serverIp, "server.ip", "", "服务器IP地址")
@@ -64,6 +68,8 @@ func main() {
 	flag.BoolVar(&enableSocks5, "socks5.enable", true, "是否开启Socks5代理")
 	flag.BoolVar(&httpBasicAuthEnable, "http.basic.enable", false, "是否开启Http的Basic认证")
 	flag.BoolVar(&enableHttpOverSSH, "http.over.ssh.enable", false, "是否开启Http Over SSH")
+	flag.BoolVar(&enableHttpDomainFilter, "http.filter.domain.enable", false, "是否启用Http域名过滤")
+	flag.StringVar(&httpDomainFilterFilePath, "http.filter.domain.file-path", path.Join(u.HomeDir, ".ssh-tunnel/domain.txt"), "过滤http请求")
 	log.Printf("%v", os.Args)
 
 	flag.Parse()
@@ -104,6 +110,7 @@ func main() {
 		tunnel.httpBasicPassword = httpBasicPassword
 		tunnel.enableHttpBasic = httpBasicAuthEnable
 		tunnel.enableHttpOverSSH = enableHttpOverSSH
+		tunnel.enableHttpDomainFilter = enableHttpDomainFilter
 
 		if enableHttpOverSSH {
 			tunnel.serverAddress = serverIp + ":" + strconv.Itoa(serverSshPort)
@@ -133,6 +140,14 @@ func main() {
 			tunnel.retryInterval = 30 * time.Second
 		}
 
+		if enableHttpDomainFilter && httpDomainFilterFilePath != "" {
+			go func() {
+				err2 := domainFilterFileWatcher(httpDomainFilterFilePath, &tunnel)
+				if err2 != nil {
+					log.Fatal(err2)
+				}
+			}()
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -163,4 +178,102 @@ func main() {
 	}
 
 	wg.Wait()
+}
+
+func domainFilterReload(filePath string, tunnel *Tunnel) error {
+	err := loadDomainFilterFile(filePath, tunnel)
+	if err != nil {
+		return err
+	}
+	//热更新配置可能有多种触发方式，这里使用系统信号量sigusr1实现
+	s := make(chan os.Signal, 1)
+	signal.Notify(s, syscall.SIGUSR1)
+	GO(func() {
+		for {
+			<-s
+			log.Println("Reloaded domain filter:", loadDomainFilterFile(filePath, tunnel))
+		}
+	})
+	return nil
+}
+
+func loadDomainFilterFile(filePath string, tunnel *Tunnel) error {
+	file, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+	s := string(file)
+	log.Printf(s)
+	tunnel.domains = strings.Split(strings.Trim(strings.Trim(strings.Trim(s, "\r"), " "), "\n"), "\n")
+	return nil
+}
+
+func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	defer watcher.Close()
+
+	configPath := path.Dir(filePath)
+
+	changed := make(chan bool)
+	done := make(chan bool)
+
+	go func() {
+		changed <- true
+		defer close(done)
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				log.Println(event)
+				if event.Name != filePath {
+					continue
+				}
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+					log.Println("file modified", event.Name)
+					changed <- true
+				} else if event.Has(fsnotify.Remove) {
+					tunnel.domains = nil
+					continue
+				}
+
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Println(err)
+			}
+		}
+	}()
+
+	err = watcher.Add(configPath)
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case result := <-changed:
+			{
+				if result == true {
+					file, err2 := os.ReadFile(filePath)
+					if err2 != nil {
+						log.Fatal(err2)
+					}
+					s := string(file)
+					log.Printf(s)
+					tunnel.domains = strings.Split(strings.Trim(strings.Trim(strings.Trim(s, "\r"), " "), "\n"), "\n")
+				}
+			}
+
+		}
+	}
+
+	<-done
+
+	return err
 }
