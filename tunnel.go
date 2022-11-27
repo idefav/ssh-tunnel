@@ -255,7 +255,7 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 					if domain != "" {
 						split := strings.Split(host, ":")
 						if split != nil && len(split) > 0 {
-							hasSuffix := strings.HasSuffix(strings.ToLower(split[0]), strings.ToLower(domain))
+							hasSuffix := strings.HasSuffix(strings.ToLower(strings.Trim(split[0], ".")), strings.ToLower(domain))
 							if hasSuffix {
 								return t.client.Dial("tcp", host)
 							}
