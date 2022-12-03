@@ -177,6 +177,41 @@ func main() {
 		})
 	}
 
+	// need open ssh tunnel
+	if tunnel.enableSocks5 || tunnel.enableHttpOverSSH {
+		GO(func() {
+			connCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			GO(func() {
+				<-connCtx.Done()
+			})
+			for tunnel.client == nil {
+				var once sync.Once
+				cl, err := ssh.Dial("tcp", tunnel.serverAddress, &ssh.ClientConfig{
+					User:            tunnel.user,
+					Auth:            tunnel.auth,
+					HostKeyCallback: tunnel.hostKeys,
+					Timeout:         5 * time.Second,
+				})
+				if err != nil {
+					once.Do(func() {
+						log.Printf("(%v) SSH dial error: %v", tunnel, err)
+					})
+					continue
+				}
+				//wg.Add(1)
+				tunnel.client = cl
+				log.Println("Connected to ssh server")
+				// keep alive
+				tunnel.keepAliveMonitor(ctx, &once, &wg)
+				tunnel.client = nil
+				log.Printf("SSH Connection Closed!")
+
+			}
+
+		})
+	}
+
 	wg.Wait()
 }
 
@@ -221,6 +256,7 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 					changed <- true
 				} else if event.Has(fsnotify.Remove) {
 					tunnel.domains = nil
+					tunnel.domainMatchCache = make(map[string]bool)
 					continue
 				}
 
@@ -248,8 +284,9 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 						log.Fatal(err2)
 					}
 					s := string(file)
-					log.Printf(s)
+					log.Printf("domain list loaded!")
 					tunnel.domains = strings.Split(strings.Trim(strings.Trim(strings.Trim(s, "\r"), " "), "\n"), "\n")
+					tunnel.domainMatchCache = make(map[string]bool)
 				}
 			}
 

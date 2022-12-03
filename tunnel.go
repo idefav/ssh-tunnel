@@ -51,6 +51,7 @@ type Tunnel struct {
 	auth                   []ssh.AuthMethod
 	hostKeys               ssh.HostKeyCallback
 	domains                []string
+	domainMatchCache       map[string]bool
 
 	retryInterval time.Duration
 	keepAlive     KeepAliveConfig
@@ -59,150 +60,14 @@ type Tunnel struct {
 }
 
 func (t *Tunnel) bindHttpTunnel(ctx context.Context, wg *sync.WaitGroup) {
-	if t.enableHttpOverSSH {
-		for {
-			var once sync.Once
-			func() {
-				cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-					User:            t.user,
-					Auth:            t.auth,
-					HostKeyCallback: t.hostKeys,
-					Timeout:         5 * time.Second,
-				})
-				if err != nil {
-					once.Do(func() {
-						log.Printf("(%v) SSH dial error: %v", t, err)
-					})
-				}
-				GO(func() {
-					for {
-						if t.needReBind {
-							var sleepTime = 1
-							var loopCount = 1
-							log.Println("Reconnecting ...")
-							for {
-								log.Printf("retry count: %d", loopCount)
-								cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-									User:            t.user,
-									Auth:            t.auth,
-									HostKeyCallback: t.hostKeys,
-									Timeout:         1 * time.Second,
-								})
-								if err != nil {
-									once.Do(func() {
-										log.Printf("(%v) SSH dial error: %v", t, err)
-									})
-									time.Sleep(time.Second * time.Duration(sleepTime))
-									sleepTime = (sleepTime + 1) * 2
-									loopCount++
-								} else {
-									log.Println("Reconnect success!")
-									t.needReBind = false
-									t.client = cl
-									sleepTime = 1
-									break
-								}
-
-							}
-
-						}
-						time.Sleep(time.Second)
-					}
-
-				})
-				//wg.Add(1)
-				t.client = cl
-				// keep alive
-				go t.keepAliveMonitor(&once, wg)
-				defer t.client.Close()
-
-				log.Println("Connected to ssh server")
-				// Accept all incoming connections.
-				t.httpProxyStartEx(ctx, wg)
-			}()
-
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(t.retryInterval):
-			log.Printf("(%v) retrying...", t)
-		}
-	} else {
-		t.httpProxyStartEx(ctx, wg)
-	}
+	// Accept all incoming connections.
+	t.httpProxyStartEx(ctx, wg)
 
 }
 
 func (t Tunnel) bindSocks5Tunnel(ctx context.Context, wg *sync.WaitGroup) {
-	//defer wg.Done()
-	for {
-		var once sync.Once
-		func() {
-			cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-				User:            t.user,
-				Auth:            t.auth,
-				HostKeyCallback: t.hostKeys,
-				Timeout:         5 * time.Second,
-			})
-			if err != nil {
-				once.Do(func() {
-					log.Printf("(%v) SSH dial error: %v", t, err)
-				})
-			}
-			GO(func() {
-				for {
-					if t.needReBind {
-						var sleepTime = 1
-						var loopCount = 1
-						log.Println("Reconnecting ...")
-						for {
-							log.Printf("retry count: %d", loopCount)
-							cl, err = ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-								User:            t.user,
-								Auth:            t.auth,
-								HostKeyCallback: t.hostKeys,
-								Timeout:         1 * time.Second,
-							})
-							if err != nil {
-								once.Do(func() {
-									log.Printf("(%v) SSH dial error: %v", t, err)
-								})
-								time.Sleep(time.Second * time.Duration(sleepTime))
-								sleepTime = (sleepTime + 1) * 2
-								loopCount++
-							} else {
-								log.Println("Reconnect success!")
-								t.needReBind = false
-								t.client = cl
-								sleepTime = 1
-								break
-							}
-
-						}
-
-					}
-					time.Sleep(time.Second)
-				}
-
-			})
-			//wg.Add(1)
-			t.client = cl
-			// keep alive
-			go t.keepAliveMonitor(&once, wg)
-			defer t.client.Close()
-
-			log.Println("Connected to ssh server")
-			// Accept all incoming connections.
-			t.socks5ProxyStart(ctx)
-		}()
-	}
-	select {
-	case <-ctx.Done():
-		return
-	case <-time.After(t.retryInterval):
-		log.Printf("(%v) retrying...", t)
-	}
+	// Accept all incoming connections.
+	t.socks5ProxyStart(ctx)
 
 }
 func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
@@ -248,27 +113,43 @@ func (t *Tunnel) handleHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
-	if t.enableHttpOverSSH {
-		if t.enableHttpDomainFilter {
-			if t.domains != nil && len(t.domains) > 0 {
-				for _, domain := range t.domains {
-					if domain != "" {
-						split := strings.Split(host, ":")
-						if split != nil && len(split) > 0 {
-							hasSuffix := strings.HasSuffix(strings.ToLower(strings.Trim(split[0], ".")), strings.ToLower(domain))
-							if hasSuffix {
-								return t.client.Dial("tcp", host)
-							}
-						}
+	if t.client == nil || !t.enableHttpOverSSH {
+		return net.DialTimeout("tcp", host, 10*time.Second)
+	}
+
+	if !t.enableHttpDomainFilter {
+		return t.client.Dial("tcp", host)
+	}
+
+	if t.domainMatchCache == nil {
+		t.domainMatchCache = make(map[string]bool)
+	}
+
+	if value, ok := t.domainMatchCache[host]; ok {
+		if value {
+			return t.client.Dial("tcp", host)
+		} else {
+			return net.DialTimeout("tcp", host, 10*time.Second)
+		}
+
+	}
+
+	if t.domains != nil && len(t.domains) > 0 {
+		for _, domain := range t.domains {
+			if domain != "" {
+				split := strings.Split(host, ":")
+				if split != nil && len(split) > 0 {
+					hasSuffix := strings.HasSuffix(strings.ToLower(strings.Trim(split[0], ".")), strings.ToLower(domain))
+					if hasSuffix {
+						t.domainMatchCache[host] = true
+						return t.client.Dial("tcp", host)
 					}
 				}
 			}
-			return net.DialTimeout("tcp", host, 10*time.Second)
 		}
-		return t.client.Dial("tcp", host)
-	} else {
-		return net.DialTimeout("tcp", host, 10*time.Second)
 	}
+	t.domainMatchCache[host] = false
+	return net.DialTimeout("tcp", host, 10*time.Second)
 
 }
 
@@ -356,7 +237,9 @@ func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
 				log.Panic(err)
 			}
 
-			go t.handleClientRequest(client)
+			GO(func() {
+				t.handleClientRequest(client)
+			})
 		}
 	})
 
@@ -633,8 +516,13 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 	wg2.Wait()
 }
 
-func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup) {
+func (t Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync.WaitGroup) {
 	defer wg.Done()
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	GO(func() {
+		<-connCtx.Done()
+	})
 	if t.keepAlive.Interval == 0 || t.keepAlive.CountMax == 0 {
 		return
 	}
@@ -649,6 +537,8 @@ func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup) {
 	defer ticker.Stop()
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case err := <-wait:
 			if err != nil && err != io.EOF {
 				once.Do(func() { log.Printf("(%v) SSH error: %v", t, err) })
@@ -657,7 +547,11 @@ func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup) {
 		case <-ticker.C:
 			if n := atomic.AddInt32(&aliveCount, 1); n > int32(t.keepAlive.CountMax) {
 				once.Do(func() { log.Printf("(%v) SSH keep-alive termination", t) })
-				t.client.Close()
+				if t.client != nil {
+					t.client.Close()
+					t.client = nil
+				}
+
 				return
 			}
 		}
@@ -665,6 +559,9 @@ func (t Tunnel) keepAliveMonitor(once *sync.Once, wg *sync.WaitGroup) {
 		wg.Add(1)
 		GO(func() {
 			defer wg.Done()
+			if t.client == nil {
+				return
+			}
 			_, _, err := t.client.SendRequest("keepalive@openssh.com", true, nil)
 			if err == nil {
 				atomic.StoreInt32(&aliveCount, 0)
