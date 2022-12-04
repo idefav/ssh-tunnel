@@ -79,7 +79,15 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
     <array>
       <string>/usr/local/bin/ssh-tunnel</string>
       <string>-s</string>
-      <string>x.x.x.x</string>
+      <string>xx.xx.xx.xx</string>
+      <string>-server.ssh.port</string>
+      <string>10022</string>
+      <string>-l</string>
+      <string>0.0.0.0:1081</string>
+      <string>-socks5.enable=false</string>
+      <string>-http.enable</string>
+      <string>-http.over.ssh.enable</string>
+      <string>-http.filter.domain.enable</string>
     </array>
     <key>UserName</key>
     <string>root</string>
