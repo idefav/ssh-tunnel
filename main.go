@@ -215,17 +215,6 @@ func main() {
 	wg.Wait()
 }
 
-func loadDomainFilterFile(filePath string, tunnel *Tunnel) error {
-	file, err := os.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-	s := string(file)
-	log.Printf(s)
-	tunnel.domains = strings.Split(strings.Trim(strings.Trim(strings.Trim(s, "\r"), " "), "\n"), "\n")
-	return nil
-}
-
 func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
