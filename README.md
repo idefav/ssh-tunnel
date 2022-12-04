@@ -1,5 +1,5 @@
 # Introduction
-
+[![Build Release](https://github.com/idefav/ssh-tunnel/actions/workflows/release.yml/badge.svg)](https://github.com/idefav/ssh-tunnel/actions/workflows/release.yml)
 Open ssh tunnel, start Sock5 port locally by default 1081
 
 ## quick start
