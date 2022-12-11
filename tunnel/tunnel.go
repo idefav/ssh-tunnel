@@ -1,4 +1,4 @@
-package main
+package tunnel
 
 import (
 	"bytes"
@@ -14,6 +14,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"ssh-tunnel/cfg"
+	"ssh-tunnel/safe"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,13 +52,38 @@ type Tunnel struct {
 	user                   string
 	auth                   []ssh.AuthMethod
 	hostKeys               ssh.HostKeyCallback
-	domains                []string
+	domains                map[string]bool
 	domainMatchCache       map[string]bool
+	appConfig              *cfg.AppConfig
 
 	retryInterval time.Duration
 	keepAlive     KeepAliveConfig
 	needReBind    bool
 	client        *ssh.Client
+}
+
+func (t *Tunnel) AppConfig() *cfg.AppConfig {
+	return t.appConfig
+}
+
+func (t *Tunnel) SetAppConfig(appConfig *cfg.AppConfig) {
+	t.appConfig = appConfig
+}
+
+func (t *Tunnel) Domains() map[string]bool {
+	return t.domains
+}
+
+func (t *Tunnel) SetDomains(domains map[string]bool) {
+	t.domains = domains
+}
+
+func (t *Tunnel) DomainMatchCache() map[string]bool {
+	return t.domainMatchCache
+}
+
+func (t *Tunnel) SetDomainMatchCache(domainMatchCache map[string]bool) {
+	t.domainMatchCache = domainMatchCache
 }
 
 func (t *Tunnel) bindHttpTunnel(ctx context.Context, wg *sync.WaitGroup) {
@@ -79,7 +106,7 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 		log.Panic(err)
 	}
 
-	GO(func() {
+	safe.GO(func() {
 		<-connCtx.Done()
 		server.Close()
 	})
@@ -90,7 +117,7 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 			log.Println(err)
 			return
 		}
-		GO(func() {
+		safe.GO(func() {
 			resolveErr := t.socks5Proxy(ctx, conn)
 			if resolveErr != nil && errors.Is(resolveErr, NetworkError) {
 				t.needReBind = true
@@ -135,7 +162,7 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 	}
 
 	if t.domains != nil && len(t.domains) > 0 {
-		for _, domain := range t.domains {
+		for domain, _ := range t.domains {
 			if domain != "" {
 				split := strings.Split(host, ":")
 				if split != nil && len(split) > 0 {
@@ -170,10 +197,10 @@ func (t *Tunnel) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 	}
 
-	GO(func() {
+	safe.GO(func() {
 		transfer(destConn, clientConn)
 	})
-	GO(func() {
+	safe.GO(func() {
 		transfer(clientConn, destConn)
 	})
 }
@@ -229,7 +256,7 @@ func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
 	if err != nil {
 		log.Panic(err)
 	}
-	GO(func() {
+	safe.GO(func() {
 		log.Println("Http Server Started at: " + t.httpLocalAddress)
 		for {
 			client, err := l.Accept()
@@ -237,7 +264,7 @@ func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
 				log.Panic(err)
 			}
 
-			GO(func() {
+			safe.GO(func() {
 				t.handleClientRequest(client)
 			})
 		}
@@ -248,8 +275,9 @@ func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
 	defer func() {
 		// extra handling here
 		timeOutCancel()
+		log.Println("Server Stopped!")
 	}()
-	log.Println("Server Stopped!")
+
 }
 
 func (t *Tunnel) handleClientRequest(client net.Conn) {
@@ -316,7 +344,7 @@ func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 
-	GO(func() {
+	safe.GO(func() {
 		err := server.ListenAndServe()
 		if err != nil {
 			log.Fatalln(err)
@@ -390,7 +418,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 		return NetworkError
 	}
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	GO(func() {
+	safe.GO(func() {
 		io.Copy(server, conn)
 	})
 	io.Copy(conn, server)
@@ -447,7 +475,7 @@ func (t *Tunnel) httpProxy(ctx context.Context, conn net.Conn) error {
 		return NetworkError
 	}
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	GO(func() {
+	safe.GO(func() {
 		io.Copy(server, conn)
 	})
 	io.Copy(conn, server)
@@ -470,7 +498,7 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	GO(func() {
+	safe.GO(func() {
 		<-connCtx.Done()
 		cn1.Close()
 	})
@@ -485,7 +513,7 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 		return
 	}
 
-	GO(func() {
+	safe.GO(func() {
 		<-connCtx.Done()
 		cn2.Close()
 	})
@@ -497,7 +525,7 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 	var once sync.Once
 	var wg2 sync.WaitGroup
 	wg2.Add(2)
-	GO(func() {
+	safe.GO(func() {
 		defer wg2.Done()
 		defer cancel()
 		if _, err := io.Copy(cn1, cn2); err != nil {
@@ -505,7 +533,7 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 		}
 		once.Do(func() {}) // Suppress future errors
 	})
-	GO(func() {
+	safe.GO(func() {
 		defer wg2.Done()
 		defer cancel()
 		if _, err := io.Copy(cn2, cn1); err != nil {
@@ -520,7 +548,7 @@ func (t Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync.
 	defer wg.Done()
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	GO(func() {
+	safe.GO(func() {
 		<-connCtx.Done()
 	})
 	if t.keepAlive.Interval == 0 || t.keepAlive.CountMax == 0 {
@@ -528,7 +556,7 @@ func (t Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync.
 	}
 	wait := make(chan error, 1)
 	wg.Add(1)
-	GO(func() {
+	safe.GO(func() {
 		defer wg.Done()
 		wait <- t.client.Wait()
 	})
@@ -557,7 +585,7 @@ func (t Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync.
 		}
 
 		wg.Add(1)
-		GO(func() {
+		safe.GO(func() {
 			defer wg.Done()
 			if t.client == nil {
 				return

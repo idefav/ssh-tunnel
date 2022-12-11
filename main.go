@@ -1,26 +1,18 @@
 package main
 
 import (
-	"context"
+	_ "embed"
 	"flag"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
-	"io/ioutil"
 	"log"
 	"os"
-	"os/signal"
 	"os/user"
 	"path"
-	"strconv"
-	"strings"
+	"ssh-tunnel/api/admin"
+	"ssh-tunnel/cfg"
+	"ssh-tunnel/tunnel"
 	"sync"
-	"syscall"
-	"time"
 )
-
-type ServerMode string
 
 func main() {
 	defer func() { // 必须要先声明defer，否则不能捕获到panic异常
@@ -32,257 +24,38 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var serverIp string
-	var serverSshPort int
-	var sshPrivateKeyPath string
-	var sshKnownHostsPath string
-	var loginUser string
-	var localAddress string
-	var httpLocalAddress string
-	var httpBasicAuthEnable bool
-	var httpBasicUserName string
-	var httpBasicPassword string
-	var enableHttp bool
-	var enableSocks5 bool
-	var enableHttpOverSSH bool
-	var enableHttpDomainFilter bool
-	var httpDomainFilterFilePath string
 
-	tunnel := Tunnel{}
-	flag.StringVar(&serverIp, "server.ip", "", "服务器IP地址")
-	flag.StringVar(&serverIp, "s", "", "服务器IP地址(短命令)")
-	flag.IntVar(&serverSshPort, "server.ssh.port", 22, "服务器SSH端口")
-	flag.IntVar(&serverSshPort, "p", 22, "服务器SSH端口(短命令)")
-	flag.StringVar(&sshPrivateKeyPath, "ssh.path.private_key", path.Join(u.HomeDir, ".ssh/id_rsa"), "私钥地址")
-	flag.StringVar(&sshPrivateKeyPath, "pk", path.Join(u.HomeDir, ".ssh/id_rsa"), "私钥地址(短命令)")
-	flag.StringVar(&sshKnownHostsPath, "ssh.path.known_hosts", path.Join(u.HomeDir, ".ssh/known_hosts"), "已知主机地址")
-	flag.StringVar(&sshKnownHostsPath, "pkh", path.Join(u.HomeDir, ".ssh/known_hosts"), "已知主机地址(短命令)")
-	flag.StringVar(&loginUser, "user", "root", "用户名")
-	flag.StringVar(&loginUser, "u", "root", "用户名(短命令)")
-	flag.StringVar(&localAddress, "local.addr", "0.0.0.0:1081", "本地地址")
-	flag.StringVar(&localAddress, "l", "0.0.0.0:1081", "本地地址(短命令)")
-	flag.StringVar(&httpLocalAddress, "http.local.addr", "0.0.0.0:1082", "Http监听地址")
-	flag.StringVar(&httpBasicUserName, "http.basic.username", "", "Basic认证, 用户名")
-	flag.StringVar(&httpBasicPassword, "http.basic.password", "", "Http Basic认证, 密码")
-	flag.BoolVar(&enableHttp, "http.enable", false, "是否开启Http代理")
-	flag.BoolVar(&enableSocks5, "socks5.enable", true, "是否开启Socks5代理")
-	flag.BoolVar(&httpBasicAuthEnable, "http.basic.enable", false, "是否开启Http的Basic认证")
-	flag.BoolVar(&enableHttpOverSSH, "http.over.ssh.enable", false, "是否开启Http Over SSH")
-	flag.BoolVar(&enableHttpDomainFilter, "http.filter.domain.enable", false, "是否启用Http域名过滤")
-	flag.StringVar(&httpDomainFilterFilePath, "http.filter.domain.file-path", path.Join(u.HomeDir, ".ssh-tunnel/domain.txt"), "过滤http请求")
+	config := cfg.AppConfig{}
+
+	flag.StringVar(&config.ServerIp, "server.ip", "", "服务器IP地址")
+	flag.StringVar(&config.ServerIp, "s", "", "服务器IP地址(短命令)")
+	flag.IntVar(&config.ServerSshPort, "server.ssh.port", 22, "服务器SSH端口")
+	flag.IntVar(&config.ServerSshPort, "p", 22, "服务器SSH端口(短命令)")
+	flag.StringVar(&config.SshPrivateKeyPath, "ssh.path.private_key", path.Join(u.HomeDir, ".ssh/id_rsa"), "私钥地址")
+	flag.StringVar(&config.SshPrivateKeyPath, "pk", path.Join(u.HomeDir, ".ssh/id_rsa"), "私钥地址(短命令)")
+	flag.StringVar(&config.SshKnownHostsPath, "ssh.path.known_hosts", path.Join(u.HomeDir, ".ssh/known_hosts"), "已知主机地址")
+	flag.StringVar(&config.SshKnownHostsPath, "pkh", path.Join(u.HomeDir, ".ssh/known_hosts"), "已知主机地址(短命令)")
+	flag.StringVar(&config.LoginUser, "user", "root", "用户名")
+	flag.StringVar(&config.LoginUser, "u", "root", "用户名(短命令)")
+	flag.StringVar(&config.LocalAddress, "local.addr", "0.0.0.0:1081", "本地地址")
+	flag.StringVar(&config.LocalAddress, "l", "0.0.0.0:1081", "本地地址(短命令)")
+	flag.StringVar(&config.HttpLocalAddress, "http.local.addr", "0.0.0.0:1082", "Http监听地址")
+	flag.StringVar(&config.HttpBasicUserName, "http.basic.username", "", "Basic认证, 用户名")
+	flag.StringVar(&config.HttpBasicPassword, "http.basic.password", "", "Http Basic认证, 密码")
+	flag.BoolVar(&config.EnableHttp, "http.enable", false, "是否开启Http代理")
+	flag.BoolVar(&config.EnableSocks5, "socks5.enable", true, "是否开启Socks5代理")
+	flag.BoolVar(&config.HttpBasicAuthEnable, "http.basic.enable", false, "是否开启Http的Basic认证")
+	flag.BoolVar(&config.EnableHttpOverSSH, "http.over.ssh.enable", false, "是否开启Http Over SSH")
+	flag.BoolVar(&config.EnableHttpDomainFilter, "http.filter.domain.enable", false, "是否启用Http域名过滤")
+	flag.StringVar(&config.HttpDomainFilterFilePath, "http.filter.domain.file-path", path.Join(u.HomeDir, ".ssh-tunnel/domain.txt"), "过滤http请求")
+
+	flag.BoolVar(&config.EnableAdmin, "admin.enable", false, "是否启用Admin页面")
+	flag.StringVar(&config.AdminAddress, "admin.addr", ":1083", "Admin监听地址")
 	log.Printf("%v", os.Args)
 
 	flag.Parse()
-
-	if enableSocks5 {
-		tunnel.enableSocks5 = enableSocks5
-		tunnel.serverAddress = serverIp + ":" + strconv.Itoa(serverSshPort)
-		tunnel.localAddress = localAddress
-		tunnel.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
-
-		var keys []ssh.Signer
-		b, err := ioutil.ReadFile(sshPrivateKeyPath)
-		if err != nil {
-			log.Fatalf("private key error: %v", err)
-		}
-		k, err := ssh.ParsePrivateKey(b)
-		if err != nil {
-			log.Fatalf("private key error: %v", err)
-		}
-		keys = append(keys, k)
-		auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
-
-		hostKeys, err := knownhosts.New(sshKnownHostsPath)
-		if err != nil {
-			log.Fatalf("public key error: %v", err)
-		}
-
-		tunnel.auth = auth
-		tunnel.hostKeys = hostKeys
-		tunnel.user = loginUser
-		tunnel.retryInterval = 30 * time.Second
-	}
-
-	if enableHttp {
-		tunnel.enableHttp = enableHttp
-		tunnel.httpLocalAddress = httpLocalAddress
-		tunnel.httpBasicUserName = httpBasicUserName
-		tunnel.httpBasicPassword = httpBasicPassword
-		tunnel.enableHttpBasic = httpBasicAuthEnable
-		tunnel.enableHttpOverSSH = enableHttpOverSSH
-		tunnel.enableHttpDomainFilter = enableHttpDomainFilter
-
-		if enableHttpOverSSH {
-			tunnel.serverAddress = serverIp + ":" + strconv.Itoa(serverSshPort)
-			tunnel.localAddress = localAddress
-			tunnel.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
-
-			var keys []ssh.Signer
-			b, err := ioutil.ReadFile(sshPrivateKeyPath)
-			if err != nil {
-				log.Fatalf("private key error: %v", err)
-			}
-			k, err := ssh.ParsePrivateKey(b)
-			if err != nil {
-				log.Fatalf("private key error: %v", err)
-			}
-			keys = append(keys, k)
-			auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
-
-			hostKeys, err := knownhosts.New(sshKnownHostsPath)
-			if err != nil {
-				log.Fatalf("public key error: %v", err)
-			}
-
-			tunnel.auth = auth
-			tunnel.hostKeys = hostKeys
-			tunnel.user = loginUser
-			tunnel.retryInterval = 30 * time.Second
-		}
-
-		if enableHttpDomainFilter && httpDomainFilterFilePath != "" {
-			go func() {
-				err2 := domainFilterFileWatcher(httpDomainFilterFilePath, &tunnel)
-				if err2 != nil {
-					log.Fatal(err2)
-				}
-			}()
-		}
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	GO(func() {
-		sigc := make(chan os.Signal, 1)
-		signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
-		log.Printf("received %v - initiating shutdown", <-sigc)
-		cancel()
-	})
-
 	var wg sync.WaitGroup
-	log.Printf("%s starting", path.Base(os.Args[0]))
-	defer log.Printf("%s shutdown", path.Base(os.Args[0]))
-	if tunnel.enableSocks5 {
-		wg.Add(1)
-		GO(func() {
-			defer wg.Done()
-			tunnel.bindSocks5Tunnel(ctx, &wg)
-		})
-	}
-
-	if tunnel.enableHttp {
-		wg.Add(1)
-		GO(func() {
-			defer wg.Done()
-			tunnel.bindHttpTunnel(ctx, &wg)
-		})
-	}
-
-	// need open ssh tunnel
-	if tunnel.enableSocks5 || tunnel.enableHttpOverSSH {
-		GO(func() {
-			connCtx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			GO(func() {
-				<-connCtx.Done()
-			})
-			for tunnel.client == nil {
-				var once sync.Once
-				cl, err := ssh.Dial("tcp", tunnel.serverAddress, &ssh.ClientConfig{
-					User:            tunnel.user,
-					Auth:            tunnel.auth,
-					HostKeyCallback: tunnel.hostKeys,
-					Timeout:         5 * time.Second,
-				})
-				if err != nil {
-					once.Do(func() {
-						log.Printf("(%v) SSH dial error: %v", tunnel, err)
-					})
-					continue
-				}
-				//wg.Add(1)
-				tunnel.client = cl
-				log.Println("Connected to ssh server")
-				// keep alive
-				tunnel.keepAliveMonitor(ctx, &once, &wg)
-				tunnel.client = nil
-				log.Printf("SSH Connection Closed!")
-
-			}
-
-		})
-	}
-
+	tunnel.Load(&config, &wg)
+	admin.Load(&config, &wg)
 	wg.Wait()
-}
-
-func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
-	defer watcher.Close()
-
-	configPath := path.Dir(filePath)
-
-	changed := make(chan bool)
-	done := make(chan bool)
-
-	go func() {
-		changed <- true
-		defer close(done)
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				log.Println(event)
-				if event.Name != filePath {
-					continue
-				}
-				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
-					log.Println("file modified", event.Name)
-					changed <- true
-				} else if event.Has(fsnotify.Remove) {
-					tunnel.domains = nil
-					tunnel.domainMatchCache = make(map[string]bool)
-					continue
-				}
-
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Println(err)
-			}
-		}
-	}()
-
-	err = watcher.Add(configPath)
-	if err != nil {
-		return err
-	}
-
-	for {
-		select {
-		case result := <-changed:
-			{
-				if result == true {
-					file, err2 := os.ReadFile(filePath)
-					if err2 != nil {
-						log.Fatal(err2)
-					}
-					s := string(file)
-					log.Printf("domain list loaded!")
-					tunnel.domains = strings.Split(strings.Trim(strings.Trim(strings.Trim(s, "\r"), " "), "\n"), "\n")
-					tunnel.domainMatchCache = make(map[string]bool)
-				}
-			}
-
-		}
-	}
-
-	<-done
-
-	return err
 }

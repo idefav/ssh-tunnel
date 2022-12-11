@@ -1,0 +1,79 @@
+{{define "content"}}
+    <button id="add_domain" type="button" class="btn btn-primary" data-bs-toggle="modal"
+            data-bs-target="#addDomainModal">Add Domain
+    </button>
+    <button id="flushDomains" type="button" class="btn btn-primary">Flush
+    </button>
+    <h2>Proxy Domain List:</h2>
+    {{range $key,$value := .Domains}}
+        <span style="float: left;display: inline-block; padding: 0 5px;margin: 2px 5px" class="badge text-bg-primary text-bg-light">
+            <h5 style="display:inline-block">{{$key}}</h5>
+            <i id="domain_remove_{{$key}}" data-domain="{{$key}}" class="bi bi-x-lg domain_remove"
+               style="cursor: pointer"></i>
+        </span>
+    {{end}}
+
+    <!-- Modal -->
+    <div class="modal fade" id="addDomainModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="exampleModalLabel">Add Domain</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form class=" g-4 needs-validation" novalidate>
+                        <div class="row">
+                            <label for="validationCustom01" class="form-label col-sm-2">Domain:</label>
+                            <input type="text" class="form-control col-sm-8" id="validationCustom01" value=""
+                                   placeholder="domain" required>
+                            <div class="valid-feedback col-sm-2">
+                                Looks good!
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button id="addDomainSubmit" class="btn btn-primary" type="button">Submit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $("#addDomainSubmit").click(() => {
+            let val = $("#validationCustom01").val();
+            if (!val) {
+                $("#toastmessage").html("domain is empty")
+                $("#toast").show()
+                return
+            }
+            $.post("/admin/domains/add?domain=" + $("#validationCustom01").val()).then(resp => {
+                $("#toastmessage").html(resp)
+                $("#toast").show()
+            })
+        })
+
+        $("#flushDomains").click(() => {
+            $.post("/admin/domains/flush").then(resp => {
+                $("#toastmessage").html(resp)
+                $("#toast").show()
+            })
+        })
+
+        $(".domain_remove").click(function () {
+            if (confirm("You sure you want to delete it?")) {
+                let attr = $(this).attr('data');
+                let domain = $(this).attr('data-domain');
+                if (!domain) {
+                    return
+                }
+                $.post("/admin/domains/remove?domain=" + domain).then(resp => {
+                    $("#toastmessage").html(resp)
+                    $("#toast").show()
+                })
+            }
+        })
+    </script>
+{{end}}

@@ -1,0 +1,14 @@
+{{define "content"}}
+    <h2>Caches Of Match Domains:</h2>
+    {{range $key,$value := .DomainMatchResultCache}}
+        {{ if eq $value true }}
+            <div style='float: left;display: inline-block; text-decoration: underline;text-decoration-color: red; padding: 0 5px'>
+                <h5>{{$key}}</h5>
+            </div>
+        {{else}}
+            <div style='float: left;display: inline-block; text-decoration: underline;text-decoration-color: white; padding: 0 5px'>
+                <h5>{{$key}}</h5>
+            </div>
+        {{end}}
+    {{end}}
+{{end}}
