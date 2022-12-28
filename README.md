@@ -22,6 +22,10 @@ Open ssh tunnel, start Sock5 port locally by default 1081
 ```bash
 ./ssh-tunnel -h
 Usage of ./bin/ssh-tunnel-amd64-darwin:
+  -admin.addr string
+        Admin监听地址 (default ":1083")
+  -admin.enable
+        是否启用Admin页面
   -http.basic.enable
         是否开启Http的Basic认证
   -http.basic.password string
@@ -65,7 +69,13 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
   -user string
         用户名 (default "root")
 
+
 ```
+
+## AdminUI
+
+默认地址: localhost:1083/view/index
+<img width="1353" alt="image" src="https://user-images.githubusercontent.com/6405415/206909223-b47372db-5356-4cbf-8c11-8929d6227896.png">
 
 ## MacOS boot auto-start settings
 
