@@ -291,19 +291,24 @@ func (t *Tunnel) handleClientRequest(client net.Conn) {
 	}
 	var method, host, address string
 	fmt.Sscanf(string(b[:bytes.IndexByte(b[:], '\n')]), "%s%s", &method, &host)
-	hostPortURL, err := url.Parse(host)
-	if err != nil {
-		log.Println(err)
-		fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
-		return
-	}
-	if hostPortURL.Opaque == "443" { //https访问
-		address = hostPortURL.Scheme + ":443"
-	} else { //http访问
-		if strings.Index(hostPortURL.Host, ":") == -1 { //host不带端口， 默认80
-			address = hostPortURL.Host + ":80"
-		} else {
-			address = hostPortURL.Host
+
+	if method == http.MethodConnect {
+		address = host
+	} else {
+		hostPortURL, err := url.Parse(host)
+		if err != nil {
+			log.Println(err)
+			fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
+			return
+		}
+		if hostPortURL.Opaque == "443" { //https访问
+			address = hostPortURL.Scheme + ":443"
+		} else { //http访问
+			if strings.Index(hostPortURL.Host, ":") == -1 { //host不带端口， 默认80
+				address = hostPortURL.Host + ":80"
+			} else {
+				address = hostPortURL.Host
+			}
 		}
 	}
 
