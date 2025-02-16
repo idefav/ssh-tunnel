@@ -1,6 +1,7 @@
 package cfg
 
 type AppConfig struct {
+	HomeDir                  string
 	ServerIp                 string
 	ServerSshPort            int
 	SshPrivateKeyPath        string
