@@ -135,5 +135,39 @@ launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist && \
 launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 ```
+
+# Windows Service支持
+### 1. 在C盘跟目录参加 `ssh-tunnel`
+在该目录下参加 `.ssh-tunnel` 目录， 并写入 `config.properties`
+```text
+server.ip=47.56.255.129
+server.ssh.port=22
+server.ssh.private_key_path=C:\\Users\\idefav\\.ssh\\id_rsa
+server.ssh.known_hosts_path=C:\\Users\\idefav\\.ssh\\known_hosts
+login.username=root
+local.address=0.0.0.0:1081
+http.local.address=0.0.0.0:1082
+http.enable=true
+socks5.enable=true
+http.over-ssh.enable=true
+http.domain-filter.enable=true
+http.filter.domain.file-path=C:\\Users\\idefav\\Documents\\ssh-tunnel\\domain.txt
+admin.enable=true
+admin.address=:1083
+```
+
+### 2. 安装windows服务
+
+```text
+ .\ssh-tunnel-winsvc.exe install
+```
+
+### 3. 查看服务
+win+r 输入 services.svc 打开服务管理窗口
+找到 SSHTunnelService 并启动它
+
+### 4. 在windows配置中启动代理
+
+
 Contributors
 [![Contributors over time](https://contributor-graph-api.apiseven.com/contributors-svg?chart=contributorOverTime&repo=idefav/ssh-tunnel)](https://www.apiseven.com/en/contributor-graph?chart=contributorOverTime&repo=idefav/ssh-tunnel)
