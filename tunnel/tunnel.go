@@ -56,10 +56,11 @@ type Tunnel struct {
 	domainMatchCache       map[string]bool
 	appConfig              *cfg.AppConfig
 
-	retryInterval time.Duration
-	keepAlive     KeepAliveConfig
-	needReBind    bool
-	client        *ssh.Client
+	retryInterval  time.Duration
+	keepAlive      KeepAliveConfig
+	needReBind     bool
+	client         *ssh.Client
+	reconnectMutex sync.Mutex // 添加重连锁，确保同一时间只有一个重连过程
 }
 
 func (t *Tunnel) AppConfig() *cfg.AppConfig {
@@ -121,12 +122,18 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 			resolveErr := t.socks5Proxy(ctx, conn)
 			if resolveErr != nil && errors.Is(resolveErr, NetworkError) {
 				t.needReBind = true
+				// 检测到网络错误，尝试重新连接SSH
+				if t.client == nil {
+					safe.GO(func() {
+						t.reconnectSSH(ctx)
+					})
+				}
 			}
 		})
 	}
 }
 
-func (t *Tunnel) handleHTTP(w http.ResponseWriter, req *http.Request) {
+func (t *Tunnel) handleHTTP(ctx context.Context, w http.ResponseWriter, req *http.Request) {
 	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -145,7 +152,10 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 	}
 
 	if !t.enableHttpDomainFilter {
-		return t.client.Dial("tcp", host)
+		background := context.Background()
+		timeoutCtx, _ := context.WithTimeout(background, 3*time.Second)
+
+		return t.client.DialContext(timeoutCtx, "tcp", host)
 	}
 
 	if t.domainMatchCache == nil {
@@ -180,7 +190,7 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 
 }
 
-func (t *Tunnel) handleHTTPS(w http.ResponseWriter, r *http.Request) {
+func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	destConn, err := t.getDestConn(r.Host)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -265,7 +275,7 @@ func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
 			}
 
 			safe.GO(func() {
-				t.handleClientRequest(client)
+				t.handleClientRequest(ctx, client)
 			})
 		}
 	})
@@ -280,7 +290,7 @@ func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
 
 }
 
-func (t *Tunnel) handleClientRequest(client net.Conn) {
+func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 	defer client.Close()
 	var b [1024]byte
 	n, err := client.Read(b[:])
@@ -312,12 +322,11 @@ func (t *Tunnel) handleClientRequest(client net.Conn) {
 		}
 	}
 
-	destConn, err := t.getDestConn(address)
-	if err != nil {
-		log.Println(err)
-		fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
+	destConn, done := t.getConn(ctx, client, err, address)
+	if done {
 		return
 	}
+
 	if method == "CONNECT" {
 		fmt.Fprint(client, "HTTP/1.1 200 Connection established\r\n\r\n")
 	} else {
@@ -326,6 +335,31 @@ func (t *Tunnel) handleClientRequest(client net.Conn) {
 	//进行转发
 	go io.Copy(destConn, client)
 	io.Copy(client, destConn)
+}
+
+func (t *Tunnel) getConn(ctx context.Context, client net.Conn, err error, address string) (net.Conn, bool) {
+	destConn, err := t.getDestConn(address)
+	for {
+		if err == nil {
+			break
+		}
+
+		if strings.Contains(err.Error(), "unexpected packet in response") || strings.Contains(err.Error(), "context deadline exceeded") {
+			t.client = nil
+			t.reconnectSSH(ctx)
+			if t.client == nil {
+				return nil, true
+			}
+			destConn, err = t.getDestConn(address)
+			return destConn, false
+		} else {
+			log.Println(err)
+			fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
+			return nil, true
+		}
+
+	}
+	return destConn, false
 }
 
 func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
@@ -340,9 +374,9 @@ func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 				return
 			}
 			if r.Method == http.MethodConnect {
-				t.handleHTTPS(w, r)
+				t.handleHTTPS(ctx, w, r)
 			} else {
-				t.handleHTTP(w, r)
+				t.handleHTTP(ctx, w, r)
 			}
 		}),
 		// Disable HTTP/2.
