@@ -9,7 +9,7 @@ import (
 )
 
 // reconnectSSH 实现SSH连接的重连逻辑
-func (t *Tunnel) reconnectSSH(ctx context.Context) {
+func (t *Tunnel) ReconnectSSH(ctx context.Context) {
 	// 使用互斥锁确保同一时间只有一个重连过程
 	t.reconnectMutex.Lock()
 	defer t.reconnectMutex.Unlock()
@@ -76,7 +76,7 @@ func (t *Tunnel) reconnectSSH(ctx context.Context) {
 		log.Printf("SSH连接已关闭，准备重新连接")
 
 		// 立即开始新的重连循环
-		go t.reconnectSSH(ctx)
+		go t.ReconnectSSH(ctx)
 		return
 	}
 

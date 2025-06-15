@@ -1,14 +1,30 @@
 {{define "content"}}
     <h2>Caches Of Match Domains:</h2>
-    {{range $key,$value := .DomainMatchResultCache}}
-        {{ if eq $value true }}
-            <div style='float: left;display: inline-block; text-decoration: underline;text-decoration-color: red; padding: 0 5px'>
-                <h5>{{$key}}</h5>
-            </div>
-        {{else}}
-            <div style='float: left;display: inline-block; text-decoration: underline;text-decoration-color: white; padding: 0 5px'>
-                <h5>{{$key}}</h5>
-            </div>
+    <div style="margin: 20px">
+        <button id="cleanCache" type="button" class="btn btn-info">Clean</button>
+        <button id="refresh" type="button" class="btn btn-secondary" onclick="window.location.reload(true)">Refresh Page</button>
+    </div>
+
+    <ul class="list-group list-group-numbered">
+        {{range $key,$value := .DomainMatchResultCache}}
+            {{ if eq $value true }}
+                <li class="list-group-item list-group-item-action active">
+                    <span>{{$key}}</span>
+                </li>
+            {{else}}
+                <li class="list-group-item list-group-item-action">
+                    <span>{{$key}}</span>
+                </li>
+            {{end}}
         {{end}}
-    {{end}}
+    </ul>
+    <script>
+        $("#cleanCache").click(() => {
+            $.get("/admin/cache/clean").then(resp => {
+                $("#toastmessage").html("Clean success!")
+                $('#toast').toast('show');
+            })
+        })
+    </script>
+
 {{end}}

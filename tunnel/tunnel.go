@@ -63,6 +63,10 @@ type Tunnel struct {
 	reconnectMutex sync.Mutex // 添加重连锁，确保同一时间只有一个重连过程
 }
 
+func (t *Tunnel) GetSSHClient() *ssh.Client {
+	return t.client
+}
+
 func (t *Tunnel) AppConfig() *cfg.AppConfig {
 	return t.appConfig
 }
@@ -125,7 +129,7 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 				// 检测到网络错误，尝试重新连接SSH
 				if t.client == nil {
 					safe.GO(func() {
-						t.reconnectSSH(ctx)
+						t.ReconnectSSH(ctx)
 					})
 				}
 			}
@@ -190,7 +194,7 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 func (t *Tunnel) createSSHConn(host string) (net.Conn, error) {
 	if t.client == nil {
 		log.Println("SSH client is not initialized, cannot dial to host:", host)
-		t.reconnectSSH(context.Background())
+		t.ReconnectSSH(context.Background())
 	}
 	if t.client == nil {
 		return nil, errors.New("SSH client is not initialized")
@@ -363,7 +367,7 @@ func (t *Tunnel) getConn(ctx context.Context, client net.Conn, err error, addres
 
 		if strings.Contains(err.Error(), "unexpected packet in response") || strings.Contains(err.Error(), "context deadline exceeded") || t.client == nil {
 			t.client = nil
-			t.reconnectSSH(ctx)
+			t.ReconnectSSH(ctx)
 			if t.client == nil {
 				return nil, true
 			}

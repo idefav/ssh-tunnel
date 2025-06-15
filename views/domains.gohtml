@@ -1,15 +1,20 @@
 {{define "content"}}
-    <button id="add_domain" type="button" class="btn btn-primary" data-bs-toggle="modal"
-            data-bs-target="#addDomainModal">Add Domain
-    </button>
-    <button id="flushDomains" type="button" class="btn btn-primary">Flush
-    </button>
+
     <h2 style="margin: 20px 0; align-items: center; text-align: center">Proxy Domain List</h2>
+
+    <div style="margin: 20px 0; ">
+        <button id="add_domain" type="button" class="btn btn-primary" data-bs-toggle="modal"
+                data-bs-target="#addDomainModal">Add Domain
+        </button>
+        <button id="flushDomains" type="button" class="btn btn-primary">Flush
+        </button>
+    </div>
     <ul class="list-group list-group-numbered">
         {{range $key,$value := .Domains}}
             <li style="width: 100%; text-align: left" class="list-group-item list-group-item-action">
                 <h5 style="display:inline-block">{{$key}}</h5>
-                <i id="domain_remove_{{$key}}" data-domain="{{$key}}" class="bi bi-x-lg domain_remove" data-bs-toggle="tooltip"  data-bs-placement="top" data-bs-title="delete the domain"
+                <i id="domain_remove_{{$key}}" data-domain="{{$key}}" class="bi bi-x-lg domain_remove"
+                   data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="delete the domain"
                    style="cursor: pointer"></i>
             </li>
         {{end}}
@@ -37,7 +42,8 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button id="addDomainSubmit" class="btn btn-primary" type="button" data-bs-dismiss="modal">Submit</button>
+                    <button id="addDomainSubmit" class="btn btn-primary" type="button" data-bs-dismiss="modal">Submit
+                    </button>
                 </div>
             </div>
         </div>

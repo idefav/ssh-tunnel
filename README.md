@@ -37,7 +37,7 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
   -http.filter.domain.enable
         是否启用Http域名过滤
   -http.filter.domain.file-path string
-        过滤http请求 (default "/Users/wuzishu/.ssh-tunnel/domain.txt")
+        过滤http请求 (default "C:\\Users\\idefav/.ssh-tunnel/domain.txt")
   -http.local.addr string
         Http监听地址 (default "0.0.0.0:1082")
   -http.over.ssh.enable
@@ -49,9 +49,11 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
   -p int
         服务器SSH端口(短命令) (default 22)
   -pk string
-        私钥地址(短命令) (default "/Users/wuzishu/.ssh/id_rsa")
+        私钥地址(短命令) (default "C:\\Users\\idefav/.ssh/id_rsa")
   -pkh string
-        已知主机地址(短命令) (default "/Users/wuzishu/.ssh/known_hosts")
+        已知主机地址(短命令) (default "C:\\Users\\idefav/.ssh/known_hosts")
+  -retry.interval.sec int
+        重试间隔时间(秒) (default 3)
   -s string
         服务器IP地址(短命令)
   -server.ip string
@@ -61,13 +63,14 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
   -socks5.enable
         是否开启Socks5代理 (default true)
   -ssh.path.known_hosts string
-        已知主机地址 (default "/Users/wuzishu/.ssh/known_hosts")
+        已知主机地址 (default "C:\\Users\\idefav/.ssh/known_hosts")
   -ssh.path.private_key string
-        私钥地址 (default "/Users/wuzishu/.ssh/id_rsa")
+        私钥地址 (default "C:\\Users\\idefav/.ssh/id_rsa")
   -u string
         用户名(短命令) (default "root")
   -user string
         用户名 (default "root")
+
 
 
 ```

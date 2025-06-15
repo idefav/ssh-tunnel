@@ -2,10 +2,12 @@ package handler
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
 	"html/template"
 	"io/fs"
+	"net"
 	"net/http"
 	tunnel2 "ssh-tunnel/tunnel"
 	"ssh-tunnel/views"
@@ -14,6 +16,14 @@ import (
 type Data struct {
 	Domains                map[string]bool
 	DomainMatchResultCache map[string]bool
+}
+
+type SSHClientState struct {
+	Version    string
+	LocalAddr  net.Addr
+	RemoteAddr net.Addr
+	SessionID  string
+	User       string
 }
 
 func ListStaticFiles(w http.ResponseWriter, r *http.Request) {
@@ -123,4 +133,46 @@ func ShowCacheView(response http.ResponseWriter, request *http.Request) {
 		fmt.Println("Error " + err.Error())
 	}
 	tmpl.Execute(response, data)
+}
+
+func ShowSSHClientStateView(response http.ResponseWriter, request *http.Request) {
+	var tunnel = tunnel2.DefaultSshTunnel
+	client := tunnel.GetSSHClient()
+	version := client.ClientVersion()
+	addr := client.LocalAddr()
+	remoteAddr := client.RemoteAddr()
+	id := client.SessionID()
+	user := client.User()
+
+	marshal, _ := json.Marshal(id)
+
+	var data = SSHClientState{
+		Version:    string(version),
+		LocalAddr:  addr,
+		RemoteAddr: remoteAddr,
+		SessionID:  string(marshal),
+		User:       user,
+	}
+
+	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml",
+		"nav.gohtml",
+		"ssh_state.gohtml")
+
+	if err != nil {
+		fmt.Println("Error " + err.Error())
+	}
+	tmpl.Execute(response, data)
+}
+
+func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
+	var tunnel = tunnel2.DefaultSshTunnel
+	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml",
+		"nav.gohtml",
+		"app_config.gohtml")
+
+	if err != nil {
+		fmt.Println("Error " + err.Error())
+	}
+	marshal, _ := json.MarshalIndent(tunnel.AppConfig(), "", "    ")
+	tmpl.Execute(response, string(marshal))
 }
