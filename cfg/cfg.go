@@ -19,4 +19,5 @@ type AppConfig struct {
 	HttpDomainFilterFilePath string
 	EnableAdmin              bool
 	AdminAddress             string
+	RetryIntervalSec         int
 }

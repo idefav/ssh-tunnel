@@ -15,7 +15,6 @@ func (t *Tunnel) reconnectSSH(ctx context.Context) {
 	defer t.reconnectMutex.Unlock()
 
 	if t.client != nil {
-		log.Println("SSH连接仍然有效，无需重连")
 		return
 	}
 
@@ -25,13 +24,18 @@ func (t *Tunnel) reconnectSSH(ctx context.Context) {
 	}
 
 	log.Printf("正在尝试重新连接SSH服务器: %s", t.serverAddress)
+	var once sync.Once
+	withContinue, _ := t.dialSSH(&once)
+	if !withContinue {
+		return
+	}
 
 	// 重连的最大尝试次数
 	maxRetries := 10
 	// 初始重试间隔（秒）
 	baseRetryInterval := t.retryInterval
 	if baseRetryInterval == 0 {
-		baseRetryInterval = 5 * time.Second
+		baseRetryInterval = 1 * time.Second
 	}
 
 	// 指数退避策略的重试
@@ -44,8 +48,8 @@ func (t *Tunnel) reconnectSSH(ctx context.Context) {
 
 		// 计算当前重试的等待时间（使用指数退避策略）
 		retryInterval := baseRetryInterval * time.Duration(1<<uint(i))
-		if retryInterval > 5*time.Minute {
-			retryInterval = 5 * time.Minute // 最大等待5分钟
+		if retryInterval > 1*time.Minute {
+			retryInterval = 1 * time.Minute // 最大等待5分钟
 		}
 
 		log.Printf("等待 %v 秒后尝试重连 (尝试 %d/%d)", retryInterval.Seconds(), i+1, maxRetries)
@@ -56,25 +60,11 @@ func (t *Tunnel) reconnectSSH(ctx context.Context) {
 			// 继续尝试重连
 		}
 
-		// 尝试建立新的SSH连接
-		var once sync.Once
-		cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
-			User:            t.user,
-			Auth:            t.auth,
-			HostKeyCallback: t.hostKeys,
-			Timeout:         10 * time.Second, // 增加超时时间以适应不稳定网络
-		})
-
-		if err != nil {
-			once.Do(func() {
-				log.Printf("SSH重连失败: %v，将继续重试", err)
-			})
+		withContinue, _ := t.dialSSH(&once)
+		if withContinue {
+			log.Printf("SSH连接尝试失败，继续重试")
 			continue
 		}
-
-		// 连接成功
-		t.client = cl
-		log.Println("成功重新连接到SSH服务器")
 
 		// 启动keep-alive监控
 		var wg sync.WaitGroup
@@ -91,4 +81,27 @@ func (t *Tunnel) reconnectSSH(ctx context.Context) {
 	}
 
 	log.Printf("达到最大重试次数 (%d)，将在服务需要时重新尝试", maxRetries)
+}
+
+func (t *Tunnel) dialSSH(once *sync.Once) (withContinue bool, err error) {
+	// 尝试建立新的SSH连接
+
+	cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
+		User:            t.user,
+		Auth:            t.auth,
+		HostKeyCallback: t.hostKeys,
+		Timeout:         10 * time.Second, // 增加超时时间以适应不稳定网络
+	})
+
+	if err != nil {
+		once.Do(func() {
+			log.Printf("SSH重连失败: %v，将继续重试", err)
+		})
+		return true, err
+	}
+
+	// 连接成功
+	t.client = cl
+	log.Println("成功重新连接到SSH服务器")
+	return false, nil
 }

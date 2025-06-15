@@ -147,15 +147,12 @@ func (t *Tunnel) handleHTTP(ctx context.Context, w http.ResponseWriter, req *htt
 }
 
 func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
-	if t.client == nil || !t.enableHttpOverSSH {
-		return net.DialTimeout("tcp", host, 10*time.Second)
+	if !t.enableHttpOverSSH {
+		return net.DialTimeout("tcp", host, 3*time.Second)
 	}
 
 	if !t.enableHttpDomainFilter {
-		background := context.Background()
-		timeoutCtx, _ := context.WithTimeout(background, 3*time.Second)
-
-		return t.client.DialContext(timeoutCtx, "tcp", host)
+		return t.createSSHConn(host)
 	}
 
 	if t.domainMatchCache == nil {
@@ -164,9 +161,9 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 
 	if value, ok := t.domainMatchCache[host]; ok {
 		if value {
-			return t.client.Dial("tcp", host)
+			return t.createSSHConn(host)
 		} else {
-			return net.DialTimeout("tcp", host, 10*time.Second)
+			return net.DialTimeout("tcp", host, 3*time.Second)
 		}
 
 	}
@@ -179,7 +176,7 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 					hasSuffix := strings.HasSuffix(strings.ToLower(strings.Trim(split[0], ".")), strings.ToLower(domain))
 					if hasSuffix {
 						t.domainMatchCache[host] = true
-						return t.client.Dial("tcp", host)
+						return t.createSSHConn(host)
 					}
 				}
 			}
@@ -188,6 +185,20 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 	t.domainMatchCache[host] = false
 	return net.DialTimeout("tcp", host, 10*time.Second)
 
+}
+
+func (t *Tunnel) createSSHConn(host string) (net.Conn, error) {
+	if t.client == nil {
+		log.Println("SSH client is not initialized, cannot dial to host:", host)
+		t.reconnectSSH(context.Background())
+	}
+	if t.client == nil {
+		return nil, errors.New("SSH client is not initialized")
+	}
+	background := context.Background()
+	timeoutCtx, _ := context.WithTimeout(background, 3*time.Second)
+
+	return t.client.DialContext(timeoutCtx, "tcp", host)
 }
 
 func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -292,6 +303,11 @@ func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
 
 func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 	defer client.Close()
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println("panic occurred:", err)
+		}
+	}()
 	var b [1024]byte
 	n, err := client.Read(b[:])
 	if err != nil {
@@ -324,6 +340,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 
 	destConn, done := t.getConn(ctx, client, err, address)
 	if done {
+		log.Println("Get Dest Connection Failed!")
 		return
 	}
 
@@ -340,11 +357,11 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 func (t *Tunnel) getConn(ctx context.Context, client net.Conn, err error, address string) (net.Conn, bool) {
 	destConn, err := t.getDestConn(address)
 	for {
-		if err == nil {
+		if err == nil && destConn != nil {
 			break
 		}
 
-		if strings.Contains(err.Error(), "unexpected packet in response") || strings.Contains(err.Error(), "context deadline exceeded") {
+		if strings.Contains(err.Error(), "unexpected packet in response") || strings.Contains(err.Error(), "context deadline exceeded") || t.client == nil {
 			t.client = nil
 			t.reconnectSSH(ctx)
 			if t.client == nil {
