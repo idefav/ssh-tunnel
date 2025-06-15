@@ -1,54 +1,247 @@
-<html lang="en">
-<head class="bs-docs-nav navbar navbar-static-top" id="top">
+<html lang="zh-CN">
+<head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="">
+    <meta name="description" content="SSH隧道代理工具">
     <meta name="author" content="">
 
-    <title>An SSH-based proxy tool</title>
+    <title>SSH隧道代理工具</title>
 
     <!-- Bootstrap core CSS -->
     <link href="/resources/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
     <link rel="stylesheet" href="/resources/css/bootstrap-icons.css">
+    <link rel="stylesheet" href="/resources/css/animations.css">
     <script src="/resources/js/jquery-3.6.1.min.js" integrity="sha256-o88AwQnZB+VDvE9tvIXrMQaPlFFSUTR+nldQm1LuPXQ="
             crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            padding-bottom: 60px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            padding-top: 1.5rem;
+            padding-bottom: 1.5rem;
+            background-color: #fff;
+            border-radius: 0.375rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            margin-top: 20px;
+        }
+        .back-to-top {
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            display: none;
+            width: 40px;
+            height: 40px;
+            line-height: 40px;
+            background-color: #007bff;
+            color: white;
+            text-align: center;
+            border-radius: 50%;
+            z-index: 99;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        .back-to-top:hover {
+            background-color: #0069d9;
+            color: white;
+        }
+        .nav-link {
+            transition: all 0.2s;
+        }
+        .nav-link:hover {
+            transform: translateY(-2px);
+        }
+        .nav-link.active {
+            font-weight: bold;
+        }
+        .page-title {
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        /* 页面切换动画 */
+        .content-wrapper {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* 导航链接过渡效果增强 */
+        .navbar .nav-link {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .navbar .nav-link:after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            bottom: 0;
+            left: 50%;
+            background-color: white;
+            transition: all 0.3s ease;
+            transform: translateX(-50%);
+        }
+
+        .navbar .nav-link:hover:after,
+        .navbar .nav-link.active:after {
+            width: 70%;
+        }
+
+        /* 页面内容区块动画 */
+        .animate-block {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.5s ease;
+        }
+
+        .animate-block.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* 卡片悬停效果 */
+        .card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+    </style>
 </head>
 
 <body>
 
 {{ template "nav" .}}
 
-<div class="container">
-    {{template "content" .}}
+<div class="container content-wrapper">
+    <div class="page-title animate-block">
+        <h3 id="currentPageTitle">SSH隧道管理</h3>
+    </div>
+    <div id="mainContent">
+        {{template "content" .}}
+    </div>
 </div>
+
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
     <div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
         <div class="toast-header">
-            <strong class="me-auto">SSH-TUNNEL Admin</strong>
+            <strong class="me-auto">SSH-TUNNEL 通知</strong>
             <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
         <div class="toast-body" id="toastmessage">
-            Hello, world! This is a toast message.
+            操作成功！
         </div>
     </div>
-
 </div>
-<a href="#top" class="back-to-top"> Back to top </a>
+
+<a href="#top" class="back-to-top">
+    <i class="bi bi-arrow-up"></i>
+</a>
 
 <script src="/resources/js/bootstrap.bundle.min.js"
         integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+jjXkk+Q2h455rYXK/7HAuoJl+0I4"
         crossorigin="anonymous"></script>
 
+<script>
+    // 回到顶部按钮
+    $(window).scroll(function() {
+        if ($(this).scrollTop() > 100) {
+            $('.back-to-top').fadeIn();
+        } else {
+            $('.back-to-top').fadeOut();
+        }
+    });
+
+    $('.back-to-top').click(function(e) {
+        e.preventDefault();
+        $('html, body').animate({scrollTop: 0}, 300);
+        return false;
+    });
+
+    // 设置页面标题
+    $(document).ready(function() {
+        const path = window.location.pathname;
+        if (path.includes('/view/index')) {
+            $('#currentPageTitle').text('系统首页');
+        } else if (path.includes('/view/domains')) {
+            $('#currentPageTitle').text('域名管理');
+        } else if (path.includes('/view/caches')) {
+            $('#currentPageTitle').text('缓存管理');
+        } else if (path.includes('/view/ssh/state')) {
+            $('#currentPageTitle').text('SSH连接状态');
+        } else if (path.includes('/view/app/config')) {
+            $('#currentPageTitle').text('系统配置');
+        } else if (path.includes('/view/logs')) {
+            $('#currentPageTitle').text('系统日志');
+        }
+
+        // 页面加载时应用动画效果
+        setTimeout(function() {
+            $('.animate-block').addClass('visible');
+        }, 100);
+
+        // 为页面内容元素添加动画类
+        $('#mainContent').find('.card, .table, .form-group, h4, h5').addClass('animate-block');
+
+        // 页面切换的动画处理
+        $(document).on('click', '.navbar .nav-link, a[href^="/view/"]', function(e) {
+            // 只处理内部链接
+            if (this.hostname === window.location.hostname) {
+                e.preventDefault();
+                const targetUrl = $(this).attr('href');
+
+                // 页面淡出动画
+                $('.content-wrapper').css({
+                    'opacity': '0',
+                    'transform': 'translateY(15px)'
+                });
+
+                // 延迟后跳转到新页面
+                setTimeout(function() {
+                    window.location.href = targetUrl;
+                }, 200);
+            }
+        });
+
+        // 监听页面滚动，处理动画显示
+        function checkAnimations() {
+            let windowBottom = $(window).scrollTop() + $(window).innerHeight();
+
+            $('.animate-block:not(.visible)').each(function() {
+                let $el = $(this);
+                let elTop = $el.offset().top;
+
+                // 当元素进入视口时显示
+                if (elTop < windowBottom - 100) {
+                    $el.addClass('visible');
+                }
+            });
+        }
+
+        // 初始检查
+        checkAnimations();
+
+        // 滚动时检查
+        $(window).on('scroll resize', checkAnimations);
+    });
+</script>
 </body>
 </html>
-
-
-<style>
-    .back-to-top {
-        position: fixed;
-        bottom: 10px;
-        right: 10px;
-    }
-</style>

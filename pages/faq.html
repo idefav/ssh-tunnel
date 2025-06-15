@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>常见问题 - SSH-Tunnel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">SSH-Tunnel</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="documentation.html">文档</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="installation.html">安装指南</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="faq.html">常见问题</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://github.com/idefav/ssh-tunnel" target="_blank">GitHub <i class="bi bi-github"></i></a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <header class="bg-primary text-white py-4">
+        <div class="container">
+            <h1>常见问题 (FAQ)</h1>
+            <p class="lead">了解关于SSH-Tunnel的常见问题和解决方案</p>
+        </div>
+    </header>
+
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="accordion" id="faqAccordion">
+                    <!-- 基本概念问题 -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingOne">
+                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
+                                SSH-Tunnel是什么以及它是如何工作的？
+                            </button>
+                        </h2>
+                        <div id="collapseOne" class="accordion-collapse collapse show" aria-labelledby="headingOne" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>SSH-Tunnel是一个基于SSH协议建立安全隧道并提供本地代理服务的工具。它的工作原理如下：</p>
+                                <ol>
+                                    <li>SSH-Tunnel通过SSH协议连接到远程服务器</li>
+                                    <li>在本地启动SOCKS5和/或HTTP代理服务器</li>
+                                    <li>当您的应用程序通过这些代理发送网络请求时，请求会通过SSH隧道安全地转发到远程服务器</li>
+                                    <li>远程服务器代表您发出请求，并将响应通过隧道返回给您</li>
+                                </ol>
+                                <p>这种方式提供了几个优势：</p>
+                                <ul>
+                                    <li>所有通信都通过SSH协议加密，确保安全性</li>
+                                    <li>您的网络流量看起来像是来自远程服务器，而不是您的本地设备</li>
+                                    <li>可以绕过某些网络限制或防火墙</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SOCKS5和HTTP代理的区别 -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingTwo">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
+                                SOCKS5代理和HTTP代理有什么区别？我应该使用哪一种？
+                            </button>
+                        </h2>
+                        <div id="collapseTwo" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <h5>SOCKS5代理：</h5>
+                                <ul>
+                                    <li>支持任何网络协议（TCP/UDP）</li>
+                                    <li>能够代理几乎所有类型的流量，包括HTTP、FTP、SMTP等</li>
+                                    <li>不理解或修改网络流量的内容</li>
+                                    <li>适用于各种应用程序，不仅限于网页浏览</li>
+                                </ul>
+
+                                <h5>HTTP代理：</h5>
+                                <ul>
+                                    <li>专门用于HTTP/HTTPS流量</li>
+                                    <li>理解HTTP协议，可以检查和修改HTTP请求/响应</li>
+                                    <li>可以进行内容缓存、过滤和修改</li>
+                                    <li>通常在Web浏览中速度更快</li>
+                                </ul>
+
+                                <h5>选择建议：</h5>
+                                <ul>
+                                    <li><strong>选择SOCKS5，如果：</strong> 您需要代理各种应用程序（不仅是浏览器）的流量，或需要代理非HTTP流量</li>
+                                    <li><strong>选择HTTP代理，如果：</strong> 您主要是Web浏览，或需要HTTP特定功能如内容过滤</li>
+                                    <li><strong>同时使用两者：</strong> SSH-Tunnel允许您同时启用两种代理，您可以根据不同应用的需求选择合适的代理</li>
+                                </ul>
+
+                                <div class="alert alert-info mt-3">
+                                    <i class="bi bi-info-circle-fill me-2"></i>
+                                    <strong>提示：</strong> 如果不确定，可以启用两种代理（SOCKS5在端口1081，HTTP在端口1082），并根据需要使用。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 安装和配置问题 -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingThree">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
+                                我无法连接到SSH服务器，该如何排查问题？
+                            </button>
+                        </h2>
+                        <div id="collapseThree" class="accordion-collapse collapse" aria-labelledby="headingThree" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>如果您在连接SSH服务器时遇到问题，请按照以下步骤排查：</p>
+                                <ol>
+                                    <li><strong>验证SSH服务器信息：</strong>
+                                        <ul>
+                                            <li>确认服务器IP地址正确</li>
+                                            <li>确认SSH端口正确（默认是22）</li>
+                                            <li>确认用户名正确</li>
+                                        </ul>
+                                    </li>
+                                    <li><strong>检查SSH密钥：</strong>
+                                        <ul>
+                                            <li>确认私钥文件路径正确</li>
+                                            <li>确认私钥文件权限正确（Linux/MacOS上应为600）</li>
+                                            <li>尝试使用常规ssh命令连接服务器以验证密钥是否有效：<code>ssh -i /path/to/private_key username@server_ip</code></li>
+                                        </ul>
+                                    </li>
+                                    <li><strong>检查网络连接：</strong>
+                                        <ul>
+                                            <li>确认您可以从当前网络访问SSH服务器（例如通过ping测试）</li>
+                                            <li>确认SSH端口没有被防火墙阻止</li>
+                                        </ul>
+                                    </li>
+                                    <li><strong>检查SSH服务器状态：</strong>
+                                        <ul>
+                                            <li>确认SSH服务在服务器上运行</li>
+                                            <li>查看服务器SSH日志寻找可能的错误</li>
+                                        </ul>
+                                    </li>
+                                    <li><strong>启用详细日志：</strong>
+                                        <ul>
+                                            <li>使用 <code>-admin.enable</code> 启动SSH-Tunnel并查看管理界面上的日志</li>
+                                        </ul>
+                                    </li>
+                                </ol>
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                    <strong>常见错误：</strong> 如果看到 "hostkey verification failed" 错误，可能是您的 known_hosts 文件有问题。尝试先使用普通SSH命令连接服务器接受密钥，或指定正确的 known_hosts 文件路径。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 性能和稳定性问题 -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingFour">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFour" aria-expanded="false" aria-controls="collapseFour">
+                                SSH-Tunnel连接断开或不稳定怎么办？
+                            </button>
+                        </h2>
+                        <div id="collapseFour" class="accordion-collapse collapse" aria-labelledby="headingFour" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>SSH-Tunnel已经内置了自动重连机制，但如果您仍然遇到连接不稳定的问题，可以尝试以下解决方案：</p>
+                                <ol>
+                                    <li><strong>调整重试间隔：</strong>
+                                        <p>使用 <code>-retry.interval.sec</code> 参数调整重连间隔时间（默认为3秒）：</p>
+                                        <pre class="bg-dark text-light p-2 rounded"><code>./ssh-tunnel -s your_server -retry.interval.sec 5</code></pre>
+                                    </li>
+                                    <li><strong>检查网络环境：</strong>
+                                        <ul>
+                                            <li>确认您的网络连接稳定</li>
+                                            <li>如果使用移动网络或公共WiFi，这些网络可能不稳定或有流量限制</li>
+                                        </ul>
+                                    </li>
+                                    <li><strong>配置SSH服务器保持连接：</strong>
+                                        <p>在服务器的 <code>/etc/ssh/sshd_config</code> 文件中添加或修改以下配置：</p>
+                                        <pre class="bg-dark text-light p-2 rounded"><code>TCPKeepAlive yes
+ClientAliveInterval 30
+ClientAliveCountMax 3</code></pre>
+                                        <p>修改后重启SSH服务：<code>sudo systemctl restart sshd</code></p>
+                                    </li>
+                                    <li><strong>使用服务模式运行：</strong>
+                                        <p>将SSH-Tunnel配置为系统服务（Windows服务或Linux/MacOS守护进程），这样在发生崩溃时系统会自动重启服务</p>
+                                    </li>
+                                    <li><strong>检查管理界面日志：</strong>
+                                        <p>启用管理界面并监控日志，查找可能导致断开的原因</p>
+                                    </li>
+                                </ol>
+                                <div class="alert alert-success">
+                                    <i class="bi bi-lightbulb-fill me-2"></i>
+                                    <strong>提示：</strong> 如果您在使用笔记本电脑，确保禁用系统的电源管理功能不会在非活动状态下关闭网络连接。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 域名过滤问题 -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingFive">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFive" aria-expanded="false" aria-controls="collapseFive">
+                                如何使用域名过滤功能？有什么用途？
+                            </button>
+                        </h2>
+                        <div id="collapseFive" class="accordion-collapse collapse" aria-labelledby="headingFive" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>域名过滤功能允许您指定哪些域名的请求通过SSH隧道转发，而其他域名则直接访问。这在以下场景中特别有用：</p>
+
+                                <h5>启用域名过滤：</h5>
+                                <ol>
+                                    <li>创建一个域名过滤文件（例如 <code>domain.txt</code>），每行一个域名模式：</li>
+                                    <pre class="bg-dark text-light p-2 rounded"><code>*.google.com
+*.github.com
+github.com
+*.stackoverflow.com</code></pre>
+                                    <li>启动SSH-Tunnel并启用域名过滤：</li>
+                                    <pre class="bg-dark text-light p-2 rounded"><code>./ssh-tunnel -s your_server -http.enable -http.filter.domain.enable -http.filter.domain.file-path /path/to/domain.txt</code></pre>
+                                </ol>
+
+                                <h5>域名过滤的用途：</h5>
+                                <ul>
+                                    <li><strong>选择性代理：</strong> 只将特定网站的流量通过SSH隧道，其他网站直接访问，提高整体浏览速度</li>
+                                    <li><strong>资源优化：</strong> 仅对需要代理的网站使用隧道，减少带宽使用</li>
+                                    <li><strong>特定需求访问：</strong> 只对地理限制或被屏蔽的网站使用代理</li>
+                                </ul>
+
+                                <h5>通过管理界面管理域名：</h5>
+                                <p>如果启用了管理界面，您可以在Web界面上动态添加、删除和修改域名列表，无需重启服务：</p>
+                                <ol>
+                                    <li>访问 <code>http://localhost:1083/view/index</code></li>
+                                    <li>点击导航栏中的"域名列表"</li>
+                                    <li>在界面上管理域名过滤规则</li>
+                                </ol>
+
+                                <div class="alert alert-info mt-3">
+                                    <i class="bi bi-info-circle-fill me-2"></i>
+                                    <strong>注意：</strong> 域名过滤仅适用于HTTP代理模式，不适用于SOCKS5代理。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 浏览器配置问题 -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingSix">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSix" aria-expanded="false" aria-controls="collapseSix">
+                                如何在浏览器中配置使用SSH-Tunnel代理？
+                            </button>
+                        </h2>
+                        <div id="collapseSix" class="accordion-collapse collapse" aria-labelledby="headingSix" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>您可以在各种浏览器中配置使用SSH-Tunnel提供的代理服务：</p>
+
+                                <h5>Google Chrome：</h5>
+                                <ol>
+                                    <li>打开设置 (Settings)</li>
+                                    <li>搜索"代理"或滚动到底部点击"高级"，然后找到"系统"部分下的"打开计算机代理设置"</li>
+                                    <li>在Windows上，这将打开系统代理设置</li>
+                                    <li>在macOS上，这将打开"网络"偏好设置的"代理"选项卡</li>
+                                </ol>
+
+                                <h5>Firefox：</h5>
+                                <ol>
+                                    <li>打开设置 (Options/Preferences)</li>
+                                    <li>滚动到底部，点击"网络设置"下的"设置"</li>
+                                    <li>选择"手动配置代理"</li>
+                                    <li>对于SOCKS代理：输入"127.0.0.1"作为SOCKS主机，"1081"作为端口，选择"SOCKS v5"</li>
+                                    <li>对于HTTP代理：输入"127.0.0.1"作为HTTP代理，"1082"作为端口</li>
+                                    <li>点击"确定"保存设置</li>
+                                </ol>
+
+                                <h5>Microsoft Edge：</h5>
+                                <ol>
+                                    <li>打开设置</li>
+                                    <li>搜索"代理"或导航到"系统和性能"</li>
+                                    <li>点击"打开计算机代理设置"</li>
+                                </ol>
+
+                                <h5>Safari：</h5>
+                                <ol>
+                                    <li>打开"系统偏好设置"</li>
+                                    <li>点击"网络"</li>
+                                    <li>选择当前连接，然后点击"高级"</li>
+                                    <li>选择"代理"选项卡</li>
+                                    <li>选择"SOCKS代理"并输入"127.0.0.1"和"1081"，或选择"Web代理"并输入"127.0.0.1"和"1082"</li>
+                                    <li>点击"好"，然后点击"应用"</li>
+                                </ol>
+
+                                <h5>使用代理切换扩展：</h5>
+                                <p>您也可以使用浏览器扩展来方便地切换代理设置：</p>
+                                <ul>
+                                    <li>Chrome/Edge：<a href="https://chrome.google.com/webstore/detail/proxy-switchyomega/padekgcemlokbadohgkifijomclgjgif" target="_blank">Proxy SwitchyOmega</a></li>
+                                    <li>Firefox：<a href="https://addons.mozilla.org/en-US/firefox/addon/foxyproxy-standard/" target="_blank">FoxyProxy</a></li>
+                                </ul>
+
+                                <div class="alert alert-success mt-3">
+                                    <i class="bi bi-check-circle-fill me-2"></i>
+                                    <strong>提示：</strong> 使用扩展可以更方便地在不同代理配置之间切换，甚至可以设置基于URL的自动代理规则。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 高级功能问题 -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingSeven">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSeven" aria-expanded="false" aria-controls="collapseSeven">
+                                如何同时使用多个SSH-Tunnel实例？
+                            </button>
+                        </h2>
+                        <div id="collapseSeven" class="accordion-collapse collapse" aria-labelledby="headingSeven" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>您可以运行多个SSH-Tunnel实例，连接到不同的服务器或使用不同的配置。这在以下情况下特别有用：</p>
+                                <ul>
+                                    <li>连接到不同地区的服务器以获取不同的IP地址</li>
+                                    <li>为不同的应用程序使用不同的代理配置</li>
+                                    <li>测试不同的代理设置</li>
+                                </ul>
+
+                                <h5>运行多个实例的步骤：</h5>
+                                <ol>
+                                    <li>为每个实例指定不同的端口：</li>
+                                    <pre class="bg-dark text-light p-2 rounded"><code># 实例1
+./ssh-tunnel -s server1 -l 0.0.0.0:1081 -http.local.addr 0.0.0.0:1082 -admin.addr :1083
+
+# 实例2
+./ssh-tunnel -s server2 -l 0.0.0.0:2081 -http.local.addr 0.0.0.0:2082 -admin.addr :2083</code></pre>
+
+                                    <li>如果配置为系统服务，为每个实例创建不同的服务配置文件</li>
+                                </ol>
+
+                                <h5>针对Windows服务：</h5>
+                                <p>对于Windows服务，您需要：</p>
+                                <ol>
+                                    <li>在不同目录中安装不同的服务实例：</li>
+                                    <pre class="bg-dark text-light p-2 rounded"><code># 在C:\ssh-tunnel1目录安装第一个服务
+C:\ssh-tunnel1\ssh-tunnel-winsvc.exe install
+
+# 在C:\ssh-tunnel2目录安装第二个服务
+C:\ssh-tunnel2\ssh-tunnel-winsvc.exe install --name "SSHTunnelService2"</code></pre>
+                                    <li>为每个实例创建不同的配置文件（.ssh-tunnel/config.properties）</li>
+                                </ol>
+
+                                <h5>针对MacOS LaunchAgents：</h5>
+                                <p>对于MacOS，创建多个不同名称的plist文件：</p>
+                                <pre class="bg-dark text-light p-2 rounded"><code># 第一个实例
+/Library/LaunchAgents/com.idefav.macos.ssh-tunnel1.plist
+
+# 第二个实例
+/Library/LaunchAgents/com.idefav.macos.ssh-tunnel2.plist</code></pre>
+
+                                <div class="alert alert-warning mt-3">
+                                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                    <strong>注意：</strong> 运行多个实例时，确保端口不冲突，每个实例使用不同的端口。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 其他常见问题 -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingEight">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEight" aria-expanded="false" aria-controls="collapseEight">
+                                我可以将SSH-Tunnel与其他工具或服务集成吗？
+                            </button>
+                        </h2>
+                        <div id="collapseEight" class="accordion-collapse collapse" aria-labelledby="headingEight" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>是的，SSH-Tunnel可以与许多其他工具和服务集成：</p>
+
+                                <h5>网络应用集成：</h5>
+                                <ul>
+                                    <li><strong>浏览器：</strong> 所有支持代理的浏览器都可以使用SSH-Tunnel</li>
+                                    <li><strong>电子邮件客户端：</strong> Outlook, Thunderbird等可以配置使用代理</li>
+                                    <li><strong>即时通讯工具：</strong> 许多IM客户端支持代理设置</li>
+                                    <li><strong>FTP客户端：</strong> 通过SOCKS5代理进行文件传输</li>
+                                </ul>
+
+                                <h5>系统级集成：</h5>
+                                <ul>
+                                    <li><strong>系统代理：</strong> 配置操作系统全局代理，使所有应用程序使用SSH-Tunnel</li>
+                                    <li><strong>VPN分流：</strong> 与VPN结合使用，实现特定流量的分流</li>
+                                </ul>
+
+                                <h5>开发工具集成：</h5>
+                                <ul>
+                                    <li><strong>Git：</strong> 配置Git使用代理进行代码拉取和推送</li>
+                                    <li><strong>命令行工具：</strong> 为curl, wget等设置代理环境变量</li>
+                                    <li><strong>包管理器：</strong> 为npm, pip等配置代理</li>
+                                </ul>
+
+                                <h5>集成示例：</h5>
+                                <p><strong>配置Git使用SSH-Tunnel：</strong></p>
+                                <pre class="bg-dark text-light p-2 rounded"><code># 使用HTTP代理
+git config --global http.proxy http://127.0.0.1:1082
+
+# 使用SOCKS5代理
+git config --global http.proxy socks5://127.0.0.1:1081</code></pre>
+
+                                <p><strong>设置Linux/MacOS命令行代理环境变量：</strong></p>
+                                <pre class="bg-dark text-light p-2 rounded"><code># HTTP代理
+export http_proxy=http://127.0.0.1:1082
+export https_proxy=http://127.0.0.1:1082
+
+# SOCKS5代理
+export ALL_PROXY=socks5://127.0.0.1:1081</code></pre>
+
+                                <p><strong>Windows命令行代理：</strong></p>
+                                <pre class="bg-dark text-light p-2 rounded"><code>set http_proxy=http://127.0.0.1:1082
+set https_proxy=http://127.0.0.1:1082</code></pre>
+
+                                <div class="alert alert-info mt-3">
+                                    <i class="bi bi-lightbulb-fill me-2"></i>
+                                    <strong>提示：</strong> 对于需要同时连接内外网的场景，建议使用域名过滤功能，只对特定域名使用代理。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-5">
+                    <h3>还有其他问题？</h3>
+                    <p>如果您有其他问题或遇到未在此页面列出的问题，您可以：</p>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h5 class="card-title"><i class="bi bi-github me-2"></i>在GitHub上提问</h5>
+                                    <p class="card-text">在项目的GitHub仓库创建一个Issue，详细描述您的问题。</p>
+                                    <a href="https://github.com/idefav/ssh-tunnel/issues" class="btn btn-primary" target="_blank">提交Issue</a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h5 class="card-title"><i class="bi bi-book me-2"></i>查阅文档</h5>
+                                    <p class="card-text">查看详细的项目文档以获取更多信息和高级用法。</p>
+                                    <a href="documentation.html" class="btn btn-primary">查看文档</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>SSH-Tunnel</h5>
+                    <p>一个简单而强大的SSH隧道代理工具</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <ul class="list-inline mb-0">
+                        <li class="list-inline-item">
+                            <a href="https://github.com/idefav/ssh-tunnel" class="text-white" target="_blank">
+                                <i class="bi bi-github fs-4"></i>
+                            </a>
+                        </li>
+                    </ul>
+                    <p class="mt-2">
+                        <a href="https://github.com/idefav/ssh-tunnel/blob/master/LICENSE" class="text-white text-decoration-none">
+                            Apache License 2.0
+                        </a>
+                    </p>
+                </div>
+            </div>
+            <hr class="my-3">
+            <div class="text-center">
+                <small>&copy; 2025 SSH-Tunnel. All rights reserved.</small>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>

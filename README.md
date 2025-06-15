@@ -143,7 +143,7 @@ launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 ### 1. 在C盘跟目录参加 `ssh-tunnel`
 在该目录下参加 `.ssh-tunnel` 目录， 并写入 `config.properties`
 ```text
-server.ip=47.56.255.129
+server.ip=xx.xx.xx.xx
 server.ssh.port=22
 server.ssh.private_key_path=C:\\Users\\idefav\\.ssh\\id_rsa
 server.ssh.known_hosts_path=C:\\Users\\idefav\\.ssh\\known_hosts

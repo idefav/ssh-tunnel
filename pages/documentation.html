@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档 - SSH-Tunnel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">SSH-Tunnel</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="documentation.html">文档</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="installation.html">安装指南</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="faq.html">常见问题</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://github.com/idefav/ssh-tunnel" target="_blank">GitHub <i class="bi bi-github"></i></a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <header class="bg-primary text-white py-4">
+        <div class="container">
+            <h1>SSH-Tunnel 文档</h1>
+            <p class="lead">详细了解如何使用和配置SSH-Tunnel</p>
+        </div>
+    </header>
+
+    <div class="container py-5">
+        <div class="row">
+            <div class="col-lg-3">
+                <div class="doc-nav">
+                    <div class="list-group">
+                        <a href="#introduction" class="list-group-item list-group-item-action">简介</a>
+                        <a href="#quick-start" class="list-group-item list-group-item-action">快速开始</a>
+                        <a href="#command-options" class="list-group-item list-group-item-action">命令选项</a>
+                        <a href="#proxy-modes" class="list-group-item list-group-item-action">代理模式</a>
+                        <a href="#admin-ui" class="list-group-item list-group-item-action">管理界面</a>
+                        <a href="#domain-filtering" class="list-group-item list-group-item-action">域名过滤</a>
+                        <a href="#service-configuration" class="list-group-item list-group-item-action">服务配置</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-9">
+                <div id="introduction" class="doc-section">
+                    <h2>简介</h2>
+                    <p>SSH-Tunnel 是一个基于SSH协议的隧道代理工具，可以在本地建立SOCKS5和HTTP代理，通过SSH隧道将流量安全地转发到远程服务器。这对于以下场景特别有用：</p>
+                    <ul>
+                        <li>安全地浏览网络，防止本地网络监控</li>
+                        <li>访问受地理位置限制的内容</li>
+                        <li>绕过网络防火墙限制</li>
+                        <li>保护网络通信安全</li>
+                    </ul>
+                </div>
+
+                <div id="quick-start" class="doc-section">
+                    <h2>快速开始</h2>
+                    <p>最简单的使用方式是通过以下命令启动SSH隧道：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx</code></pre>
+                    <p>其中 <code>xx.xx.xx.xx</code> 是您的SSH服务器地址。这将使用默认设置：</p>
+                    <ul>
+                        <li>本地SOCKS5代理端口：1081</li>
+                        <li>SSH服务器端口：22</li>
+                        <li>使用 <code>~/.ssh/id_rsa</code> 作为私钥</li>
+                        <li>用户名：root</li>
+                    </ul>
+                </div>
+
+                <div id="command-options" class="doc-section">
+                    <h2>命令选项</h2>
+                    <p>SSH-Tunnel 提供了丰富的命令行选项，以便根据您的需求进行自定义配置：</p>
+                    <div class="table-responsive">
+                        <table class="table table-striped command-table">
+                            <thead>
+                                <tr>
+                                    <th>选项</th>
+                                    <th>描述</th>
+                                    <th>默认值</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>-s</code>, <code>-server.ip</code></td>
+                                    <td>服务器IP地址</td>
+                                    <td>无（必填）</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-p</code>, <code>-server.ssh.port</code></td>
+                                    <td>服务器SSH端口</td>
+                                    <td>22</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-u</code>, <code>-user</code></td>
+                                    <td>用户名</td>
+                                    <td>root</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-l</code>, <code>-local.addr</code></td>
+                                    <td>本地SOCKS5代理地址</td>
+                                    <td>0.0.0.0:1081</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-pk</code>, <code>-ssh.path.private_key</code></td>
+                                    <td>私钥地址</td>
+                                    <td>~/.ssh/id_rsa</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-pkh</code>, <code>-ssh.path.known_hosts</code></td>
+                                    <td>已知主机地址</td>
+                                    <td>~/.ssh/known_hosts</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-socks5.enable</code></td>
+                                    <td>是否开启Socks5代理</td>
+                                    <td>true</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-http.enable</code></td>
+                                    <td>是否开启Http代理</td>
+                                    <td>false</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-http.local.addr</code></td>
+                                    <td>Http监听地址</td>
+                                    <td>0.0.0.0:1082</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-http.over.ssh.enable</code></td>
+                                    <td>是否开启Http Over SSH</td>
+                                    <td>false</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-http.filter.domain.enable</code></td>
+                                    <td>是否启用Http域名过滤</td>
+                                    <td>false</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-http.filter.domain.file-path</code></td>
+                                    <td>过滤http请求的域名文件</td>
+                                    <td>~/.ssh-tunnel/domain.txt</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-http.basic.enable</code></td>
+                                    <td>是否开启Http的Basic认证</td>
+                                    <td>false</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-http.basic.username</code></td>
+                                    <td>Basic认证用户名</td>
+                                    <td>无</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-http.basic.password</code></td>
+                                    <td>Http Basic认证密码</td>
+                                    <td>无</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-admin.enable</code></td>
+                                    <td>是否启用Admin页面</td>
+                                    <td>false</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-admin.addr</code></td>
+                                    <td>Admin监听地址</td>
+                                    <td>:1083</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-retry.interval.sec</code></td>
+                                    <td>重试间隔时间(秒)</td>
+                                    <td>3</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="proxy-modes" class="doc-section">
+                    <h2>代理模式</h2>
+                    <p>SSH-Tunnel 支持多种代理模式，可以根据您的需求进行配置：</p>
+
+                    <h3>SOCKS5 代理</h3>
+                    <p>默认情况下，SSH-Tunnel 会在本地 1081 端口启动 SOCKS5 代理。可以通过以下参数进行配置：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -socks5.enable -l 0.0.0.0:1081</code></pre>
+
+                    <h3>HTTP 代理</h3>
+                    <p>SSH-Tunnel 还支持 HTTP 代理模式，默认在本地 1082 端口，需要显式启用：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -http.enable -http.local.addr 0.0.0.0:1082</code></pre>
+
+                    <h3>HTTP Basic 认证</h3>
+                    <p>您可以为 HTTP 代理启用基本认证，提高安全性：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -http.enable -http.basic.enable -http.basic.username admin -http.basic.password password</code></pre>
+
+                    <h3>HTTP Over SSH</h3>
+                    <p>启用 HTTP Over SSH 功能，可以将 HTTP 请求通过 SSH 隧道转发：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -http.enable -http.over.ssh.enable</code></pre>
+                </div>
+
+                <div id="admin-ui" class="doc-section">
+                    <h2>管理界面</h2>
+                    <p>SSH-Tunnel 提供了一个内置的管理界面，方便您监控连接状态、查看日志和配置信息：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -admin.enable -admin.addr :1083</code></pre>
+                    <p>启用后，您可以通过浏览器访问 <code>http://localhost:1083/view/index</code> 来打开管理界面。</p>
+
+                    <p>管理界面包含以下功能：</p>
+                    <ul>
+                        <li><strong>SSH 状态</strong>：显示 SSH 连接的状态和相关信息</li>
+                        <li><strong>日志</strong>：查看应用运行日志</li>
+                        <li><strong>域名列表</strong>：查看和编辑域名过滤列表</li>
+                        <li><strong>应用配置</strong>：查看当前应用配置信息</li>
+                    </ul>
+
+                    <div class="mt-4 mb-4">
+                        <img src="https://user-images.githubusercontent.com/6405415/206909223-b47372db-5356-4cbf-8c11-8929d6227896.png" alt="管理界面预览" class="img-fluid rounded shadow">
+                        <p class="text-center mt-2 text-muted">管理界面预览</p>
+                    </div>
+                </div>
+
+                <div id="domain-filtering" class="doc-section">
+                    <h2>域名过滤</h2>
+                    <p>SSH-Tunnel 支持 HTTP 请求的域名过滤功能，可以根据域名决定是否通过 SSH 隧道转发请求：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -http.enable -http.filter.domain.enable -http.filter.domain.file-path /path/to/domain.txt</code></pre>
+
+                    <p>域名过滤文件 <code>domain.txt</code> 的格式示例：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>*.google.com
+*.github.com
+github.com
+*.stackoverflow.com
+stackoverflow.com</code></pre>
+                    <p>当启用域名过滤时，只有匹配这些域名的 HTTP 请求会通过 SSH 隧道转发。您可以通过管理界面动态管理这些域名。</p>
+                </div>
+
+                <div id="service-configuration" class="doc-section">
+                    <h2>服务配置</h2>
+                    <p>SSH-Tunnel 支持配置为系统服务，以实现开机自启动。</p>
+
+                    <h3>MacOS 开机自启动配置</h3>
+                    <p>在 MacOS 上，您可以将 SSH-Tunnel 配置为 LaunchAgent 以实现开机自启动：</p>
+                    <ol>
+                        <li>将 ssh-tunnel 可执行文件放到 <code>/usr/local/bin</code> 目录下</li>
+                        <li>创建 <code>com.idefav.macos.ssh-tunnel.plist</code> 文件，内容类似如下：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;plist version="1.0"&gt;
+  &lt;dict&gt;
+    &lt;key&gt;Label&lt;/key&gt;
+    &lt;string&gt;com.idefav.macos.ssh-tunnel&lt;/string&gt;
+    &lt;key&gt;Disabled&lt;/key&gt;
+    &lt;false/&gt;
+    &lt;key&gt;KeepAlive&lt;/key&gt;
+    &lt;true/&gt;
+    &lt;key&gt;ProcessType&lt;/key&gt;
+    &lt;string&gt;Background&lt;/string&gt;
+    &lt;key&gt;ProgramArguments&lt;/key&gt;
+    &lt;array&gt;
+      &lt;string&gt;/usr/local/bin/ssh-tunnel&lt;/string&gt;
+      &lt;string&gt;-s&lt;/string&gt;
+      &lt;string&gt;xx.xx.xx.xx&lt;/string&gt;
+      &lt;string&gt;-server.ssh.port&lt;/string&gt;
+      &lt;string&gt;10022&lt;/string&gt;
+      &lt;string&gt;-l&lt;/string&gt;
+      &lt;string&gt;0.0.0.0:1081&lt;/string&gt;
+      &lt;string&gt;-socks5.enable=false&lt;/string&gt;
+      &lt;string&gt;-http.enable&lt;/string&gt;
+      &lt;string&gt;-http.over.ssh.enable&lt;/string&gt;
+      &lt;string&gt;-http.filter.domain.enable&lt;/string&gt;
+    &lt;/array&gt;
+    &lt;key&gt;UserName&lt;/key&gt;
+    &lt;string&gt;root&lt;/string&gt;
+    &lt;key&gt;GroupName&lt;/key&gt;
+    &lt;string&gt;wheel&lt;/string&gt;
+  &lt;/dict&gt;
+&lt;/plist&gt;</code></pre>
+                    <ol start="3">
+                        <li>将该文件放到 <code>/Library/LaunchAgents</code> 目录下</li>
+                        <li>设置文件权限和加载服务：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo chown -R root /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist</code></pre>
+
+                    <h3>Windows 服务配置</h3>
+                    <p>在 Windows 上，SSH-Tunnel 提供了服务安装功能：</p>
+                    <ol>
+                        <li>在 C 盘根目录创建 <code>ssh-tunnel</code> 目录</li>
+                        <li>在该目录下创建 <code>.ssh-tunnel</code> 目录，并创建 <code>config.properties</code> 文件：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>server.ip=xx.xx.xx.xx
+server.ssh.port=22
+server.ssh.private_key_path=C:\\Users\\username\\.ssh\\id_rsa
+server.ssh.known_hosts_path=C:\\Users\\username\\.ssh\\known_hosts
+login.username=root
+local.address=0.0.0.0:1081
+http.local.address=0.0.0.0:1082
+http.enable=true
+socks5.enable=true
+http.over-ssh.enable=true
+http.domain-filter.enable=true
+http.filter.domain.file-path=C:\\Users\\username\\Documents\\ssh-tunnel\\domain.txt
+admin.enable=true
+admin.address=:1083</code></pre>
+                    <ol start="3">
+                        <li>安装 Windows 服务：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>.\ssh-tunnel-winsvc.exe install</code></pre>
+                    <p>然后可以在服务管理器中找到并启动 <code>SSHTunnelService</code>。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>SSH-Tunnel</h5>
+                    <p>一个简单而强大的SSH隧道代理工具</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <ul class="list-inline mb-0">
+                        <li class="list-inline-item">
+                            <a href="https://github.com/idefav/ssh-tunnel" class="text-white" target="_blank">
+                                <i class="bi bi-github fs-4"></i>
+                            </a>
+                        </li>
+                    </ul>
+                    <p class="mt-2">
+                        <a href="https://github.com/idefav/ssh-tunnel/blob/master/LICENSE" class="text-white text-decoration-none">
+                            Apache License 2.0
+                        </a>
+                    </p>
+                </div>
+            </div>
+            <hr class="my-3">
+            <div class="text-center">
+                <small>&copy; 2025 SSH-Tunnel. All rights reserved.</small>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/user"
@@ -11,6 +12,7 @@ import (
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/tunnel"
+	"strings"
 	"sync"
 )
 
@@ -55,6 +57,36 @@ func main() {
 	log.Printf("%v", os.Args)
 
 	flag.Parse()
+
+	u, err = user.Current()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	userHomeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	config.HomeDir = u.HomeDir
+	if strings.Contains(u.HomeDir, "system32") {
+		config.HomeDir = "C:\\ssh-tunnel"
+		os.MkdirAll(config.HomeDir, 0755)
+	}
+	userHomeDir = config.HomeDir
+	config.LogFilePath = path.Join(userHomeDir, ".ssh-tunnel", "console.log")
+
+	logFile, err := os.OpenFile(config.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		fmt.Println("open log file failed, err:", err)
+		return
+	}
+
+	// 替换原来的log.SetOutput(logFile)为：
+	mw := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(mw)
+	log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
+
 	var wg sync.WaitGroup
 	tunnel.Load(&config, &wg)
 	admin.Load(&config, &wg)

@@ -1,62 +1,281 @@
 {{define "content"}}
-    <div class="jumbotron">
+    <div class="jumbotron bg-light py-5 mb-4">
         <div class="container">
-            <h1>Hello, Any One.</h1>
-            <p>An SSH-based proxy tool</p>
-            <h3>Usage: </h3>
-            <pre>
-            Usage of ./ssh-tunnel:
-                  -admin.addr string
-                        Admin监听地址 (default ":1083")
-                  -admin.enable
-                        是否启用Admin页面
-                  -http.basic.enable
-                        是否开启Http的Basic认证
-                  -http.basic.password string
-                        Http Basic认证, 密码
-                  -http.basic.username string
-                        Basic认证, 用户名
-                  -http.enable
-                        是否开启Http代理
-                  -http.filter.domain.enable
-                        是否启用Http域名过滤
-                  -http.filter.domain.file-path string
-                        过滤http请求 (default "C:\\Users\\idefav/.ssh-tunnel/domain.txt")
-                  -http.local.addr string
-                        Http监听地址 (default "0.0.0.0:1082")
-                  -http.over.ssh.enable
-                        是否开启Http Over SSH
-                  -l string
-                        本地地址(短命令) (default "0.0.0.0:1081")
-                  -local.addr string
-                        本地地址 (default "0.0.0.0:1081")
-                  -p int
-                        服务器SSH端口(短命令) (default 22)
-                  -pk string
-                        私钥地址(短命令) (default "C:\\Users\\idefav/.ssh/id_rsa")
-                  -pkh string
-                        已知主机地址(短命令) (default "C:\\Users\\idefav/.ssh/known_hosts")
-                  -retry.interval.sec int
-                        重试间隔时间(秒) (default 3)
-                  -s string
-                        服务器IP地址(短命令)
-                  -server.ip string
-                        服务器IP地址
-                  -server.ssh.port int
-                        服务器SSH端口 (default 22)
-                  -socks5.enable
-                        是否开启Socks5代理 (default true)
-                  -ssh.path.known_hosts string
-                        已知主机地址 (default "C:\\Users\\idefav/.ssh/known_hosts")
-                  -ssh.path.private_key string
-                        私钥地址 (default "C:\\Users\\idefav/.ssh/id_rsa")
-                  -u string
-                        用户名(短命令) (default "root")
-                  -user string
-                        用户名 (default "root")
+            <h1 class="display-4">SSH-Tunnel</h1>
+            <p class="lead">一个基于SSH的高效代理工具，帮助您安全地穿越网络障碍</p>
+            <hr class="my-4">
+            <p>通过SSH隧道技术，实现Socks5和HTTP代理，保障您的网络连接安全与稳定</p>
+            <div class="mt-3">
+                <a href="https://lbesson.mit-license.org/"><img src="https://img.shields.io/badge/License-Apache-blue.svg" alt="Apache license"></a>
+                <a href="https://github.com/idefav/ssh-tunnel/actions/workflows/release.yml"><img src="https://github.com/idefav/ssh-tunnel/actions/workflows/release.yml/badge.svg" alt="Build Release"></a>
+                <a href="https://github.com/idefav/ssh-tunnel/releases/"><img src="https://img.shields.io/github/release/idefav/ssh-tunnel.svg" alt="GitHub release"></a>
+                <a href="https://GitHub.com/idefav/ssh-tunnel/commit/"><img src="https://badgen.net/github/commits/idefav/ssh-tunnel" alt="GitHub commits"></a>
+                <a href="https://GitHub.com/idefav/ssh-tunnel/commit/"><img src="https://badgen.net/github/last-commit/idefav/ssh-tunnel" alt="GitHub latest commit"></a>
+                <a href="https://GitHub.com/idefav/ssh-tunnel/network/"><img src="https://badgen.net/github/forks/idefav/ssh-tunnel/" alt="GitHub forks"></a>
+                <a href="https://GitHub.com/idefav/ssh-tunnel/stargazers/"><img src="https://badgen.net/github/stars/idefav/ssh-tunnel" alt="GitHub stars"></a>
+                <a href="https://GitHub.com/idefav/ssh-tunnel/watchers/"><img src="https://badgen.net/github/watchers/idefav/ssh-tunnel/" alt="GitHub watchers"></a>
+                <a href="https://GitHub.com/idefav/ssh-tunnel/graphs/contributors/"><img src="https://img.shields.io/github/contributors/idefav/ssh-tunnel.svg" alt="GitHub contributors"></a>
+            </div>
+            <div class="mt-4">
+                <a class="btn btn-primary btn-lg" href="#features" role="button">了解功能</a>
+                <a class="btn btn-outline-secondary btn-lg ms-2" href="#quick-start" role="button">快速开始</a>
+                <a class="btn btn-dark btn-lg ms-2" href="https://github.com/idefav/ssh-tunnel" target="_blank" role="button"><i class="bi bi-github"></i> GitHub</a>
+            </div>
+        </div>
+    </div>
 
+    <div class="container mb-5">
+        <div class="row mb-5" id="features">
+            <div class="col-12">
+                <h2 class="mb-4 border-bottom pb-2">主要功能</h2>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-shield-lock"></i> 安全连接</h5>
+                        <p class="card-text">基于SSH协议的安全隧道，确保数据传输加密，保护您的网络隐私。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-gear"></i> 多种代理模式</h5>
+                        <p class="card-text">同时支持Socks5和HTTP代理，满足不同应用场景的需求。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-filter-square"></i> 域名过滤</h5>
+                        <p class="card-text">支持HTTP域名过滤功能，灵活控制代理流量。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-arrow-repeat"></i> 自动重连</h5>
+                        <p class="card-text">连接中断时自动重试，确保服务稳定运行。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-lock"></i> 认证保护</h5>
+                        <p class="card-text">支持HTTP Basic认证，增强代理服务安全性。</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-window"></i> 管理界面</h5>
+                        <p class="card-text">提供Web管理界面，方便监控和配置。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-            </pre>
+        <div class="row mb-5" id="quick-start">
+            <div class="col-12">
+                <h2 class="mb-4 border-bottom pb-2">快速开始</h2>
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">基本使用方法</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>最简单的启动方式（使用默认配置）：</p>
+                        <div class="bg-dark text-light p-3 rounded">
+                            <code>./ssh-tunnel -s your-ssh-server-ip -u your-username</code>
+                        </div>
+                        <p class="mt-3">这将启动一个默认配置的SSH隧道，并在本地开启Socks5代理（端口1081）和HTTP代理（端口1082）。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row" id="configuration">
+            <div class="col-12">
+                <h2 class="mb-4 border-bottom pb-2">配置参数说明</h2>
+                <div class="card mb-4">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">命令行参数详解</h5>
+                    </div>
+                    <div class="card-body">
+                        <pre class="bg-light p-3 rounded">
+Usage of ./ssh-tunnel:
+      -admin.addr string
+            Admin监听地址 (default ":1083")
+      -admin.enable
+            是否启用Admin页面
+      -http.basic.enable
+            是否开启Http的Basic认证
+      -http.basic.password string
+            Http Basic认证, 密码
+      -http.basic.username string
+            Basic认证, 用户名
+      -http.enable
+            是否开启Http代理
+      -http.filter.domain.enable
+            是否启用Http域名过滤
+      -http.filter.domain.file-path string
+            过滤http请求 (default "C:\\Users\\idefav/.ssh-tunnel/domain.txt")
+      -http.local.addr string
+            Http监听地址 (default "0.0.0.0:1082")
+      -http.over.ssh.enable
+            是否开启Http Over SSH
+      -l string
+            本地地址(短命令) (default "0.0.0.0:1081")
+      -local.addr string
+            本地地址 (default "0.0.0.0:1081")
+      -p int
+            服务器SSH端口(短命令) (default 22)
+      -pk string
+            私钥地址(短命令) (default "C:\\Users\\idefav/.ssh/id_rsa")
+      -pkh string
+            已知主机地址(短命令) (default "C:\\Users\\idefav/.ssh/known_hosts")
+      -retry.interval.sec int
+            重试间隔时间(秒) (default 3)
+      -s string
+            服务器IP地址(短命令)
+      -server.ip string
+            服务器IP地址
+      -server.ssh.port int
+            服务器SSH端口 (default 22)
+      -socks5.enable
+            是否开启Socks5代理 (default true)
+      -ssh.path.known_hosts string
+            已知主机地址 (default "C:\\Users\\idefav/.ssh/known_hosts")
+      -ssh.path.private_key string
+            私钥地址 (default "C:\\Users\\idefav/.ssh/id_rsa")
+      -u string
+            用户名(短命令) (default "root")
+      -user string
+            用户名 (default "root")
+                        </pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-5">
+            <div class="col-12">
+                <h2 class="mb-4 border-bottom pb-2">常见使用场景</h2>
+                <div class="accordion" id="scenariosAccordion">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="scenario1">
+                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
+                                场景一：仅启用Socks5代理
+                            </button>
+                        </h2>
+                        <div id="collapseOne" class="accordion-collapse collapse show" aria-labelledby="scenario1" data-bs-parent="#scenariosAccordion">
+                            <div class="accordion-body">
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -http.enable=false</code>
+                                <p class="mt-2">这将只启动Socks5代理服务（默认端口1081），不启动HTTP代理。适用于需要通过Socks5协议进行安全代理的应用，如浏览器、SSH客户端等。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="scenario2">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
+                                场景二：带认证的HTTP代理
+                            </button>
+                        </h2>
+                        <div id="collapseTwo" class="accordion-collapse collapse" aria-labelledby="scenario2" data-bs-parent="#scenariosAccordion">
+                            <div class="accordion-body">
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -http.basic.enable -http.basic.username myuser -http.basic.password mypass</code>
+                                <p class="mt-2">启用HTTP代理并配置Basic认证，要求客户端提供用户名和密码。此设置适合在多用户环境中使用，可以防止未授权用户使用您的代理服务。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="scenario3">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
+                                场景三：启用管理界面
+                            </button>
+                        </h2>
+                        <div id="collapseThree" class="accordion-collapse collapse" aria-labelledby="scenario3" data-bs-parent="#scenariosAccordion">
+                            <div class="accordion-body">
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -admin.enable</code>
+                                <p class="mt-2">除了常规代理功能外，还启用管理界面（默认端口1083），可通过浏览器访问 http://localhost:1083 进行管理。通过管理界面，您可以查看连接状态、修改配置和监控代理活动。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="scenario4">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFour" aria-expanded="false" aria-controls="collapseFour">
+                                场景四：HTTP域名过滤
+                            </button>
+                        </h2>
+                        <div id="collapseFour" class="accordion-collapse collapse" aria-labelledby="scenario4" data-bs-parent="#scenariosAccordion">
+                            <div class="accordion-body">
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -http.filter.domain.enable -http.filter.domain.file-path /path/to/domain.txt</code>
+                                <p class="mt-2">启用HTTP域名过滤功能，只有匹配domain.txt文件中的域名才会通过SSH隧道代理，其他请求将直接连接。这对于只需要代理访问特定网站的场景非常有用，可以提高整体浏览速度。</p>
+                                <p>domain.txt文件示例内容：</p>
+                                <pre class="bg-light p-2 rounded">
+github.com
+*.github.io
+githubusercontent.com</pre>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="scenario5">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFive" aria-expanded="false" aria-controls="collapseFive">
+                                场景五：HTTP Over SSH模式
+                            </button>
+                        </h2>
+                        <div id="collapseFive" class="accordion-collapse collapse" aria-labelledby="scenario5" data-bs-parent="#scenariosAccordion">
+                            <div class="accordion-body">
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -http.over.ssh.enable</code>
+                                <p class="mt-2">启用HTTP Over SSH模式，所有HTTP代理请求都将通过SSH隧道传输，提供更高的安全性。此模式适合需要加密所有HTTP代理流量的场景，如在公共WiFi环境下使用。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="scenario6">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSix" aria-expanded="false" aria-controls="collapseSix">
+                                场景六：自定义监听地址和端口
+                            </button>
+                        </h2>
+                        <div id="collapseSix" class="accordion-collapse collapse" aria-labelledby="scenario6" data-bs-parent="#scenariosAccordion">
+                            <div class="accordion-body">
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -local.addr 127.0.0.1:8888 -http.local.addr 127.0.0.1:8889</code>
+                                <p class="mt-2">自定义Socks5代理和HTTP代理的监听地址和端口。这在已有其他服务占用默认端口或需要限制代理服务只在本地回环地址可用的情况下非常有用。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="scenario7">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSeven" aria-expanded="false" aria-controls="collapseSeven">
+                                场景七：自定义重连间隔
+                            </button>
+                        </h2>
+                        <div id="collapseSeven" class="accordion-collapse collapse" aria-labelledby="scenario7" data-bs-parent="#scenariosAccordion">
+                            <div class="accordion-body">
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -retry.interval.sec 10</code>
+                                <p class="mt-2">设置SSH连接断开后的重试间隔时间（秒）。在网络不稳定的环境下，可以调整这个参数来优化重连策略，提高服务的可用性。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="scenario8">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEight" aria-expanded="false" aria-controls="collapseEight">
+                                场景八：非标准SSH端口
+                            </button>
+                        </h2>
+                        <div id="collapseEight" class="accordion-collapse collapse" aria-labelledby="scenario8" data-bs-parent="#scenariosAccordion">
+                            <div class="accordion-body">
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -p 2222</code>
+                                <p class="mt-2">连接到使用非标准端口的SSH服务器。许多服务器管理员会将SSH服务配置在非22端口以提高安全性，此命令可以适应这种情况。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 {{end}}

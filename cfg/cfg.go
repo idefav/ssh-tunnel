@@ -20,4 +20,5 @@ type AppConfig struct {
 	EnableAdmin              bool
 	AdminAddress             string
 	RetryIntervalSec         int
+	LogFilePath              string
 }
