@@ -2,17 +2,17 @@
 
 /* 表格行动画 */
 .table tr {
-    transition: all 0.3s ease;
+    transition: all 0.2s ease-out;
 }
 
 .table tr:hover {
     background-color: rgba(0, 123, 255, 0.05);
-    transform: scale(1.01);
+    transform: scale(1.005);
 }
 
 /* 按钮动画 */
 .btn {
-    transition: all 0.3s ease;
+    transition: all 0.2s ease-out;
     position: relative;
     overflow: hidden;
 }
@@ -42,7 +42,7 @@
 }
 
 .btn:focus:not(:active)::after {
-    animation: ripple 1s ease-out;
+    animation: ripple 0.8s ease-out;
 }
 
 @keyframes ripple {
@@ -58,7 +58,7 @@
 
 /* 表单输入动画 */
 .form-control {
-    transition: all 0.3s ease;
+    transition: all 0.2s ease-out;
     border-left: 3px solid transparent;
 }
 
@@ -70,7 +70,7 @@
 
 /* 列表项动画 */
 .list-group-item {
-    transition: all 0.3s ease;
+    transition: all 0.2s ease-out;
 }
 
 .list-group-item:hover {
@@ -80,7 +80,7 @@
 
 /* 卡片标题动画 */
 .card-header {
-    transition: all 0.3s ease;
+    transition: all 0.2s ease-out;
 }
 
 .card:hover .card-header {
@@ -90,33 +90,44 @@
 
 /* 页面切换动画 - 不同页面的特殊效果 */
 .page-domains .animate-block {
-    transform: translateX(-20px);
+    transform: translateX(-10px);
+    opacity: 0;
+    transition: all 0.3s ease-out;
 }
 
 .page-caches .animate-block {
-    transform: translateY(20px) scale(0.95);
+    transform: translateY(10px);
+    opacity: 0;
+    transition: all 0.3s ease-out;
 }
 
 .page-ssh-state .animate-block {
-    transform: translateY(-20px) scale(0.95);
+    transform: translateY(-10px);
+    opacity: 0;
+    transition: all 0.3s ease-out;
 }
 
 .page-app-config .animate-block {
-    transform: translateX(20px);
+    transform: translateX(10px);
+    opacity: 0;
+    transition: all 0.3s ease-out;
 }
 
 .page-logs .animate-block {
-    transform: scale(0.9);
+    transform: scale(0.95);
+    opacity: 0;
+    transition: all 0.3s ease-out;
 }
 
 /* 显示动画 */
 .animate-block.visible {
     transform: translateX(0) translateY(0) scale(1) !important;
+    opacity: 1 !important;
 }
 
 /* 进度条动画 */
 .progress-bar {
-    transition: width 1s ease;
+    transition: width 0.8s ease-out;
     position: relative;
     overflow: hidden;
 }
@@ -139,7 +150,7 @@
         transparent
     );
     background-size: 50px 50px;
-    animation: progressAnimation 2s linear infinite;
+    animation: progressAnimation 1.5s linear infinite;
     z-index: 1;
 }
 

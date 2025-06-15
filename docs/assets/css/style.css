@@ -6,6 +6,125 @@
     --light-color: #f8f9fa;
 }
 
+/* 页面切换动画 */
+body {
+    opacity: 0;
+    animation: fadeIn 0.6s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 导航链接动画效果 */
+.navbar-nav .nav-link {
+    position: relative;
+    transition: color 0.3s;
+}
+
+.navbar-nav .nav-link::after {
+    content: '';
+    position: absolute;
+    width: 0;
+    height: 2px;
+    bottom: 0;
+    left: 50%;
+    background-color: var(--primary-color);
+    transition: all 0.3s ease;
+    opacity: 0;
+    transform: translateX(-50%);
+}
+
+.navbar-nav .nav-link:hover::after {
+    width: 100%;
+    opacity: 0.8;
+}
+
+.navbar-nav .nav-link.active::after {
+    width: 100%;
+    opacity: 1;
+    background-color: white;
+}
+
+/* 添加标识动画效果 */
+@keyframes fadeInRight {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.fade-in-right {
+    animation: fadeInRight 0.5s ease forwards;
+}
+
+@keyframes fadeOutRight {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+}
+
+.fade-out-right {
+    animation: fadeOutRight 0.5s ease forwards;
+}
+
+/* 导航栏过渡效果 */
+.navbar {
+    transition: transform 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease, padding 0.3s ease;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.navbar.navbar-scrolled {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    background-color: rgba(33, 37, 41, 0.97) !important;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.navbar-brand {
+    transition: transform 0.3s ease, font-size 0.3s ease;
+}
+
+.navbar.navbar-scrolled .navbar-brand {
+    transform: scale(1.05);
+}
+
+/* 标识样式优化 */
+#nav-slogan {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    background-color: rgba(255, 255, 255, 0.9);
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s ease;
+}
+
+#nav-slogan:hover {
+    background-color: var(--primary-color);
+    color: white;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     line-height: 1.6;
@@ -105,3 +224,5 @@ footer {
         font-size: 2.5rem;
     }
 }
+
+
