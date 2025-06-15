@@ -1,3 +1,8 @@
+# 设置脚本和控制台编码为UTF-8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+chcp 65001 > $null # 设置控制台代码页为UTF-8 (65001)
+
 # PowerShell构建脚本 - Windows版本的build.sh
 
 # 确保bin目录存在

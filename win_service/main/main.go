@@ -7,14 +7,18 @@ import (
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"github.com/kardianos/service"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"io"
 	"log"
 	"os"
 	"os/user"
 	"path"
+	"runtime"
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/tunnel"
+	"strings"
 	"sync"
 )
 
@@ -26,6 +30,7 @@ func main() {
 		DisplayName: "SSHTunnelService",
 		Description: "SSHTunnelService",
 	}
+
 	prg := &program{}
 	s, err := service.New(prg, srvConfig)
 	if err != nil {
@@ -35,6 +40,17 @@ func main() {
 		serviceAction := os.Args[1]
 		switch serviceAction {
 		case "install":
+			// 检查是否有提供配置文件路径参数
+			configPath := ""
+			for i := 2; i < len(os.Args); i++ {
+				if strings.HasPrefix(os.Args[i], "--config=") {
+					configPath = strings.TrimPrefix(os.Args[i], "--config=")
+					fmt.Println("使用配置文件路径:", configPath)
+					// 将配置路径添加到服务的启动参数中
+					srvConfig.Arguments = []string{"--config=" + configPath}
+					break
+				}
+			}
 			err := s.Install()
 			if err != nil {
 				fmt.Println("安装服务失败: ", err.Error())
@@ -100,32 +116,88 @@ func innerStart() {
 			fmt.Println(err) // 这里的err其实就是panic传入的内容
 		}
 	}()
+
+	configPath := ""
+	for i := 1; i < len(os.Args); i++ {
+		if strings.HasPrefix(os.Args[i], "--config=") {
+			configPath = strings.TrimPrefix(os.Args[i], "--config=")
+			log.Println("从命令行参数获取配置文件路径:", configPath)
+			break
+		}
+	}
+
 	u, err := user.Current()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	userHomeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
+	config := cfg.AppConfig{}
+	vConfig := viper.New()
+
+	// 添加配置查找路径
+	vConfig.AddConfigPath(".")
+	vConfig.AddConfigPath(path.Join(u.HomeDir, ".ssh-tunnel"))
+
+	// 如果命令行参数中有配置文件路径，则直接使用该路径
+	exists, _ := PathExists(configPath)
+	if configPath != "" && exists {
+		log.Println("使用指定的配置文件:", configPath)
+		vConfig.SetConfigFile(configPath)
+		vConfig.SetConfigType("properties")
+	} else {
+		// 否则使用默认路径
+		log.Println("使用默认配置文件路径")
+		vConfig.AddConfigPath(path.Join(u.HomeDir, ".ssh-tunnel"))
+		vConfig.SetConfigName("config")
+		vConfig.SetConfigType("properties")
 	}
 
-	config := cfg.AppConfig{}
-	config.HomeDir = u.HomeDir
+	// 判断操作系统类型
+	osType := runtime.GOOS
+	switch osType {
+	case "windows":
+		// Windows 系统特定配置
+		vConfig.AddConfigPath(path.Join("C:\\ssh-tunnel", ".ssh-tunnel"))
+	case "darwin":
+		// macOS 系统特定配置
+		vConfig.AddConfigPath(path.Join("/Library", "Application Support", "ssh-tunnel"))
+	case "linux", "freebsd", "openbsd":
+		// Linux/BSD 系统特定配置
+		vConfig.AddConfigPath(path.Join("/etc", "config", "ssh-tunnel"))
+	default:
+		// 其他操作系统使用通用配置
+		log.Printf("未知操作系统类型: %s, 使用默认配置", osType)
+	}
 
-	userHomeDir = config.HomeDir
+	// 默认值设置
+	vConfig.SetDefault("home.dir", path.Join(u.HomeDir, ".ssh-tunnel"))
+	vConfig.SetDefault("ssh.path.private_key", path.Join(u.HomeDir, ".ssh/id_rsa"))
+	vConfig.SetDefault("ssh.path.known_hosts", path.Join(u.HomeDir, ".ssh/known_hosts"))
+	vConfig.SetDefault("user", "root")
+	vConfig.SetDefault("local.addr", "0.0.0.0:1081")
+	vConfig.SetDefault("http.local.addr", "0.0.0.0:1082")
+	vConfig.SetDefault("http.enable", false)
+	vConfig.SetDefault("socks5.enable", true)
+	vConfig.SetDefault("http.basic.enable", false)
+	vConfig.SetDefault("http.over.ssh.enable", false)
+	vConfig.SetDefault("http.filter.domain.enable", false)
+	vConfig.SetDefault("http.filter.domain.file-path", path.Join(u.HomeDir, ".ssh-tunnel/domain.txt"))
+	vConfig.SetDefault("admin.enable", false)
+	vConfig.SetDefault("admin.addr", ":1083")
+	vConfig.SetDefault("retry.interval.sec", 3)
 
-	log.Println("starting ..., userHomeDir: ", userHomeDir)
-	log.Println("current user: ", u.Username)
-	log.Println("u.homeDir: ", u.HomeDir)
+	// 环境变量配置
+	vConfig.SetEnvPrefix("SSH_TUNNEL")       // 设置环境变量前缀
+	replace := strings.NewReplacer(".", "_") // 替换点为下划线
+	vConfig.SetEnvKeyReplacer(replace)
+	vConfig.AutomaticEnv()
 
-	vConfig := viper.New()
-	vConfig.AddConfigPath(path.Join(userHomeDir, ".ssh-tunnel"))
-	vConfig.SetConfigName("config")
-	vConfig.SetConfigType("properties")
 	if err := vConfig.ReadInConfig(); err != nil {
 		panic(err)
 	}
+
+	log.Println("成功读取配置文件:", vConfig.ConfigFileUsed())
+
 	vConfig.WatchConfig()
 	vConfig.OnConfigChange(func(e fsnotify.Event) {
 		fmt.Println("config file changed:", e.Name)
@@ -134,6 +206,7 @@ func innerStart() {
 		}
 	})
 
+	config.HomeDir = vConfig.GetString("home.dir")
 	config.ServerIp = vConfig.GetString("server.ip")
 	config.ServerSshPort = vConfig.GetInt("server.ssh.port")
 	config.SshPrivateKeyPath = vConfig.GetString("server.ssh.private_key_path")
@@ -155,33 +228,25 @@ func innerStart() {
 	config.AdminAddress = vConfig.GetString("admin.address")
 	config.RetryIntervalSec = vConfig.GetInt("retry.interval.sec")
 
-	//flag.StringVar(&config.ServerIp, "server.ip", "", "服务器IP地址")
-	//flag.StringVar(&config.ServerIp, "s", "", "服务器IP地址(短命令)")
-	//flag.IntVar(&config.ServerSshPort, "server.ssh.port", 22, "服务器SSH端口")
-	//flag.IntVar(&config.ServerSshPort, "p", 22, "服务器SSH端口(短命令)")
-	//flag.StringVar(&config.SshPrivateKeyPath, "ssh.path.private_key", path.Join(u.HomeDir, ".ssh/id_rsa"), "私钥地址")
-	//flag.StringVar(&config.SshPrivateKeyPath, "pk", path.Join(u.HomeDir, ".ssh/id_rsa"), "私钥地址(短命令)")
-	//flag.StringVar(&config.SshKnownHostsPath, "ssh.path.known_hosts", path.Join(u.HomeDir, ".ssh/known_hosts"), "已知主机地址")
-	//flag.StringVar(&config.SshKnownHostsPath, "pkh", path.Join(u.HomeDir, ".ssh/known_hosts"), "已知主机地址(短命令)")
-	//flag.StringVar(&config.LoginUser, "user", "root", "用户名")
-	//flag.StringVar(&config.LoginUser, "u", "root", "用户名(短命令)")
-	//flag.StringVar(&config.LocalAddress, "local.addr", "0.0.0.0:1081", "本地地址")
-	//flag.StringVar(&config.LocalAddress, "l", "0.0.0.0:1081", "本地地址(短命令)")
-	//flag.StringVar(&config.HttpLocalAddress, "http.local.addr", "0.0.0.0:1082", "Http监听地址")
-	//flag.StringVar(&config.HttpBasicUserName, "http.basic.username", "", "Basic认证, 用户名")
-	//flag.StringVar(&config.HttpBasicPassword, "http.basic.password", "", "Http Basic认证, 密码")
-	//flag.BoolVar(&config.EnableHttp, "http.enable", false, "是否开启Http代理")
-	//flag.BoolVar(&config.EnableSocks5, "socks5.enable", true, "是否开启Socks5代理")
-	//flag.BoolVar(&config.HttpBasicAuthEnable, "http.basic.enable", false, "是否开启Http的Basic认证")
-	//flag.BoolVar(&config.EnableHttpOverSSH, "http.over.ssh.enable", false, "是否开启Http Over SSH")
-	//flag.BoolVar(&config.EnableHttpDomainFilter, "http.filter.domain.enable", false, "是否启用Http域名过滤")
-	//flag.StringVar(&config.HttpDomainFilterFilePath, "http.filter.domain.file-path", path.Join(u.HomeDir, ".ssh-tunnel/domain.txt"), "过滤http请求")
-	//
-	//flag.BoolVar(&config.EnableAdmin, "admin.enable", false, "是否启用Admin页面")
-	//flag.StringVar(&config.AdminAddress, "admin.addr", ":1083", "Admin监听地址")
-	//log.Printf("%v", os.Args)
-	//
-	//flag.Parse()
+	config.LogFilePath = path.Join(config.HomeDir, ".ssh-tunnel", "console.log")
+
+	logFile, err := os.OpenFile(config.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		fmt.Println("open log file failed, err:", err)
+		return
+	}
+
+	// 替换原来的log.SetOutput(logFile)为：
+	mw := io.MultiWriter(logFile)
+	log.SetOutput(mw)
+	log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
+
+	log.Println("starting ..., userHomeDir: ", u.HomeDir)
+	log.Println("current user: ", u.Username)
+	log.Println("u.homeDir: ", u.HomeDir)
+	log.Println("config.HomeDir: ", config.HomeDir)
+	log.Println("configPath: ", configPath)
+
 	var wg sync.WaitGroup
 	tunnel.Load(&config, &wg)
 	admin.Load(&config, &wg)
@@ -197,4 +262,12 @@ func PathExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+func wordSepNormailzeFunc(f *pflag.FlagSet, name string) pflag.NormalizedName {
+	from := []string{"-", "_"}
+	to := "."
+	for _, sep := range from {
+		name = strings.Replace(name, sep, to, -1)
+	}
+	return pflag.NormalizedName(name)
 }
