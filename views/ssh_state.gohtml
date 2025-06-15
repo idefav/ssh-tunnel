@@ -1,0 +1,24 @@
+{{define "content"}}
+    <h2>SSH Client State</h2>
+    <div>
+        <ul>
+            <li><span>SSH Client Version: {{.Version}}</span></li>
+            <li><span>SSH Client Local Address: {{.LocalAddr}}</span></li>
+            <li><span>SSH Client Remote Address: {{.RemoteAddr}}</span></li>
+            <li><span>SSH Client Session Id: {{.SessionID}}</span></li>
+            <li><span>SSH Client Login User: {{.User}}</span></li>
+        </ul>
+        <div>
+            <button id="reconnectSsh" type="button" class="btn btn-primary">Reconnect SSH</button>
+            <button id="refresh" type="button" class="btn btn-secondary" onclick="window.location.reload(true)">Refresh Page</button>
+        </div>
+    </div>
+        <script>
+            $("#reconnectSsh").click(() => {
+                $.post("/admin/ssh/reconnect").then(resp => {
+                    $("#toastmessage").html("refreshed")
+                    $("#toast").show()
+                })
+            })
+        </script>
+{{end}}

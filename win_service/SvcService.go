@@ -1,4 +1,5 @@
 //go:build windows
+// +build windows
 
 package win_service
 
@@ -58,6 +59,7 @@ func (m *SSHTunnelService) Execute(args []string, r <-chan svc.ChangeRequest, ch
 
 		flag.BoolVar(&config.EnableAdmin, "admin.enable", false, "是否启用Admin页面")
 		flag.StringVar(&config.AdminAddress, "admin.addr", ":1083", "Admin监听地址")
+		flag.IntVar(&config.RetryIntervalSec, "retry.interval.sec", 3, "重试间隔时间(秒)")
 		log.Printf("%v", os.Args)
 
 		flag.Parse()

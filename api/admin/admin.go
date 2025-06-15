@@ -25,6 +25,58 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 		defer cancel()
 		adminRouter := mux.NewRouter()
 
+		adminRouter.HandleFunc("/admin/config/list", func(writer http.ResponseWriter, request *http.Request) {
+			configBytes, _ := json.Marshal(tunnel.AppConfig())
+			writer.Write(configBytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/state", func(writer http.ResponseWriter, request *http.Request) {
+			client := tunnel.GetSSHClient()
+			if client == nil {
+				writer.WriteHeader(500)
+				writer.Write([]byte("SSH client is not connected"))
+				return
+			}
+			version := client.ClientVersion()
+			addr := client.LocalAddr()
+			remoteAddr := client.RemoteAddr()
+			id := client.SessionID()
+			user := client.User()
+
+			m := make(map[string]interface{})
+			m["version"] = version
+			m["localAddr"] = addr
+			m["remoteAddr"] = remoteAddr
+			m["sessionId"] = id
+			m["user"] = user
+			mbytes, _ := json.Marshal(m)
+			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/reconnect", func(writer http.ResponseWriter, request *http.Request) {
+			tunnel.ReconnectSSH(connCtx)
+			client := tunnel.GetSSHClient()
+			if client == nil {
+				writer.WriteHeader(500)
+				writer.Write([]byte("SSH client is not connected"))
+				return
+			}
+			version := client.ClientVersion()
+			addr := client.LocalAddr()
+			remoteAddr := client.RemoteAddr()
+			id := client.SessionID()
+			user := client.User()
+
+			m := make(map[string]interface{})
+			m["version"] = version
+			m["localAddr"] = addr
+			m["remoteAddr"] = remoteAddr
+			m["sessionId"] = id
+			m["user"] = user
+			mbytes, _ := json.Marshal(m)
+			writer.Write(mbytes)
+		})
+
 		adminRouter.HandleFunc("/admin/monitor", func(writer http.ResponseWriter, request *http.Request) {
 			m := make(map[string]interface{})
 			m["matchedDomain"] = tunnel.DomainMatchCache()

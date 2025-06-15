@@ -171,6 +171,7 @@ func innerStart() {
 
 	config.EnableAdmin = vConfig.GetBool("admin.enable")
 	config.AdminAddress = vConfig.GetString("admin.address")
+	config.RetryIntervalSec = vConfig.GetInt("retry.interval.sec")
 
 	//flag.StringVar(&config.ServerIp, "server.ip", "", "服务器IP地址")
 	//flag.StringVar(&config.ServerIp, "s", "", "服务器IP地址(短命令)")

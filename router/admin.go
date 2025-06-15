@@ -16,5 +16,7 @@ func RegisterRoutes(r *mux.Router, tunnel *tunnel.Tunnel) {
 	viewRouter.HandleFunc("/index", handler.ShowIndexView)
 	viewRouter.HandleFunc("/domains", handler.ShowDomainsView)
 	viewRouter.HandleFunc("/caches", handler.ShowCacheView)
+	viewRouter.HandleFunc("/ssh/state", handler.ShowSSHClientStateView)
+	viewRouter.HandleFunc("/app/config", handler.ShowAppConfigView)
 
 }

@@ -50,7 +50,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 		DefaultSshTunnel.auth = auth
 		DefaultSshTunnel.hostKeys = hostKeys
 		DefaultSshTunnel.user = config.LoginUser
-		DefaultSshTunnel.retryInterval = 30 * time.Second
+		DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec) * time.Second
 	}
 
 	if config.EnableHttp {
@@ -87,7 +87,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			DefaultSshTunnel.auth = auth
 			DefaultSshTunnel.hostKeys = hostKeys
 			DefaultSshTunnel.user = config.LoginUser
-			DefaultSshTunnel.retryInterval = 30 * time.Second
+			DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec) * time.Second
 		}
 
 		if config.EnableHttpDomainFilter && config.HttpDomainFilterFilePath != "" {
@@ -172,6 +172,10 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 	defer watcher.Close()
 
 	configPath := path.Dir(filePath)
+	err = watcher.Add(configPath)
+	if err != nil {
+		return err
+	}
 
 	changed := make(chan bool)
 	done := make(chan bool)
@@ -206,11 +210,6 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 			}
 		}
 	}()
-
-	err = watcher.Add(configPath)
-	if err != nil {
-		return err
-	}
 
 	for {
 		select {
