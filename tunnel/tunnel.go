@@ -365,7 +365,7 @@ func (t *Tunnel) getConn(ctx context.Context, client net.Conn, err error, addres
 			break
 		}
 
-		if strings.Contains(err.Error(), "unexpected packet in response") || strings.Contains(err.Error(), "context deadline exceeded") || t.client == nil {
+		if strings.Contains(err.Error(), "unexpected packet in response") || strings.Contains(err.Error(), "context deadline exceeded") || strings.Contains(err.Error(), "max packet length exceeded") || t.client == nil {
 			t.client = nil
 			t.ReconnectSSH(ctx)
 			if t.client == nil {
