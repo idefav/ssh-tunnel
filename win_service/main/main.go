@@ -15,7 +15,6 @@ import (
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/tunnel"
-	"strings"
 	"sync"
 )
 
@@ -111,27 +110,10 @@ func innerStart() {
 		log.Fatal(err)
 	}
 
-	defaultHomeExist, _ := PathExists(DEFAULT_HOME)
-	if !defaultHomeExist {
-		os.MkdirAll(DEFAULT_HOME, os.ModePerm)
-	}
-
 	config := cfg.AppConfig{}
 	config.HomeDir = u.HomeDir
-	if strings.ContainsAny(u.HomeDir, "system32") {
-		config.HomeDir = "C:\\ssh-tunnel"
-		os.MkdirAll(config.HomeDir, 0755)
-	}
 
 	userHomeDir = config.HomeDir
-
-	logFile, err := os.OpenFile(path.Join(userHomeDir, ".ssh-tunnel", "console.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		fmt.Println("open log file failed, err:", err)
-		return
-	}
-	log.SetOutput(logFile)
-	log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
 
 	log.Println("starting ..., userHomeDir: ", userHomeDir)
 	log.Println("current user: ", u.Username)

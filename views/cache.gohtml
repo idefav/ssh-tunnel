@@ -1,30 +1,145 @@
 {{define "content"}}
-    <h2>Caches Of Match Domains:</h2>
-    <div style="margin: 20px">
-        <button id="cleanCache" type="button" class="btn btn-info">Clean</button>
-        <button id="refresh" type="button" class="btn btn-secondary" onclick="window.location.reload(true)">Refresh Page</button>
+    <div class="container mt-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h2 class="mb-0"><i class="bi bi-hdd-stack"></i> 域名匹配缓存管理</h2>
+                <p class="mb-0 text-white-50">管理系统中的域名匹配缓存记录</p>
+            </div>
+
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="domainSearch" class="form-control" placeholder="搜索域名...">
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <div class="btn-group">
+                            <button id="cleanCache" type="button" class="btn btn-danger">
+                                <i class="bi bi-trash"></i> 清除缓存
+                            </button>
+                            <button id="refresh" type="button" class="btn btn-secondary" onclick="window.location.reload(true)">
+                                <i class="bi bi-arrow-clockwise"></i> 刷新页面
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info" id="cacheStats">
+                    <i class="bi bi-info-circle"></i>
+                    共有 <span id="totalDomains">{{len .DomainMatchResultCache}}</span> 个域名缓存，
+                    其中匹配的域名 <span id="matchedDomains">0</span> 个，
+                    未匹配的域名 <span id="unmatchedDomains">0</span> 个
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped">
+                        <thead class="table-dark">
+                            <tr>
+                                <th scope="col" width="5%">#</th>
+                                <th scope="col" width="75%">域名</th>
+                                <th scope="col" width="20%">匹配状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="domainList">
+                            {{range $key, $value := .DomainMatchResultCache}}
+                                <tr class="domain-item {{if eq $value true}}table-success{{end}}">
+                                    <td></td>
+                                    <td class="domain-name">{{$key}}</td>
+                                    <td>
+                                        {{if eq $value true}}
+                                            <span class="badge bg-success">已匹配</span>
+                                        {{else}}
+                                            <span class="badge bg-secondary">未匹配</span>
+                                        {{end}}
+                                    </td>
+                                </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="noDomains" class="alert alert-warning d-none">
+                    <i class="bi bi-exclamation-triangle"></i> 未找到匹配的域名
+                </div>
+            </div>
+        </div>
     </div>
 
-    <ul class="list-group list-group-numbered">
-        {{range $key,$value := .DomainMatchResultCache}}
-            {{ if eq $value true }}
-                <li class="list-group-item list-group-item-action active">
-                    <span>{{$key}}</span>
-                </li>
-            {{else}}
-                <li class="list-group-item list-group-item-action">
-                    <span>{{$key}}</span>
-                </li>
-            {{end}}
-        {{end}}
-    </ul>
     <script>
-        $("#cleanCache").click(() => {
-            $.get("/admin/cache/clean").then(resp => {
-                $("#toastmessage").html("Clean success!")
-                $('#toast').toast('show');
-            })
-        })
-    </script>
+        $(document).ready(function() {
+            // 重新编号表格行
+            function updateRowNumbers() {
+                let visibleIndex = 1;
+                $('#domainList tr:visible').each(function() {
+                    $(this).find('td:first').text(visibleIndex++);
+                });
+            }
 
+            updateRowNumbers();
+
+            // 计算统计数据
+            let matched = 0;
+            let unmatched = 0;
+
+            $('.domain-item').each(function() {
+                if ($(this).hasClass('table-success')) {
+                    matched++;
+                } else {
+                    unmatched++;
+                }
+            });
+
+            $('#matchedDomains').text(matched);
+            $('#unmatchedDomains').text(unmatched);
+
+            // 搜索功能
+            $("#domainSearch").on("keyup", function() {
+                const value = $(this).val().toLowerCase();
+                let visibleCount = 0;
+
+                $(".domain-item").each(function() {
+                    const domainText = $(this).find(".domain-name").text().toLowerCase();
+                    const isVisible = domainText.indexOf(value) > -1;
+                    $(this).toggle(isVisible);
+                    if (isVisible) visibleCount++;
+                });
+
+                // 显示或隐藏"无结果"提示
+                if (visibleCount === 0) {
+                    $("#noDomains").removeClass("d-none");
+                } else {
+                    $("#noDomains").addClass("d-none");
+                }
+
+                // 更新可见行的编号
+                updateRowNumbers();
+            });
+
+            // 清除缓存
+            $("#cleanCache").click(function() {
+                const btn = $(this);
+                const originalText = btn.html();
+
+                btn.html('<i class="bi bi-hourglass-split"></i> 正在清除...');
+                btn.prop('disabled', true);
+
+                $.get("/admin/cache/clean")
+                    .done(function(resp) {
+                        $("#toastmessage").html('<i class="bi bi-check-circle"></i> 缓存清除成功!');
+                        $('#toast').toast('show');
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 1500);
+                    })
+                    .fail(function() {
+                        $("#toastmessage").html('<i class="bi bi-x-circle"></i> 清除缓存失败!');
+                        $('#toast').toast('show');
+                        btn.html(originalText);
+                        btn.prop('disabled', false);
+                    });
+            });
+        });
+    </script>
 {{end}}

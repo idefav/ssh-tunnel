@@ -1,0 +1,14 @@
+server.ip=xx.xx.xx.xx
+server.ssh.port=22
+server.ssh.private_key_path=C:\\Users\\xx\\.ssh\\id_rsa
+server.ssh.known_hosts_path=C:\\Users\\xx\\.ssh\\known_hosts
+login.username=root
+local.address=0.0.0.0:1081
+http.local.address=0.0.0.0:1082
+http.enable=true
+socks5.enable=true
+http.over-ssh.enable=true
+http.domain-filter.enable=true
+http.filter.domain.file-path=C:\\Users\\xx\\Documents\\ssh-tunnel\\domain.txt
+admin.enable=true
+admin.address=:1083

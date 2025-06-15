@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安装指南 - SSH-Tunnel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">SSH-Tunnel</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="documentation.html">文档</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="installation.html">安装指南</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="faq.html">常见问题</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://github.com/idefav/ssh-tunnel" target="_blank">GitHub <i class="bi bi-github"></i></a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <header class="bg-primary text-white py-4">
+        <div class="container">
+            <h1>SSH-Tunnel 安装指南</h1>
+            <p class="lead">学习如何在各种平台上安装和配置SSH-Tunnel</p>
+        </div>
+    </header>
+
+    <div class="container py-5">
+        <div class="row">
+            <div class="col-lg-3">
+                <div class="doc-nav">
+                    <div class="list-group">
+                        <a href="#prerequisites" class="list-group-item list-group-item-action">前提条件</a>
+                        <a href="#download" class="list-group-item list-group-item-action">下载软件</a>
+                        <a href="#windows-installation" class="list-group-item list-group-item-action">Windows安装</a>
+                        <a href="#macos-installation" class="list-group-item list-group-item-action">MacOS安装</a>
+                        <a href="#linux-installation" class="list-group-item list-group-item-action">Linux安装</a>
+                        <a href="#verification" class="list-group-item list-group-item-action">验证安装</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-9">
+                <div id="prerequisites" class="doc-section">
+                    <h2>前提条件</h2>
+                    <p>在安装SSH-Tunnel之前，您需要确保满足以下条件：</p>
+                    <ol>
+                        <li>拥有一个可访问的SSH服务器，并且已启用SSH服务</li>
+                        <li>准备好SSH私钥和用户名，以便连接到SSH服务器</li>
+                        <li>确保您的系统允许运行可执行文件</li>
+                    </ol>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        <strong>提示：</strong> 如果您还没有SSH密钥对，可以使用以下命令生成：
+                        <pre class="bg-dark text-light p-2 mt-2 mb-0 rounded"><code>ssh-keygen -t rsa -b 4096</code></pre>
+                    </div>
+                </div>
+
+                <div id="download" class="doc-section">
+                    <h2>下载软件</h2>
+                    <p>SSH-Tunnel提供了多种平台的预编译二进制文件，您可以从GitHub发布页面下载最新版本：</p>
+                    <a href="https://github.com/idefav/ssh-tunnel/releases" class="btn btn-primary mb-4" target="_blank">
+                        <i class="bi bi-download me-2"></i>下载最新版本
+                    </a>
+
+                    <p>针对不同的操作系统，您需要下载对应的版本：</p>
+                    <ul>
+                        <li><strong>Windows：</strong> <code>ssh-tunnel-amd64.exe</code> (64位Windows) 或 <code>ssh-tunnel-386.exe</code> (32位Windows)</li>
+                        <li><strong>MacOS：</strong> <code>ssh-tunnel-amd64-darwin</code> (Intel芯片) 或 <code>ssh-tunnel-arm64-darwin</code> (Apple Silicon)</li>
+                        <li><strong>Linux：</strong> <code>ssh-tunnel-amd64-linux</code> (64位Linux) 或 <code>ssh-tunnel-386-linux</code> (32位Linux)</li>
+                    </ul>
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <strong>注意：</strong> 请确保下载适合您系统的正确版本，并验证下载文件的SHA256校验和，以确保文件完整性。
+                    </div>
+                </div>
+
+                <div id="windows-installation" class="doc-section">
+                    <h2>Windows安装</h2>
+                    <p>在Windows上安装SSH-Tunnel很简单，您可以选择直接运行或安装为系统服务。</p>
+
+                    <h3>方法1：直接运行</h3>
+                    <ol>
+                        <li>下载适用于Windows的SSH-Tunnel可执行文件 (<code>ssh-tunnel-amd64.exe</code>)</li>
+                        <li>将文件放在您喜欢的目录中，例如 <code>C:\Program Files\ssh-tunnel\</code></li>
+                        <li>打开命令提示符或PowerShell，导航到该目录</li>
+                        <li>运行以下命令启动SSH-Tunnel：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>.\ssh-tunnel-amd64.exe -s your_ssh_server_ip</code></pre>
+
+                    <h3>方法2：安装为Windows服务</h3>
+                    <p>将SSH-Tunnel安装为Windows服务可以实现开机自启动：</p>
+                    <ol>
+                        <li>下载 <code>ssh-tunnel-winsvc.exe</code> 和 <code>ssh-tunnel-amd64.exe</code></li>
+                        <li>在C盘根目录创建 <code>ssh-tunnel</code> 文件夹</li>
+                        <li>将两个可执行文件复制到该文件夹中</li>
+                        <li>在该目录下创建 <code>.ssh-tunnel</code> 子文件夹</li>
+                        <li>在 <code>.ssh-tunnel</code> 文件夹中创建 <code>config.properties</code> 配置文件：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>server.ip=your_ssh_server_ip
+server.ssh.port=22
+server.ssh.private_key_path=C:\\Users\\username\\.ssh\\id_rsa
+server.ssh.known_hosts_path=C:\\Users\\username\\.ssh\\known_hosts
+login.username=root
+local.address=0.0.0.0:1081
+http.local.address=0.0.0.0:1082
+http.enable=true
+socks5.enable=true
+http.over-ssh.enable=true
+http.domain-filter.enable=false
+admin.enable=true
+admin.address=:1083</code></pre>
+                    <p>请替换 <code>your_ssh_server_ip</code> 和 <code>username</code> 为您的实际值。</p>
+
+                    <ol start="6">
+                        <li>以管理员身份打开命令提示符，导航到 <code>C:\ssh-tunnel</code> 目录</li>
+                        <li>运行以下命令安装服务：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>.\ssh-tunnel-winsvc.exe install</code></pre>
+
+                    <ol start="8">
+                        <li>安装完成后，按 <code>Win+R</code>，输入 <code>services.msc</code> 打开服务管理器</li>
+                        <li>找到 <code>SSHTunnelService</code>，右键点击并选择"启动"</li>
+                    </ol>
+
+                    <div class="alert alert-success mt-3">
+                        <i class="bi bi-check-circle-fill me-2"></i>
+                        <strong>提示：</strong> 您可以将该服务设置为"自动启动"，以便系统启动时自动运行SSH-Tunnel。
+                    </div>
+                </div>
+
+                <div id="macos-installation" class="doc-section">
+                    <h2>MacOS安装</h2>
+                    <p>在MacOS上安装SSH-Tunnel可以通过以下步骤完成：</p>
+
+                    <h3>方法1：直接运行</h3>
+                    <ol>
+                        <li>下载适用于MacOS的SSH-Tunnel可执行文件</li>
+                        <li>打开终端，导航到下载目录</li>
+                        <li>为文件添加执行权限：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>chmod +x ssh-tunnel-amd64-darwin</code></pre>
+
+                    <ol start="4">
+                        <li>运行以下命令启动SSH-Tunnel：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel-amd64-darwin -s your_ssh_server_ip</code></pre>
+
+                    <h3>方法2：配置为开机自启动</h3>
+                    <ol>
+                        <li>将SSH-Tunnel可执行文件移动到 <code>/usr/local/bin</code> 目录：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo mv ssh-tunnel-amd64-darwin /usr/local/bin/ssh-tunnel
+sudo chmod +x /usr/local/bin/ssh-tunnel</code></pre>
+
+                    <ol start="2">
+                        <li>创建LaunchAgent配置文件：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo nano /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist</code></pre>
+
+                    <ol start="3">
+                        <li>将以下内容粘贴到文件中（请替换 <code>your_ssh_server_ip</code> 为您的实际SSH服务器IP）：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;plist version="1.0"&gt;
+  &lt;dict&gt;
+    &lt;key&gt;Label&lt;/key&gt;
+    &lt;string&gt;com.idefav.macos.ssh-tunnel&lt;/string&gt;
+    &lt;key&gt;Disabled&lt;/key&gt;
+    &lt;false/&gt;
+    &lt;key&gt;KeepAlive&lt;/key&gt;
+    &lt;true/&gt;
+    &lt;key&gt;ProcessType&lt;/key&gt;
+    &lt;string&gt;Background&lt;/string&gt;
+    &lt;key&gt;ProgramArguments&lt;/key&gt;
+    &lt;array&gt;
+      &lt;string&gt;/usr/local/bin/ssh-tunnel&lt;/string&gt;
+      &lt;string&gt;-s&lt;/string&gt;
+      &lt;string&gt;your_ssh_server_ip&lt;/string&gt;
+      &lt;string&gt;-l&lt;/string&gt;
+      &lt;string&gt;0.0.0.0:1081&lt;/string&gt;
+      &lt;string&gt;-http.enable&lt;/string&gt;
+      &lt;string&gt;-admin.enable&lt;/string&gt;
+    &lt;/array&gt;
+    &lt;key&gt;UserName&lt;/key&gt;
+    &lt;string&gt;root&lt;/string&gt;
+    &lt;key&gt;GroupName&lt;/key&gt;
+    &lt;string&gt;wheel&lt;/string&gt;
+  &lt;/dict&gt;
+&lt;/plist&gt;</code></pre>
+
+                    <ol start="4">
+                        <li>设置文件权限并加载服务：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo chown -R root /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+sudo launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist</code></pre>
+
+                    <div class="alert alert-info mt-3">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        <strong>提示：</strong> 如果需要修改配置，可以先卸载服务，然后再重新加载：
+                        <pre class="bg-dark text-light p-2 mt-2 mb-0 rounded"><code>sudo launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+sudo launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist</code></pre>
+                    </div>
+                </div>
+
+                <div id="linux-installation" class="doc-section">
+                    <h2>Linux安装</h2>
+                    <p>在Linux系统上安装SSH-Tunnel：</p>
+
+                    <h3>方法1：直接运行</h3>
+                    <ol>
+                        <li>下载适用于Linux的SSH-Tunnel可执行文件</li>
+                        <li>打开终端，导航到下载目录</li>
+                        <li>为文件添加执行权限：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>chmod +x ssh-tunnel-amd64-linux</code></pre>
+
+                    <ol start="4">
+                        <li>运行以下命令启动SSH-Tunnel：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel-amd64-linux -s your_ssh_server_ip</code></pre>
+
+                    <h3>方法2：配置为Systemd服务</h3>
+                    <ol>
+                        <li>将SSH-Tunnel可执行文件移动到 <code>/usr/local/bin</code> 目录：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo mv ssh-tunnel-amd64-linux /usr/local/bin/ssh-tunnel
+sudo chmod +x /usr/local/bin/ssh-tunnel</code></pre>
+
+                    <ol start="2">
+                        <li>创建Systemd服务文件：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo nano /etc/systemd/system/ssh-tunnel.service</code></pre>
+
+                    <ol start="3">
+                        <li>将以下内容粘贴到文件中（请替换 <code>your_ssh_server_ip</code> 为您的实际SSH服务器IP）：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>[Unit]
+Description=SSH Tunnel Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ssh-tunnel -s your_ssh_server_ip -http.enable -admin.enable
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+                    <ol start="4">
+                        <li>重新加载Systemd并启用服务：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo systemctl daemon-reload
+sudo systemctl enable ssh-tunnel
+sudo systemctl start ssh-tunnel</code></pre>
+
+                    <ol start="5">
+                        <li>检查服务状态：</li>
+                    </ol>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo systemctl status ssh-tunnel</code></pre>
+                </div>
+
+                <div id="verification" class="doc-section">
+                    <h2>验证安装</h2>
+                    <p>安装完成后，您可以通过以下方式验证SSH-Tunnel是否正常运行：</p>
+
+                    <h3>1. 检查进程</h3>
+                    <p>在终端或命令提示符中运行以下命令检查SSH-Tunnel进程是否在运行：</p>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Windows:</strong></p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>tasklist | findstr ssh-tunnel</code></pre>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>MacOS/Linux:</strong></p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>ps aux | grep ssh-tunnel</code></pre>
+                        </div>
+                    </div>
+
+                    <h3>2. 检查监听端口</h3>
+                    <p>验证SSH-Tunnel是否正在监听指定的端口：</p>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Windows:</strong></p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>netstat -ano | findstr 108</code></pre>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>MacOS/Linux:</strong></p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>netstat -tuln | grep 108</code></pre>
+                        </div>
+                    </div>
+                    <p>您应该能看到1081端口(SOCKS5)，如果启用了HTTP代理则会看到1082端口，如果启用了管理界面则会看到1083端口。</p>
+
+                    <h3>3. 访问管理界面</h3>
+                    <p>如果您启用了管理界面，可以通过浏览器访问以下地址：</p>
+                    <pre class="bg-dark text-light p-3 rounded"><code>http://localhost:1083/view/index</code></pre>
+                    <p>如果能够看到管理界面，说明SSH-Tunnel已成功运行。</p>
+
+                    <h3>4. 测试代理连接</h3>
+                    <p>您可以配置浏览器使用SSH-Tunnel提供的代理服务，然后访问任意网站进行测试：</p>
+                    <ul>
+                        <li>SOCKS5代理：<code>127.0.0.1:1081</code></li>
+                        <li>HTTP代理：<code>127.0.0.1:1082</code>（如果已启用）</li>
+                    </ul>
+
+                    <div class="alert alert-success mt-4">
+                        <i class="bi bi-check-circle-fill me-2"></i>
+                        <strong>恭喜！</strong> 如果以上测试都通过，说明您已成功安装并配置SSH-Tunnel。
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>SSH-Tunnel</h5>
+                    <p>一个简单而强大的SSH隧道代理工具</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <ul class="list-inline mb-0">
+                        <li class="list-inline-item">
+                            <a href="https://github.com/idefav/ssh-tunnel" class="text-white" target="_blank">
+                                <i class="bi bi-github fs-4"></i>
+                            </a>
+                        </li>
+                    </ul>
+                    <p class="mt-2">
+                        <a href="https://github.com/idefav/ssh-tunnel/blob/master/LICENSE" class="text-white text-decoration-none">
+                            Apache License 2.0
+                        </a>
+                    </p>
+                </div>
+            </div>
+            <hr class="my-3">
+            <div class="text-center">
+                <small>&copy; 2025 SSH-Tunnel. All rights reserved.</small>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>

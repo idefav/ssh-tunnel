@@ -1,0 +1,97 @@
+{{define "content"}}
+    <div class="container mt-4">
+        <h2>系统日志实时查看</h2>
+
+        <div class="mb-3">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="onlyNewLogs">
+                <label class="form-check-label" for="onlyNewLogs">仅显示新日志</label>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between mb-3">
+            <button id="connectBtn" class="btn btn-primary">连接</button>
+            <button id="clearBtn" class="btn btn-secondary">清除日志</button>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>日志输出</span>
+                <span id="connectionStatus" class="badge bg-secondary">未连接</span>
+            </div>
+            <div class="card-body p-0">
+                <pre id="logOutput" class="m-0 p-3" style="height: 500px; overflow-y: auto; background-color: #f8f9fa; font-size: 0.85rem;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        const logOutput = document.getElementById('logOutput');
+        const connectBtn = document.getElementById('connectBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const onlyNewLogs = document.getElementById('onlyNewLogs');
+        const connectionStatus = document.getElementById('connectionStatus');
+
+        // 自动滚动到底部
+        function scrollToBottom() {
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        // 添加日志行
+        function addLogLine(text) {
+            const line = document.createElement('div');
+            line.textContent = text;
+            logOutput.appendChild(line);
+            scrollToBottom();
+        }
+
+        // 清除日志
+        clearBtn.addEventListener('click', () => {
+            logOutput.innerHTML = '';
+        });
+
+        // 连接或断开SSE
+        connectBtn.addEventListener('click', () => {
+            if (eventSource) {
+                // 断开连接
+                eventSource.close();
+                eventSource = null;
+                connectBtn.textContent = '连接';
+                connectionStatus.textContent = '未连接';
+                connectionStatus.className = 'badge bg-secondary';
+                return;
+            }
+
+            // 建立连接
+            const onlyNew = onlyNewLogs.checked;
+            const url = `/admin/logs${onlyNew ? '?only_new=true' : ''}`;
+
+            eventSource = new EventSource(url);
+
+            eventSource.onopen = function() {
+                connectionStatus.textContent = '已连接';
+                connectionStatus.className = 'badge bg-success';
+                connectBtn.textContent = '断开';
+            };
+
+            eventSource.onmessage = function(event) {
+                addLogLine(event.data);
+            };
+
+            eventSource.onerror = function(err) {
+                connectionStatus.textContent = '连接错误';
+                connectionStatus.className = 'badge bg-danger';
+                eventSource.close();
+                eventSource = null;
+                connectBtn.textContent = '连接';
+                addLogLine('[系统] SSE连接错误，请重新连接');
+            };
+        });
+
+        // 页面加载时自动连接
+        window.addEventListener('load', () => {
+            connectBtn.click();
+        });
+    </script>
+{{end}}

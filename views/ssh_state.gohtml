@@ -1,24 +1,101 @@
 {{define "content"}}
-    <h2>SSH Client State</h2>
-    <div>
-        <ul>
-            <li><span>SSH Client Version: {{.Version}}</span></li>
-            <li><span>SSH Client Local Address: {{.LocalAddr}}</span></li>
-            <li><span>SSH Client Remote Address: {{.RemoteAddr}}</span></li>
-            <li><span>SSH Client Session Id: {{.SessionID}}</span></li>
-            <li><span>SSH Client Login User: {{.User}}</span></li>
-        </ul>
-        <div>
-            <button id="reconnectSsh" type="button" class="btn btn-primary">Reconnect SSH</button>
-            <button id="refresh" type="button" class="btn btn-secondary" onclick="window.location.reload(true)">Refresh Page</button>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h4 class="mb-0">SSH 客户端状态</h4>
+            <div>
+                <button id="refresh" type="button" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-clockwise me-1"></i>刷新
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table table-borderless">
+                        <tbody>
+                        <tr>
+                            <th class="text-secondary" style="width: 40%">客户端版本</th>
+                            <td>{{.Version}}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">本地地址</th>
+                            <td>{{.LocalAddr}}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">远程地址</th>
+                            <td>{{.RemoteAddr}}</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table table-borderless">
+                        <tbody>
+                        <tr>
+                            <th class="text-secondary" style="width: 40%">会话 ID</th>
+                            <td>{{.SessionID}}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">登录用户</th>
+                            <td>{{.User}}</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="d-flex justify-content-center mt-3">
+                <button id="reconnectSsh" type="button" class="btn btn-primary">
+                    <i class="bi bi-plug me-1"></i>重新连接 SSH
+                </button>
+            </div>
         </div>
     </div>
-        <script>
-            $("#reconnectSsh").click(() => {
-                $.post("/admin/ssh/reconnect").then(resp => {
-                    $("#toastmessage").html("refreshed")
-                    $("#toast").show()
-                })
-            })
-        </script>
+
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="3000">
+            <div class="toast-header">
+                <strong class="me-auto">系统提示</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toastmessage"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const reconnectBtn = document.getElementById("reconnectSsh");
+            const refreshBtn = document.getElementById("refresh");
+            const toast = document.getElementById("toast");
+            const toastMessage = document.getElementById("toastmessage");
+
+            refreshBtn.addEventListener("click", function() {
+                window.location.reload(true);
+            });
+
+            reconnectBtn.addEventListener("click", function() {
+                reconnectBtn.disabled = true;
+                reconnectBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 连接中...';
+
+                $.post("/admin/ssh/reconnect")
+                    .done(function(data) {
+                        toastMessage.textContent = "SSH 连接成功刷新";
+                        toast.classList.add("bg-success", "text-white");
+                        const bsToast = new bootstrap.Toast(toast);
+                        bsToast.show();
+
+                        setTimeout(() => window.location.reload(true), 1500);
+                    })
+                    .fail(function(err) {
+                        toastMessage.textContent = "连接失败";
+                        toast.classList.add("bg-danger", "text-white");
+                        const bsToast = new bootstrap.Toast(toast);
+                        bsToast.show();
+                    })
+                    .always(function() {
+                        reconnectBtn.disabled = false;
+                        reconnectBtn.innerHTML = '<i class="bi bi-plug me-1"></i>重新连接 SSH';
+                    });
+            });
+        });
+    </script>
 {{end}}

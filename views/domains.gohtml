@@ -1,48 +1,107 @@
 {{define "content"}}
+    <div class="container py-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h2 class="m-0">代理域名列表</h2>
+                        {{if .Domains}}
+                            <small class="text-muted">共 {{len .Domains}} 个域名</small>
+                        {{else}}
+                            <small class="text-muted">暂无域名</small>
+                        {{end}}
+                    </div>
+                    <div class="btn-group">
+                        <button id="add_domain" type="button" class="btn btn-primary d-flex align-items-center" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                            <i class="bi bi-plus-circle me-2"></i> 添加域名
+                        </button>
+                        <button id="flushDomains" type="button" class="btn btn-outline-success d-flex align-items-center ms-2"
+                                data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="持久化域名配置到磁盘">
+                            <i class="bi bi-save me-2"></i> 保存
+                        </button>
+                    </div>
+                </div>
+                <hr class="my-3">
+            </div>
+        </div>
 
-    <h2 style="margin: 20px 0; align-items: center; text-align: center">Proxy Domain List</h2>
+        <!-- 搜索框 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="input-group">
+                    <span class="input-group-text bg-light">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input type="text" id="domainSearch" class="form-control" placeholder="搜索域名...">
+                    <button class="btn btn-outline-secondary" type="button" id="clearSearch">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
 
-    <div style="margin: 20px 0; ">
-        <button id="add_domain" type="button" class="btn btn-primary" data-bs-toggle="modal"
-                data-bs-target="#addDomainModal">Add Domain
-        </button>
-        <button id="flushDomains" type="button" class="btn btn-primary">Flush
-        </button>
+        <div class="row">
+            <div class="col-12">
+                {{if .Domains}}
+                    <div class="card shadow-sm">
+                        <div class="list-group list-group-flush" id="domainsList" style="max-height: 400px; overflow-y: auto;">
+                            {{range $key,$value := .Domains}}
+                                <div class="list-group-item d-flex justify-content-between align-items-center py-3 domain-item">
+                                    <div>
+                                        <h5 class="mb-0 domain-name">{{$key}}</h5>
+                                    </div>
+                                    <div>
+                                        <button id="domain_remove_{{$key}}" data-domain="{{$key}}" class="btn btn-sm btn-outline-danger domain_remove"
+                                                data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="删除该域名">
+                                            <i class="bi bi-trash me-1"></i> 删除
+                                        </button>
+                                    </div>
+                                </div>
+                            {{end}}
+                        </div>
+                    </div>
+                    <div id="noSearchResults" class="alert alert-warning text-center d-none" role="alert">
+                        <i class="bi bi-exclamation-triangle me-2"></i> 没有找到匹配的域名
+                    </div>
+                {{else}}
+                    <div class="alert alert-info text-center" role="alert">
+                        <i class="bi bi-info-circle me-2"></i> 当前没有配置任何域名，请点击"添加域名"按钮添加
+                    </div>
+                {{end}}
+            </div>
+        </div>
     </div>
-    <ul class="list-group list-group-numbered">
-        {{range $key,$value := .Domains}}
-            <li style="width: 100%; text-align: left" class="list-group-item list-group-item-action">
-                <h5 style="display:inline-block">{{$key}}</h5>
-                <i id="domain_remove_{{$key}}" data-domain="{{$key}}" class="bi bi-x-lg domain_remove"
-                   data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="delete the domain"
-                   style="cursor: pointer"></i>
-            </li>
-        {{end}}
-    </ul>
 
     <!-- Modal -->
-    <div class="modal fade" id="addDomainModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
+    <div class="modal fade" id="addDomainModal" tabindex="-1" aria-labelledby="addDomainModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h1 class="modal-title fs-5" id="exampleModalLabel">Add Domain</h1>
+                    <h5 class="modal-title" id="addDomainModalLabel"><i class="bi bi-globe me-2"></i>添加代理域名</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form class=" g-4 needs-validation" novalidate>
-                        <div class="row">
-                            <label for="validationCustom01" class="form-label col-sm-2">Domain:</label>
-                            <input type="text" class="form-control col-sm-8" id="validationCustom01" value=""
-                                   placeholder="domain" required>
-                            <div class="valid-feedback col-sm-2">
-                                Looks good!
+                    <form class="needs-validation" novalidate>
+                        <div class="mb-3">
+                            <label for="validationCustom01" class="form-label">域名</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-link-45deg"></i></span>
+                                <input type="text" class="form-control" id="validationCustom01"
+                                       placeholder="请输入域名，例如: example.com" required>
+                                <div class="invalid-feedback">
+                                    请输入有效的域名
+                                </div>
+                            </div>
+                            <div class="form-text text-muted mt-2">
+                                添加的域名将被配置为代理转发
                             </div>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button id="addDomainSubmit" class="btn btn-primary" type="button" data-bs-dismiss="modal">Submit
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button id="addDomainSubmit" class="btn btn-primary" type="button">
+                        <i class="bi bi-check2 me-1"></i> 确认添加
                     </button>
                 </div>
             </div>
@@ -50,38 +109,142 @@
     </div>
 
     <script>
+        // 初始化所有工具提示
+        document.addEventListener('DOMContentLoaded', function() {
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+
+            // 初始化搜索功能
+            initDomainSearch();
+        });
+
+        // 搜索功能实现
+        function initDomainSearch() {
+            const searchInput = $("#domainSearch");
+            const clearButton = $("#clearSearch");
+            const noResultsAlert = $("#noSearchResults");
+
+            // 搜索功能
+            searchInput.on("keyup", function() {
+                const searchTerm = $(this).val().toLowerCase().trim();
+                const domainItems = $(".domain-item");
+                let visibleCount = 0;
+
+                domainItems.each(function() {
+                    const domainName = $(this).find(".domain-name").text().toLowerCase();
+                    if (domainName.includes(searchTerm)) {
+                        $(this).removeClass("d-none");
+                        visibleCount++;
+                    } else {
+                        $(this).addClass("d-none");
+                    }
+                });
+
+                // 显示或隐藏"无结果"提示
+                if (visibleCount === 0 && searchTerm !== "") {
+                    noResultsAlert.removeClass("d-none");
+                } else {
+                    noResultsAlert.addClass("d-none");
+                }
+
+                // 当有输入时显示清除按钮
+                if (searchTerm !== "") {
+                    clearButton.removeClass("d-none");
+                } else {
+                    clearButton.addClass("d-none");
+                }
+            });
+
+            // 清除搜索
+            clearButton.on("click", function() {
+                searchInput.val("");
+                $(".domain-item").removeClass("d-none");
+                noResultsAlert.addClass("d-none");
+                clearButton.addClass("d-none");
+            });
+
+            // 初始时隐藏清除按钮
+            clearButton.addClass("d-none");
+        }
+
         $("#addDomainSubmit").click(() => {
             let val = $("#validationCustom01").val();
             if (!val) {
-                $("#toastmessage").html("domain is empty")
-                $("#toast").show()
-                return
+                $("#toastmessage").html("域名不能为空");
+                $("#toast").show();
+                return;
             }
-            $.post("/admin/domains/add?domain=" + $("#validationCustom01").val()).then(resp => {
-                $("#toastmessage").html(resp)
-                $("#toast").show()
-            })
-        })
+
+            const submitBtn = $("#addDomainSubmit");
+            const originalText = submitBtn.html();
+
+            submitBtn.html('<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>处理中...');
+            submitBtn.prop('disabled', true);
+
+            $.post("/admin/domains/add?domain=" + encodeURIComponent(val)).then(resp => {
+                $("#toastmessage").html(resp);
+                $("#toast").show();
+                // 刷新页面以显示新添加的域名
+                setTimeout(() => window.location.reload(), 1000);
+            }).catch(err => {
+                $("#toastmessage").html("添加失败: " + err.statusText);
+                $("#toast").show();
+            }).finally(() => {
+                submitBtn.html(originalText);
+                submitBtn.prop('disabled', false);
+            });
+        });
 
         $("#flushDomains").click(() => {
+            const flushBtn = $("#flushDomains");
+            const originalText = flushBtn.html();
+
+            flushBtn.html('<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>保存中...');
+            flushBtn.prop('disabled', true);
+
             $.post("/admin/domains/flush").then(resp => {
-                $("#toastmessage").html(resp)
-                $("#toast").show()
-            })
-        })
+                $("#toastmessage").html(resp);
+                $("#toast").show();
+                setTimeout(() => window.location.reload(), 1000);
+            }).catch(err => {
+                $("#toastmessage").html("保存失败: " + err.statusText);
+                $("#toast").show();
+            }).finally(() => {
+                flushBtn.html(originalText);
+                flushBtn.prop('disabled', false);
+            });
+        });
 
         $(".domain_remove").click(function () {
-            if (confirm("You sure you want to delete it?")) {
-                let attr = $(this).attr('data');
-                let domain = $(this).attr('data-domain');
-                if (!domain) {
-                    return
-                }
-                $.post("/admin/domains/remove?domain=" + domain).then(resp => {
-                    $("#toastmessage").html(resp)
-                    $("#toast").show()
-                })
+            const domainName = $(this).attr('data-domain');
+            if (!domainName) return;
+
+            if (confirm(`确定要删除域名 "${domainName}" 吗？`)) {
+                const btn = $(this);
+                const originalText = btn.html();
+
+                btn.html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
+                btn.prop('disabled', true);
+
+                $.post("/admin/domains/remove?domain=" + encodeURIComponent(domainName)).then(resp => {
+                    $("#toastmessage").html(resp);
+                    $("#toast").show();
+                    // 移除列表项而不刷新整个页面
+                    btn.closest('.list-group-item').fadeOut(300, function() {
+                        $(this).remove();
+                        if ($('.list-group-item').length === 0) {
+                            window.location.reload(); // 如果删除了最后一项，刷新页面以显示空状态
+                        }
+                    });
+                }).catch(err => {
+                    $("#toastmessage").html("删除失败: " + err.statusText);
+                    $("#toast").show();
+                    btn.html(originalText);
+                    btn.prop('disabled', false);
+                });
             }
-        })
+        });
     </script>
 {{end}}

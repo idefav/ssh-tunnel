@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.idefav.macos.ssh-tunnel</string>
+    <key>Disabled</key>
+    <false/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/local/bin/ssh-tunnel</string>
+      <string>-s</string>
+      <string>xx.xx.xx.xx</string>
+      <string>-server.ssh.port</string>
+      <string>10022</string>
+      <string>-l</string>
+      <string>0.0.0.0:1081</string>
+      <string>-socks5.enable=false</string>
+      <string>-http.enable</string>
+      <string>-http.over.ssh.enable</string>
+      <string>-http.filter.domain.enable</string>
+    </array>
+    <key>UserName</key>
+    <string>root</string>
+    <key>GroupName</key>
+    <string>wheel</string>
+  </dict>
+</plist>

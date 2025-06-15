@@ -1,10 +1,161 @@
 {{define "content"}}
-    <h2>Config Detail</h2>
-    <div class="card-body">
-        <div class="card-title">Config</div>
-        <div class="card-text">
-            <pre>{{.}}</pre>
+    <h2>应用配置详情</h2>
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">配置信息</h5>
+            <input type="text" class="form-control form-control-sm w-25" id="configSearch" placeholder="搜索配置...">
+        </div>
+        <div class="card-body">
+            <div id="config-container">
+                {{if eq (printf "%T" .) "map[string]interface {}"}}
+                    <table class="table table-striped table-hover">
+                        <thead>
+                        <tr>
+                            <th style="width: 30%">配置项</th>
+                            <th>值</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{range $key, $value := .}}
+                            <tr class="config-item">
+                                <td class="font-weight-bold">{{$key}}</td>
+                                <td><pre class="mb-0">{{printf "%v" $value}}</pre></td>
+                            </tr>
+                        {{end}}
+                        </tbody>
+                    </table>
+                {{else}}
+                    <pre id="config-content" class="p-3 bg-light rounded">{{.}}</pre>
+                {{end}}
+            </div>
+        </div>
+        <div class="card-footer">
+            <button class="btn btn-sm btn-primary" id="copyBtn">复制配置</button>
         </div>
     </div>
 
+    <script>
+        // 搜索功能
+        document.getElementById('configSearch').addEventListener('keyup', function() {
+            const searchText = this.value.toLowerCase();
+            const items = document.querySelectorAll('.config-item');
+
+            if (searchText === '') {
+                // 如果搜索框为空，恢复所有配置项的显示和移除高亮
+                items.forEach(item => {
+                    item.style.display = '';
+                    // 移除高亮
+                    removeHighlight(item);
+                });
+                return;
+            }
+
+            items.forEach(item => {
+                const itemText = item.textContent.toLowerCase();
+                const keyCell = item.querySelector('td:first-child');
+                const valueCell = item.querySelector('td:last-child');
+
+                if (itemText.includes(searchText)) {
+                    item.style.display = '';
+                    // 高亮匹配文本
+                    highlightText(keyCell, searchText);
+                    highlightText(valueCell, searchText);
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+
+        // 高亮文本函数
+        function highlightText(element, searchText) {
+            // 先移除现有高亮
+            removeHighlight(element);
+
+            if (!element || !searchText) return;
+
+            // 获取原始HTML内容
+            const originalText = element.innerText;
+            const lowerText = originalText.toLowerCase();
+
+            let result = '';
+            let lastIndex = 0;
+
+            // 查找所有匹配项并高亮
+            let index = lowerText.indexOf(searchText);
+            while (index !== -1) {
+                // 添加前面不匹配的部分
+                result += originalText.substring(lastIndex, index);
+
+                // 添加高亮的匹配部分
+                result += '<span class="highlight">' + originalText.substring(index, index + searchText.length) + '</span>';
+
+                lastIndex = index + searchText.length;
+                index = lowerText.indexOf(searchText, lastIndex);
+            }
+
+            // 添加剩余部分
+            result += originalText.substring(lastIndex);
+
+            // 判断如果元素��含pre标签，特殊处理
+            const preElement = element.querySelector('pre');
+            if (preElement) {
+                preElement.innerHTML = result;
+            } else {
+                element.innerHTML = result;
+            }
+        }
+
+        // 移除高亮
+        function removeHighlight(element) {
+            if (!element) return;
+
+            // 处理pre元素的情况
+            const preElement = element.querySelector('pre');
+            if (preElement) {
+                const original = preElement.innerText;
+                preElement.innerHTML = original;
+            } else {
+                // 获取原始文本，移除所有高亮标记
+                const highlightedElements = element.querySelectorAll('.highlight');
+                if (highlightedElements.length > 0) {
+                    const original = element.innerText;
+                    element.innerHTML = original;
+                }
+            }
+        }
+
+        // 复制功能
+        document.getElementById('copyBtn').addEventListener('click', function() {
+            const content = document.getElementById('config-content')
+                ? document.getElementById('config-content').textContent
+                : document.querySelector('table').textContent;
+
+            navigator.clipboard.writeText(content)
+                .then(() => {
+                    this.textContent = '已复制';
+                    setTimeout(() => this.textContent = '复制配置', 2000);
+                })
+                .catch(err => console.error('复制失败:', err));
+        });
+    </script>
+
+    <style>
+        pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 300px;
+            overflow: auto;
+        }
+        #config-content {
+            max-height: 600px;
+            overflow: auto;
+        }
+        /* 高亮样式 */
+        .highlight {
+            background-color: #ffff00;
+            font-weight: bold;
+            padding: 1px;
+            border-radius: 2px;
+        }
+    </style>
 {{end}}

@@ -174,5 +174,22 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 		fmt.Println("Error " + err.Error())
 	}
 	marshal, _ := json.MarshalIndent(tunnel.AppConfig(), "", "    ")
-	tmpl.Execute(response, string(marshal))
+	// 把 marshal 转换为 map[string]interface{}
+	var data map[string]interface{}
+	if err := json.Unmarshal(marshal, &data); err != nil {
+		http.Error(response, "Error parsing JSON: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tmpl.Execute(response, data)
+}
+
+func ShowLogsView(response http.ResponseWriter, request *http.Request) {
+	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml",
+		"nav.gohtml",
+		"logs.gohtml")
+
+	if err != nil {
+		fmt.Println("Error " + err.Error())
+	}
+	tmpl.Execute(response, nil)
 }

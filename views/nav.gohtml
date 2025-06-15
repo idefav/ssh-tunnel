@@ -1,7 +1,9 @@
 {{define "nav"}}
-    <nav class="navbar navbar-expand-lg bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
         <div class="container-fluid">
-            <a class="navbar-brand" href="#">SSH-TUNNEL</a>
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-hdd-network"></i> SSH-TUNNEL
+            </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
                     aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -9,30 +11,63 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link active" aria-current="page" href="/view/index">Home</a>
+                        <a class="nav-link" id="nav-home" href="/view/index">
+                            <i class="bi bi-house"></i> 首页
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/view/domains">Domains</a>
+                        <a class="nav-link" id="nav-domains" href="/view/domains">
+                            <i class="bi bi-globe"></i> 域名
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/view/caches">Caches</a>
+                        <a class="nav-link" id="nav-caches" href="/view/caches">
+                            <i class="bi bi-hdd-stack"></i> 缓存
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a id="a_ssh_state" class="nav-link" href="/view/ssh/state">SSHState</a>
+                        <a id="nav-ssh-state" class="nav-link" href="/view/ssh/state">
+                            <i class="bi bi-terminal"></i> SSH状态
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a id="a_app_config" class="nav-link" href="/view/app/config">Config</a>
+                        <a id="nav-app-config" class="nav-link" href="/view/app/config">
+                            <i class="bi bi-gear"></i> 配置
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a id="nav-logs" class="nav-link" href="/view/logs">
+                            <i class="bi bi-journal-text"></i> 日志
+                        </a>
                     </li>
                 </ul>
             </div>
         </div>
     </nav>
-        <script>
-            $("#a_clean_cache").click(()=>{
-                $.get('/admin/cache/clean').then(resp=>{
-                    $("#toastmessage").html("Clean success!")
-                    $('#toast').toast('show');
-                })
+    <script>
+        // 根据当前URL路径高亮对应的��航项
+        $(document).ready(function() {
+            const path = window.location.pathname;
+            if (path.includes('/view/index')) {
+                $('#nav-home').addClass('active');
+            } else if (path.includes('/view/domains')) {
+                $('#nav-domains').addClass('active');
+            } else if (path.includes('/view/caches')) {
+                $('#nav-caches').addClass('active');
+            } else if (path.includes('/view/ssh/state')) {
+                $('#nav-ssh-state').addClass('active');
+            } else if (path.includes('/view/app/config')) {
+                $('#nav-app-config').addClass('active');
+            } else if (path.includes('/view/logs')) {
+                $('#nav-logs').addClass('active');
+            }
+        });
+
+        $("#a_clean_cache").click(()=>{
+            $.get('/admin/cache/clean').then(resp=>{
+                $("#toastmessage").html("清除成功!")
+                $('#toast').toast('show');
             })
-        </script>
+        })
+    </script>
 {{end}}

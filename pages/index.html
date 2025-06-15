@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH-Tunnel - 简便的SSH隧道代理工具</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">SSH-Tunnel</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="documentation.html">文档</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="installation.html">安装指南</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="faq.html">常见问题</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://github.com/idefav/ssh-tunnel" target="_blank">GitHub <i class="bi bi-github"></i></a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <header class="bg-primary text-white text-center py-5">
+        <div class="container">
+            <h1 class="display-4">SSH-Tunnel</h1>
+            <p class="lead">一个强大、简便的SSH隧道代理工具</p>
+            <div class="mt-4">
+                <a href="https://github.com/idefav/ssh-tunnel/releases" class="btn btn-light btn-lg me-2">
+                    <i class="bi bi-download"></i> 下载
+                </a>
+                <a href="documentation.html" class="btn btn-outline-light btn-lg">
+                    <i class="bi bi-book"></i> 文档
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <section class="py-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-shield-lock fs-1 text-primary mb-3"></i>
+                            <h3 class="card-title">安全可靠</h3>
+                            <p class="card-text">基于SSH协议建立安全隧道，提供SOCKS5和HTTP代理服务，确保数据传输安全。</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-gear fs-1 text-primary mb-3"></i>
+                            <h3 class="card-title">灵活配置</h3>
+                            <p class="card-text">支持多种启动参数，可自定义监听地址、端口，支持多种代理模式和过滤规则。</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="bi bi-display fs-1 text-primary mb-3"></i>
+                            <h3 class="card-title">管理界面</h3>
+                            <p class="card-text">内置管理界面，实时查看连接状态、日志和配置信息，便于监控和调整。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-5 bg-light">
+        <div class="container">
+            <h2 class="text-center mb-4">快速开始</h2>
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">基本使用</h5>
+                            <p>使用以下命令启动SSH隧道：</p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx</code></pre>
+                            <p class="mt-3">这将使用默认设置启动SSH隧道，在本地1081端口开启SOCKS5代理。</p>
+                            <a href="documentation.html" class="btn btn-primary mt-2">查看更多命令选项 <i class="bi bi-arrow-right"></i></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-5">
+        <div class="container">
+            <h2 class="text-center mb-5">主要功能</h2>
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-check-circle-fill text-success fs-4 me-3"></i>
+                        </div>
+                        <div>
+                            <h4>SOCKS5代理</h4>
+                            <p>默认在本地1081端口提供SOCKS5代理服务</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-check-circle-fill text-success fs-4 me-3"></i>
+                        </div>
+                        <div>
+                            <h4>HTTP代理</h4>
+                            <p>可选开启HTTP代理，默认在本地1082端口</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-check-circle-fill text-success fs-4 me-3"></i>
+                        </div>
+                        <div>
+                            <h4>域名过滤</h4>
+                            <p>支持HTTP请求域名过滤功能</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-check-circle-fill text-success fs-4 me-3"></i>
+                        </div>
+                        <div>
+                            <h4>HTTP Basic认证</h4>
+                            <p>可配置HTTP代理的基本认证，提高安全性</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-check-circle-fill text-success fs-4 me-3"></i>
+                        </div>
+                        <div>
+                            <h4>管理界面</h4>
+                            <p>内置Web管理界面，默认地址localhost:1083/view/index</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-check-circle-fill text-success fs-4 me-3"></i>
+                        </div>
+                        <div>
+                            <h4>系统服务支持</h4>
+                            <p>支持Windows服务和MacOS自启动配置</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-5 bg-light">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6 mb-4 mb-md-0">
+                    <h2>管理界面预览</h2>
+                    <p class="lead">SSH-Tunnel提供了直观的管理界面，方便监控隧道状态和配置应用。</p>
+                    <ul class="list-unstyled">
+                        <li><i class="bi bi-check-lg text-success me-2"></i> 实时查看SSH连接状态</li>
+                        <li><i class="bi bi-check-lg text-success me-2"></i> 查看应用日志</li>
+                        <li><i class="bi bi-check-lg text-success me-2"></i> 查看和编辑域名过滤列表</li>
+                        <li><i class="bi bi-check-lg text-success me-2"></i> 查看应用配置信息</li>
+                    </ul>
+                    <a href="documentation.html#admin-ui" class="btn btn-primary mt-3">了解更多</a>
+                </div>
+                <div class="col-md-6">
+                    <img src="https://user-images.githubusercontent.com/6405415/206909223-b47372db-5356-4cbf-8c11-8929d6227896.png" alt="Admin UI" class="img-fluid rounded shadow">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-5">
+        <div class="container">
+            <h2 class="text-center mb-4">支持的平台</h2>
+            <div class="row justify-content-center text-center g-4">
+                <div class="col-md-4">
+                    <div class="p-4 border rounded h-100">
+                        <i class="bi bi-windows fs-1 mb-3 text-primary"></i>
+                        <h4>Windows</h4>
+                        <p>支持Windows系统，可配置为系统服务自动启动</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-4 border rounded h-100">
+                        <i class="bi bi-apple fs-1 mb-3 text-primary"></i>
+                        <h4>MacOS</h4>
+                        <p>支持MacOS系统，可配置为开机自动启动</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-4 border rounded h-100">
+                        <i class="bi bi-ubuntu fs-1 mb-3 text-primary"></i>
+                        <h4>Linux</h4>
+                        <p>支持各种Linux发行版</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="bg-dark text-white py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>SSH-Tunnel</h5>
+                    <p>一个简单而强大的SSH隧道代理工具</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <ul class="list-inline mb-0">
+                        <li class="list-inline-item">
+                            <a href="https://github.com/idefav/ssh-tunnel" class="text-white" target="_blank">
+                                <i class="bi bi-github fs-4"></i>
+                            </a>
+                        </li>
+                    </ul>
+                    <p class="mt-2">
+                        <a href="https://github.com/idefav/ssh-tunnel/blob/master/LICENSE" class="text-white text-decoration-none">
+                            Apache License 2.0
+                        </a>
+                    </p>
+                </div>
+            </div>
+            <hr class="my-3">
+            <div class="text-center">
+                <small>&copy; 2025 SSH-Tunnel. All rights reserved.</small>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>
