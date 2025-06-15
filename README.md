@@ -78,7 +78,8 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 ## AdminUI
 
 默认地址: localhost:1083/view/index
-<img width="1353" alt="image" src="https://user-images.githubusercontent.com/6405415/206909223-b47372db-5356-4cbf-8c11-8929d6227896.png">
+![image](https://github.com/user-attachments/assets/fb5b016d-5e98-4a5f-ac37-1b7fe5fc5c50)
+
 
 ## MacOS boot auto-start settings
 
