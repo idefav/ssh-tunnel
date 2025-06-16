@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH免密登录配置 - SSH-Tunnel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        .code-block {
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            overflow-x: auto;
+        }
+        .tab-content {
+            padding: 20px;
+            border: 1px solid #dee2e6;
+            border-top: none;
+            border-radius: 0 0 5px 5px;
+        }
+        .step-number {
+            background-color: #0d6efd;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+        }
+        .step {
+            margin-bottom: 30px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">SSH-Tunnel</a>
+            <span id="nav-slogan" class="d-none">仅需一个SSH连接 · 零服务端安装 · 即开即用</span>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="documentation.html">文档</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="installation.html">安装指南</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="ssh-key-setup.html">SSH免密登录</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="faq.html">常见问题</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://github.com/idefav/ssh-tunnel" target="_blank">GitHub <i class="bi bi-github"></i></a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <header class="bg-primary text-white py-4">
+        <div class="container">
+            <h1>SSH免密登录配置指南</h1>
+            <p class="lead">学习如何在各种操作系统上配置SSH免密登录，以便使用SSH-Tunnel</p>
+        </div>
+    </header>
+
+    <div class="container py-5">
+        <div class="row">
+            <div class="col-lg-3">
+                <div class="doc-nav sticky-top" style="top: 20px;">
+                    <div class="list-group">
+                        <a href="#introduction" class="list-group-item list-group-item-action">介绍</a>
+                        <a href="#linux" class="list-group-item list-group-item-action">Linux系统配置</a>
+                        <a href="#macos" class="list-group-item list-group-item-action">macOS系统配置</a>
+                        <a href="#windows" class="list-group-item list-group-item-action">Windows系统配置</a>
+                        <a href="#verify" class="list-group-item list-group-item-action">验证配置</a>
+                        <a href="#troubleshooting" class="list-group-item list-group-item-action">常见问题排查</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-9">
+                <div id="content">
+                    <section id="introduction" class="mb-5">
+                        <h2>SSH免密登录介绍</h2>
+                        <hr>
+                        <p>SSH免密登录允许您在不输入密码的情况下连接到远程服务器，这对于使用SSH-Tunnel工具非常重要。免密登录通过公钥/私钥对实现，本指南将详细介绍如何在不同操作系统上配置SSH免密登录。</p>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            SSH免密登录的基本原理是：将您本地生成的公钥放置在远程服务器上，当您尝试连接时，远程服务器会使用公钥验证您持有的私钥，从而实现免密登录。
+                        </div>
+
+                        <p>无论您使用什么操作系统，SSH免密登录的基本流程都是相似的：</p>
+                        <ol>
+                            <li>在本地生成SSH密钥对（如果还没有）</li>
+                            <li>将公钥传输到远程服务器</li>
+                            <li>在远程服务器上将公钥添加到授权文件</li>
+                            <li>测试免密登录</li>
+                        </ol>
+
+                        <p>请选择适合您操作系统的指南部分：</p>
+                        <div class="d-flex gap-2 mb-4">
+                            <a href="#linux" class="btn btn-outline-primary">Linux指南</a>
+                            <a href="#macos" class="btn btn-outline-primary">macOS指南</a>
+                            <a href="#windows" class="btn btn-outline-primary">Windows指南</a>
+                        </div>
+                    </section>
+
+                    <section id="linux" class="mb-5">
+                        <h2>Linux系统SSH免密登录配置</h2>
+                        <hr>
+
+                        <div class="step">
+                            <h4><span class="step-number">1</span> 生成SSH密钥对</h4>
+                            <p>在终端中执行以下命令生成SSH密钥对：</p>
+                            <div class="code-block">
+                                <pre>ssh-keygen -t rsa -b 4096 -C "your_email@example.com"</pre>
+                            </div>
+                            <p>执行后，系统会提示：</p>
+                            <div class="code-block">
+                                <pre>Enter file in which to save the key (/home/username/.ssh/id_rsa):</pre>
+                            </div>
+                            <p>直接按回车键接受默认路径，然后系统会询问是否设置密码：</p>
+                            <div class="code-block">
+                                <pre>Enter passphrase (empty for no passphrase):
+Enter same passphrase again:</pre>
+                            </div>
+                            <p>您可以直接按回车键跳过密码设置（实现真正的免密登录），或者设置一个密码以提高安全性。</p>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">2</span> 将公钥复制到远程服务器</h4>
+                            <p>Linux提供了简便的<code>ssh-copy-id</code>工具：</p>
+                            <div class="code-block">
+                                <pre>ssh-copy-id username@remote_host</pre>
+                            </div>
+                            <p>首次连接时会提示确认服务器指纹，输入<code>yes</code>确认，然后输入远程服务器密码。</p>
+
+                            <div class="alert alert-secondary">
+                                <strong>替代方法：</strong> 如果<code>ssh-copy-id</code>不可用，可以手动复制：
+                                <div class="code-block">
+                                    <pre>cat ~/.ssh/id_rsa.pub | ssh username@remote_host "mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && cat >> ~/.ssh/authorized_keys"</pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">3</span> 设置正确的权限</h4>
+                            <p>确保SSH目录和文件权限正确：</p>
+                            <div class="code-block">
+                                <pre>chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_rsa
+chmod 644 ~/.ssh/id_rsa.pub
+chmod 600 ~/.ssh/authorized_keys  # 在远程服务器上执行</pre>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">4</span> 测试免密登录</h4>
+                            <p>尝试SSH登录到远程服务器：</p>
+                            <div class="code-block">
+                                <pre>ssh username@remote_host</pre>
+                            </div>
+                            <p>如果配置正确，您应该能够无需输入密码直接登录。</p>
+                        </div>
+
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle-fill me-2"></i>
+                            成功配置后，您就可以使用SSH-Tunnel工具建立隧道连接，而无需每次输入密码。
+                        </div>
+                    </section>
+
+                    <section id="macos" class="mb-5">
+                        <h2>macOS系统SSH免密登录配置</h2>
+                        <hr>
+
+                        <div class="step">
+                            <h4><span class="step-number">1</span> 生成SSH密钥对</h4>
+                            <p>macOS的Terminal终端操作与Linux类似：</p>
+                            <div class="code-block">
+                                <pre>ssh-keygen -t rsa -b 4096 -C "your_email@example.com"</pre>
+                            </div>
+                            <p>按回车键接受默认存储位置（通常是<code>~/.ssh/id_rsa</code>）。</p>
+                            <p>系统会询问是否设置密码，您可以直接按回车键跳过（实现免密登录）或设置密码。</p>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">2</span> 将公钥复制到远程服务器</h4>
+                            <p>macOS也支持<code>ssh-copy-id</code>命令，但如果没有安装，可以通过Homebrew安装：</p>
+                            <div class="code-block">
+                                <pre>brew install ssh-copy-id</pre>
+                            </div>
+                            <p>然后执行：</p>
+                            <div class="code-block">
+                                <pre>ssh-copy-id username@remote_host</pre>
+                            </div>
+                            <p>或者使用手动方法：</p>
+                            <div class="code-block">
+                                <pre>cat ~/.ssh/id_rsa.pub | ssh username@remote_host "mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && cat >> ~/.ssh/authorized_keys"</pre>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">3</span> 添加到SSH代理（可选）</h4>
+                            <p>为了避免每次重启后都需要重新输入密钥密码（如果设置了），可以添加到SSH代理：</p>
+                            <div class="code-block">
+                                <pre>ssh-add -K ~/.ssh/id_rsa</pre>
+                            </div>
+                            <p>在macOS Sierra 10.12.2及更高版本，您可能需要在<code>~/.ssh/config</code>文件中添加以下配置：</p>
+                            <div class="code-block">
+                                <pre>Host *
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_rsa</pre>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">4</span> 测试连接</h4>
+                            <div class="code-block">
+                                <pre>ssh username@remote_host</pre>
+                            </div>
+                            <p>应该可以直接登录，无需输入密码。</p>
+                        </div>
+                    </section>
+
+                    <section id="windows" class="mb-5">
+                        <h2>Windows系统SSH免密登录配置</h2>
+                        <hr>
+
+                        <div class="step">
+                            <h4><span class="step-number">1</span> 使用OpenSSH（Windows 10/11内置）</h4>
+                            <p>较新的Windows版本已内置OpenSSH，可以通过PowerShell生成密钥：</p>
+                            <div class="code-block">
+                                <pre>ssh-keygen -t rsa -b 4096 -C "your_email@example.com"</pre>
+                            </div>
+                            <p>默认会将密钥保存在<code>C:\\Users\\username\\.ssh\\id_rsa</code>。</p>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">2</span> 复制公钥到远程服务器</h4>
+                            <p>Windows 10/11可以使用以下PowerShell命令：</p>
+                            <div class="code-block">
+                                <pre>type $env:USERPROFILE\.ssh\id_rsa.pub | ssh username@remote_host "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"</pre>
+                            </div>
+                            <p>或者手动复制公钥文件内容：</p>
+                            <ol>
+                                <li>打开公钥文件：<code>notepad $env:USERPROFILE\.ssh\id_rsa.pub</code></li>
+                                <li>复制文件内容</li>
+                                <li>登录到远程服务器</li>
+                                <li>编辑<code>~/.ssh/authorized_keys</code>文件，将公钥内容粘贴到新行</li>
+                            </ol>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">3</span> 使用适当的配置文件（可选）</h4>
+                            <p>创建或编辑<code>%USERPROFILE%\.ssh\config</code>文件：</p>
+                            <div class="code-block">
+                                <pre>Host remote_nickname
+    HostName remote_host_ip_or_domain
+    User username
+    IdentityFile ~/.ssh/id_rsa</pre>
+                            </div>
+                            <p>有了这个配置，您可以简单地使用<code>ssh remote_nickname</code>进行连接。</p>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">4</span> 使用SSH代理（可选）</h4>
+                            <p>在PowerShell中执行：</p>
+                            <div class="code-block">
+                                <pre># 启动SSH代理服务
+Get-Service ssh-agent | Set-Service -StartupType Automatic
+Start-Service ssh-agent
+
+# 添加私钥
+ssh-add $env:USERPROFILE\.ssh\id_rsa</pre>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <h5><i class="bi bi-lightbulb-fill me-2"></i>使用Git Bash（替代方案）</h5>
+                            <p>如果您安装了Git for Windows，可以使用Git Bash执行与Linux/macOS相同的命令，操作流程与Linux部分完全一致。</p>
+                        </div>
+
+                        <div class="step">
+                            <h4><span class="step-number">5</span> 测试连接</h4>
+                            <div class="code-block">
+                                <pre>ssh username@remote_host</pre>
+                            </div>
+                            <p>如果配置正确，您应该能够直接登录而无需输入密码。</p>
+                        </div>
+                    </section>
+
+                    <section id="verify" class="mb-5">
+                        <h2>验证配置</h2>
+                        <hr>
+
+                        <p>无论您使用哪种操作系统，验证SSH免密登录是否成功的方法是一致的：</p>
+
+                        <div class="code-block">
+                            <pre>ssh -v username@remote_host</pre>
+                        </div>
+
+                        <p>添加<code>-v</code>参数会显示详细的调试信息，帮助您识别可能的问题。</p>
+
+                        <p>成功的免密登录应该直接让您进入远程系统的命令行，无需输入密码。</p>
+
+                        <div class="alert alert-success">
+                            <h5><i class="bi bi-check-circle-fill me-2"></i>使用SSH-Tunnel验证</h5>
+                            <p>成功配置SSH免密登录后，您可以使用以下命令启动SSH-Tunnel：</p>
+                            <div class="code-block">
+                                <pre>./ssh-tunnel -s username@remote_host</pre>
+                            </div>
+                            <p>如果隧道能成功建立，说明SSH免密登录配置正确。</p>
+                        </div>
+                    </section>
+
+                    <section id="troubleshooting" class="mb-5">
+                        <h2>常见问题排查</h2>
+                        <hr>
+
+                        <div class="accordion" id="troubleshootingAccordion">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#issue1">
+                                        仍然提示输入密码
+                                    </button>
+                                </h2>
+                                <div id="issue1" class="accordion-collapse collapse show" data-bs-parent="#troubleshootingAccordion">
+                                    <div class="accordion-body">
+                                        <p>如果SSH仍然要求输入密码，请检查：</p>
+                                        <ul>
+                                            <li>公钥是否正确添加到远程服务器的<code>~/.ssh/authorized_keys</code>文件</li>
+                                            <li>远程服务器上<code>~/.ssh</code>目录和<code>authorized_keys</code>文件的权限：
+                                                <div class="code-block">
+                                                    <pre>chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys</pre>
+                                                </div>
+                                            </li>
+                                            <li>远程服务器的SSH配置是否允许公钥认证：
+                                                <div class="code-block">
+                                                    <pre># 检查 /etc/ssh/sshd_config 文件
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys</pre>
+                                                </div>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue2">
+                                        权限被拒绝（Permission denied）
+                                    </button>
+                                </h2>
+                                <div id="issue2" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                    <div class="accordion-body">
+                                        <p>如果出现<code>Permission denied (publickey)</code>错误：</p>
+                                        <ul>
+                                            <li>确认您使用的是正确的用户名和主机名</li>
+                                            <li>检查SSH服务器日志（通常在<code>/var/log/auth.log</code>或<code>/var/log/secure</code>）</li>
+                                            <li>验证您的私钥路径是否正确</li>
+                                            <li>使用<code>ssh -i ~/.ssh/id_rsa username@remote_host</code>明确指定私钥</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue3">
+                                        密钥格式或类型问题
+                                    </button>
+                                </h2>
+                                <div id="issue3" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                    <div class="accordion-body">
+                                        <p>如果遇到密钥类型或格式问题：</p>
+                                        <ul>
+                                            <li>某些老旧系统可能不支持较新的密钥类型，尝试使用RSA：
+                                                <div class="code-block">
+                                                    <pre>ssh-keygen -t rsa -b 2048 -C "your_email@example.com"</pre>
+                                                </div>
+                                            </li>
+                                            <li>确保公钥格式正确，应该是单行文本，以<code>ssh-rsa</code>或其他算法标识符开头</li>
+                                            <li>Windows用户注意：文本文件可能有不同的行尾格式，确保公钥文件没有额外的回车或换行</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <p>&copy; 2024 SSH-Tunnel. 保留所有权利。</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <a href="https://github.com/idefav/ssh-tunnel" class="text-white me-3">
+                        <i class="bi bi-github"></i> GitHub
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 平滑滚动到锚点
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const targetId = this.getAttribute('href');
+                    const targetElement = document.querySelector(targetId);
+                    if (targetElement) {
+                        window.scrollTo({
+                            top: targetElement.offsetTop - 70,
+                            behavior: 'smooth'
+                        });
+                    }
+                });
+            });
+
+            // 突出显示当前滚动位置的导航项
+            const sections = document.querySelectorAll('section[id]');
+            window.addEventListener('scroll', function() {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop - 100;
+                    if (pageYOffset >= sectionTop) {
+                        current = section.getAttribute('id');
+                    }
+                });
+
+                document.querySelectorAll('.doc-nav a').forEach(link => {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href') === `#${current}`) {
+                        link.classList.add('active');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
