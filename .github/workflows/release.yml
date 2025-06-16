@@ -14,7 +14,7 @@ jobs:
         with:
           go-version: "1.24.0" # 改成自己的版本
 
-      - run: sh build.sh
+      - run: sh scripts/build.sh
       - name: Release
         uses: softprops/action-gh-release@v1
         with: # 将下述可执行文件 release 上去

@@ -96,6 +96,34 @@
                         <i class="bi bi-exclamation-triangle-fill me-2"></i>
                         <strong>注意：</strong> 请确保下载适合您系统的正确版本，并验证下载文件的SHA256校验和，以确保文件完整性。
                     </div>
+
+                    <h3>使用自动下载脚本</h3>
+                    <p>为了简化下载过程，SSH-Tunnel提供了自动检测系统类型并下载对应版本的脚本：</p>
+
+                    <div class="row mt-3">
+                        <div class="col-md-6">
+                            <h4>Windows PowerShell 脚本</h4>
+                            <p>在PowerShell中运行以下命令下载并执行脚本：</p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>Invoke-WebRequest -Uri "https://raw.githubusercontent.com/idefav/ssh-tunnel/master/scripts/download_latest.ps1" -OutFile "$env:TEMP\download_ssh_tunnel.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\download_ssh_tunnel.ps1"</code></pre>
+                            <p>或者，您也可以直接保存<a href="https://raw.githubusercontent.com/idefav/ssh-tunnel/master/scripts/download_latest.ps1" target="_blank">download_latest.ps1</a>脚本并运行。</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h4>Linux/MacOS Shell 脚本</h4>
+                            <p>在终端中运行以下命令：</p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>curl -sSL https://raw.githubusercontent.com/idefav/ssh-tunnel/master/scripts/download_latest.sh | bash</code></pre>
+                            <p>或使用wget：</p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>wget -qO- https://raw.githubusercontent.com/idefav/ssh-tunnel/master/scripts/download_latest.sh | bash</code></pre>
+                            <p>您也可以下载<a href="https://raw.githubusercontent.com/idefav/ssh-tunnel/master/scripts/download_latest.sh" target="_blank">download_latest.sh</a>脚本，赋予执行权限后运行：</p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>chmod +x download_latest.sh
+./download_latest.sh</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-success mt-3">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        <strong>提示：</strong> 自动下载脚本会检测您的系统架构，并从GitHub下载最新版本的SSH-Tunnel。下载完成后，文件将保存在脚本所在目录的bin子文件夹中。
+                    </div>
                 </div>
 
                 <div id="windows-installation" class="doc-section">
