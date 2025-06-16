@@ -1,22 +1,18 @@
-//go:build windows
-// +build windows
-
 package main
 
 import (
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"github.com/kardianos/service"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"io"
 	"log"
 	"os"
 	"os/user"
 	"path"
-	"runtime"
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
+	"ssh-tunnel/service/os_config"
 	"ssh-tunnel/tunnel"
 	"strings"
 	"sync"
@@ -152,21 +148,14 @@ func innerStart() {
 		vConfig.SetConfigType("properties")
 	}
 
-	// 判断操作系统类型
-	osType := runtime.GOOS
-	switch osType {
-	case "windows":
-		// Windows 系统特定配置
-		vConfig.AddConfigPath(path.Join("C:\\ssh-tunnel", ".ssh-tunnel"))
-	case "darwin":
-		// macOS 系统特定配置
-		vConfig.AddConfigPath(path.Join("/Library", "Application Support", "ssh-tunnel"))
-	case "linux", "freebsd", "openbsd":
-		// Linux/BSD 系统特定配置
-		vConfig.AddConfigPath(path.Join("/etc", "config", "ssh-tunnel"))
-	default:
-		// 其他操作系统使用通用配置
-		log.Printf("未知操作系统类型: %s, 使用默认配置", osType)
+	os_config.SetConfig(vConfig)
+
+	// Windows 系统特定配置
+	// 是否使用OS 服务管理器运行
+	interactive := service.Interactive()
+	if !interactive {
+		// 通过服务管理器运行时，配置文件路径可能在特定目录下
+		vConfig.AddConfigPath(path.Join(DEFAULT_HOME, ".ssh-tunnel"))
 	}
 
 	// 默认值设置
@@ -262,12 +251,4 @@ func PathExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
-}
-func wordSepNormailzeFunc(f *pflag.FlagSet, name string) pflag.NormalizedName {
-	from := []string{"-", "_"}
-	to := "."
-	for _, sep := range from {
-		name = strings.Replace(name, sep, to, -1)
-	}
-	return pflag.NormalizedName(name)
 }

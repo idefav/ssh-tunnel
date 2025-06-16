@@ -17,6 +17,8 @@ Open ssh tunnel, start Sock5 port locally by default 1081
 ./ssh-tunnel -s xx.xx.xx.xx
 ```
 
+注意: 需要配置本地服务器到目标服务器的SSH免密登录, 免密登录请参考: [SSH免密登录](https://idefav.github.io/ssh-tunnel/ssh-key-setup.html)
+
 ## commands
 
 ```bash
@@ -141,9 +143,12 @@ launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 ```
 
 # Windows Service支持
-### 1. 在C盘跟目录参加 `ssh-tunnel`
+### 1. 配置文件准备
+在C盘跟目录参加 `ssh-tunnel`
 在该目录下参加 `.ssh-tunnel` 目录， 并写入 `config.properties`
-```text
+配置文件完整路径: `C:\ssh-tunnel\.ssh-tunnel\config.properties`
+
+```properties
 server.ip=xx.xx.xx.xx
 server.ssh.port=22
 server.ssh.private_key_path=C:\\Users\\idefav\\.ssh\\id_rsa
@@ -163,7 +168,7 @@ admin.address=:1083
 ### 2. 安装windows服务
 
 ```text
- .\ssh-tunnel-winsvc.exe install
+ .\ssh-tunnel-svc-windows-amd64.exe install  --config=C:\ssh-tunnel\.ssh-tunnel\config.properties
 ```
 
 ### 3. 查看服务
