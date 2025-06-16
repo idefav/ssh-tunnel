@@ -19,11 +19,19 @@ jobs:
         uses: softprops/action-gh-release@v1
         with: # 将下述可执行文件 release 上去
           files: |
-            ./bin/ssh-tunnel-386.exe
-            ./bin/ssh-tunnel-amd64-darwin
-            ./bin/ssh-tunnel-amd64-linux
-            ./bin/ssh-tunnel-amd64.exe
-            ./bin/ssh-tunnel-arm64-darwin
-            ./bin/ssh-tunnel-winsvc.exe
+            ./bin/ssh-tunnel-windows-386.exe
+            ./bin/ssh-tunnel-windows-amd64.exe
+            ./bin/ssh-tunnel-windows-arm64.exe
+            ./bin/ssh-tunnel-darwin-amd64
+            ./bin/ssh-tunnel-darwin-arm64
+            ./bin/ssh-tunnel-linux-amd64
+            ./bin/ssh-tunnel-linux-arm64
+            ./bin/ssh-tunnel-svc-windows-386.exe
+            ./bin/ssh-tunnel-svc-windows-amd64.exe
+            ./bin/ssh-tunnel-svc-windows-arm64.exe
+            ./bin/ssh-tunnel-svc-darwin-amd64
+            ./bin/ssh-tunnel-svc-darwin-arm64
+            ./bin/ssh-tunnel-svc-linux-amd64
+            ./bin/ssh-tunnel-svc-linux-arm64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
