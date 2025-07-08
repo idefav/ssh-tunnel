@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
+	"github.com/kardianos/service"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"io"
@@ -11,10 +13,12 @@ import (
 	"os"
 	"os/user"
 	"path"
-	"runtime"
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
+	"ssh-tunnel/constants"
+	"ssh-tunnel/service/os_config"
 	"ssh-tunnel/tunnel"
+	"ssh-tunnel/updater"
 	"strings"
 	"sync"
 )
@@ -30,133 +34,115 @@ func main() {
 		log.Fatal(err)
 	}
 
-	config := cfg.AppConfig{}
+	config := cfg.NewAppConfig()
 
 	// 先读取配置文件, 然后用命令行覆盖
 	vConfig := viper.New()
 	vConfig.AddConfigPath(".")
 	vConfig.AddConfigPath(path.Join(u.HomeDir, ".ssh-tunnel"))
-	// 判断操作系统类型
-	osType := runtime.GOOS
-	switch osType {
-	case "windows":
-		// Windows 系统特定配置
-		vConfig.AddConfigPath(path.Join("C:\\ssh-tunnel", ".ssh-tunnel"))
-	case "darwin":
-		// macOS 系统特定配置
-		vConfig.AddConfigPath(path.Join("/Library", "Application Support", "ssh-tunnel"))
-	case "linux", "freebsd", "openbsd":
-		// Linux/BSD 系统特定配置
-		vConfig.AddConfigPath(path.Join("/etc", "config", "ssh-tunnel"))
-	default:
-		// 其他操作系统使用通用配置
-		log.Printf("未知操作系统类型: %s, 使用默认配置", osType)
-	}
+
+	// 设置操作系统特定的配置
+	os_config.SetConfig(vConfig)
 
 	vConfig.SetConfigName("config")
 	vConfig.SetConfigType("properties")
 
 	// 默认值设置
-	vConfig.SetDefault("home.dir", path.Join(u.HomeDir, ".ssh-tunnel"))
-	vConfig.SetDefault("ssh.path.private_key", path.Join(u.HomeDir, ".ssh/id_rsa"))
-	vConfig.SetDefault("ssh.path.known_hosts", path.Join(u.HomeDir, ".ssh/known_hosts"))
-	vConfig.SetDefault("user", "root")
-	vConfig.SetDefault("local.addr", "0.0.0.0:1081")
-	vConfig.SetDefault("http.local.addr", "0.0.0.0:1082")
-	vConfig.SetDefault("http.enable", false)
-	vConfig.SetDefault("socks5.enable", true)
-	vConfig.SetDefault("http.basic.enable", false)
-	vConfig.SetDefault("http.over.ssh.enable", false)
-	vConfig.SetDefault("http.filter.domain.enable", false)
-	vConfig.SetDefault("http.filter.domain.file-path", path.Join(u.HomeDir, ".ssh-tunnel/domain.txt"))
-	vConfig.SetDefault("admin.enable", false)
-	vConfig.SetDefault("admin.addr", ":1083")
-	vConfig.SetDefault("retry.interval.sec", 3)
+	vConfig.SetDefault(config.HomeDir.GetKey(), config.HomeDir.GetDefaultValue())
+	vConfig.SetDefault(config.SshPrivateKeyPath.GetKey(), config.SshPrivateKeyPath.GetDefaultValue())
+	vConfig.SetDefault(config.SshKnownHostsPath.GetKey(), config.SshKnownHostsPath.GetDefaultValue())
+	vConfig.SetDefault(config.LoginUser.GetKey(), config.LoginUser.GetDefaultValue())
+	vConfig.SetDefault(config.LocalAddress.GetKey(), config.LocalAddress.GetDefaultValue())
+	vConfig.SetDefault(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue())
+	vConfig.SetDefault(config.EnableHttp.GetKey(), config.EnableHttp.GetDefaultValue())
+	vConfig.SetDefault(config.EnableSocks5.GetKey(), config.EnableSocks5.GetDefaultValue())
+	vConfig.SetDefault(config.HttpBasicAuthEnable.GetKey(), config.HttpBasicAuthEnable.GetDefaultValue())
+	vConfig.SetDefault(config.EnableHttpOverSSH.GetKey(), config.EnableHttpOverSSH.GetDefaultValue())
+	vConfig.SetDefault(config.EnableHttpDomainFilter.GetKey(), config.EnableHttpDomainFilter.GetDefaultValue())
+	vConfig.SetDefault(config.HttpDomainFilterFilePath.GetKey(), config.HttpDomainFilterFilePath.GetDefaultValue())
+	vConfig.SetDefault(config.EnableAdmin.GetKey(), config.EnableAdmin.GetDefaultValue())
+	vConfig.SetDefault(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue())
+	vConfig.SetDefault(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue())
+	vConfig.SetDefault(config.LogFilePath.GetKey(), config.LogFilePath.GetDefaultValue())
+	
+	// 自动更新默认值
+	vConfig.SetDefault(config.AutoUpdateEnabled.GetKey(), config.AutoUpdateEnabled.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateOwner.GetKey(), config.AutoUpdateOwner.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateRepo.GetKey(), config.AutoUpdateRepo.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateCurrentVersion.GetKey(), config.AutoUpdateCurrentVersion.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateCheckInterval.GetKey(), config.AutoUpdateCheckInterval.GetDefaultValue())
+	
+	// 自动更新配置默认值
+	vConfig.SetDefault(config.AutoUpdateEnabled.GetKey(), config.AutoUpdateEnabled.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateOwner.GetKey(), config.AutoUpdateOwner.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateRepo.GetKey(), config.AutoUpdateRepo.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateCurrentVersion.GetKey(), config.AutoUpdateCurrentVersion.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateCheckInterval.GetKey(), config.AutoUpdateCheckInterval.GetDefaultValue())
 
 	// 环境变量配置
-	vConfig.SetEnvPrefix("SSH_TUNNEL")       // 设置环境变量前缀
-	replace := strings.NewReplacer(".", "_") // 替换点为下划线
+	vConfig.SetEnvPrefix(constants.ENV_PREFIX) // 设置环境变量前缀
+	replace := strings.NewReplacer(".", "_")   // 替换点为下划线
 	vConfig.SetEnvKeyReplacer(replace)
 	vConfig.AutomaticEnv()
 
 	if err := vConfig.ReadInConfig(); err != nil {
-		panic(err)
+		log.Printf("Failed to read config file: %v", err)
+		return
 	}
 
+	// 设置全局配置实例
+	cfg.SetConfigInstance(vConfig)
+
+	// 保存配置文件路径到常量
+	constants.ConfigFilePath = vConfig.ConfigFileUsed()
+
+	// 从viper 更新配置数据
+	config.Update()
+
 	log.Println("成功读取配置文件:", vConfig.ConfigFileUsed())
+
+	vConfig.WatchConfig()
+	vConfig.OnConfigChange(func(e fsnotify.Event) {
+		fmt.Println("config file changed:", e.Name)
+		if err := vConfig.ReadInConfig(); err != nil {
+			log.Printf("Failed to reload config file: %v", err)
+			return
+		}
+		config.Update()
+	})
 
 	// 命令行处理
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.CommandLine.SetNormalizeFunc(wordSepNormailzeFunc)
-	pflag.String("home.dir", "", "配置文件目录; --home.dir=/path/to/dir")
-	pflag.StringP("server.ip", "s", "", "服务器IP地址; --server.ip=")
-	pflag.IntP("server.ssh.port", "p", 22, "服务器IP地址; --server.ssh.port=your_server_port, -s=your_server_port")
-	pflag.String("ssh.path.private_key", "", "私钥地址; --ssh.path.private_key=/path/to/private_key, -pk=/path/to/private_key")
-	pflag.String("ssh.path.known_hosts", "", "已知主机地址; --ssh.path.known_hosts=/path/to/known_hosts, -pkh=/path/to/known_hosts")
-	pflag.StringP("user", "u", "", "用户名; --user=your_username, -u=your_username")
-	pflag.StringP("local.addr", "l", "", "本地地址; --local.addr=xx.xx.xx.xx:port, -l=xx.xx.xx.xx:port")
-	pflag.String("http.local.addr", "", "Http监听地址; --http.local.addr=xx.xx.xx.xx:port")
-	pflag.String("http.basic.username", "", "Basic认证, 用户名; --http.basic.username=your_username")
-	pflag.String("http.basic.password", "", "Http Basic认证, 密码; --http.basic.password=your_password")
-	pflag.Bool("http.enable", false, "是否开启Http代理; --http.enable=true")
-	pflag.Bool("socks5.enable", false, "是否开启Socks5代理; --socks5.enable=true")
-	pflag.Bool("http.basic.enable", false, "是否开启Http的Basic认证; --http.basic.enable=true")
-	pflag.Bool("http.over.ssh.enable", false, "是否开启Http Over SSH; --http.over.ssh.enable=true")
-	pflag.Bool("http.filter.domain.enable", false, "是否启用Http域名过滤; --http.filter.domain.enable=true")
-	pflag.String("http.filter.domain.file-path", "", "过滤http请求; --http.filter.domain.file-path=/path/to/domain.txt")
-	pflag.Bool("admin.enable", false, "是否启用Admin页面; --admin.enable=true")
-	pflag.String("admin.addr", "", "Admin监听地址; --admin.addr=xx.xx.xx.xx:port")
-	pflag.Int("retry.interval.sec", 0, "重试间隔时间(秒); --retry.interval.sec=3")
+	pflag.String(config.HomeDir.GetKey(), config.HomeDir.GetDefaultValue(), config.HomeDir.GetDescription())
+	pflag.StringP(config.ServerIp.GetKey(), config.ServerIp.GetShorthand(), config.ServerIp.GetDefaultValue(), config.ServerIp.GetDescription())
+	pflag.IntP(config.ServerSshPort.GetKey(), config.ServerSshPort.GetShorthand(), config.ServerSshPort.GetDefaultValue(), config.ServerSshPort.GetDescription())
+	pflag.String(config.SshPrivateKeyPath.GetKey(), config.SshPrivateKeyPath.GetDefaultValue(), config.SshPrivateKeyPath.GetDescription())
+	pflag.String(config.SshKnownHostsPath.GetKey(), config.SshKnownHostsPath.GetDefaultValue(), config.SshKnownHostsPath.GetDescription())
+	pflag.StringP(config.LoginUser.GetKey(), config.LoginUser.GetShorthand(), config.LoginUser.GetDefaultValue(), config.LoginUser.GetDescription())
+	pflag.StringP(config.LocalAddress.GetKey(), config.LocalAddress.GetShorthand(), config.LocalAddress.GetDefaultValue(), config.LocalAddress.GetDescription())
+	pflag.String(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue(), config.HttpLocalAddress.GetDescription())
+	pflag.Bool(config.HttpBasicAuthEnable.GetKey(), config.HttpBasicAuthEnable.GetDefaultValue(), config.HttpBasicAuthEnable.GetDescription())
+	pflag.String(config.HttpBasicUserName.GetKey(), config.HttpBasicUserName.GetDefaultValue(), config.HttpBasicUserName.GetDescription())
+	pflag.String(config.HttpBasicPassword.GetKey(), config.HttpBasicPassword.GetDefaultValue(), config.HttpBasicPassword.GetDescription())
+	pflag.Bool(config.EnableHttp.GetKey(), config.EnableHttp.GetDefaultValue(), config.EnableHttp.GetDescription())
+	pflag.Bool(config.EnableSocks5.GetKey(), config.EnableSocks5.GetDefaultValue(), config.EnableSocks5.GetDescription())
+	pflag.Bool(config.EnableHttpOverSSH.GetKey(), config.EnableHttpOverSSH.GetDefaultValue(), config.EnableHttpOverSSH.GetDescription())
+	pflag.Bool(config.EnableHttpDomainFilter.GetKey(), config.EnableHttpDomainFilter.GetDefaultValue(), config.EnableHttpDomainFilter.GetDescription())
+	pflag.String(config.HttpDomainFilterFilePath.GetKey(), config.HttpDomainFilterFilePath.GetDefaultValue(), config.HttpDomainFilterFilePath.GetDescription())
+	pflag.Bool(config.EnableAdmin.GetKey(), config.EnableAdmin.GetDefaultValue(), config.EnableAdmin.GetDescription())
+	pflag.String(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue(), config.AdminAddress.GetDescription())
+	pflag.Int(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue(), config.RetryIntervalSec.GetDescription())
 
 	pflag.Parse()
 
 	vConfig.BindPFlags(pflag.CommandLine)
 
-	config.HomeDir = vConfig.GetString("home.dir")
-	config.ServerIp = vConfig.GetString("server.ip")
-	config.ServerSshPort = vConfig.GetInt("server.ssh.port")
-	config.SshPrivateKeyPath = vConfig.GetString("ssh.path.private_key")
-	config.SshKnownHostsPath = vConfig.GetString("ssh.path.known_hosts")
-	config.LoginUser = vConfig.GetString("user")
-	config.LocalAddress = vConfig.GetString("local.addr")
-	config.HttpLocalAddress = vConfig.GetString("http.local.addr")
-	config.HttpBasicUserName = vConfig.GetString("http.basic.username")
-	config.HttpBasicPassword = vConfig.GetString("http.basic.password")
-	config.EnableHttp = vConfig.GetBool("http.enable")
-	config.EnableSocks5 = vConfig.GetBool("socks5.enable")
-	config.HttpBasicAuthEnable = vConfig.GetBool("http.basic.enable")
-	config.EnableHttpOverSSH = vConfig.GetBool("http.over.ssh.enable")
-	config.EnableHttpDomainFilter = vConfig.GetBool("http.filter.domain.enable")
-	config.HttpDomainFilterFilePath = vConfig.GetString("http.filter.domain.file-path")
-	config.EnableAdmin = vConfig.GetBool("admin.enable")
-	config.AdminAddress = vConfig.GetString("admin.addr")
-	config.RetryIntervalSec = vConfig.GetInt("retry.interval.sec")
-
-	u, err = user.Current()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var userHomeDir string
-	userHomeDir, err = os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	config.HomeDir = u.HomeDir
-
-	if strings.Contains(u.HomeDir, "system32") {
-		config.HomeDir = "C:\\ssh-tunnel"
-		os.MkdirAll(config.HomeDir, 0755)
-	}
-	userHomeDir = config.HomeDir
-	config.LogFilePath = path.Join(userHomeDir, ".ssh-tunnel", "console.log")
-
-	if !strings.Contains(u.HomeDir, "system32") {
-
-		logFile, err := os.OpenFile(config.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// 非服务管理器模式下，读取配置文件后，覆盖配置项的值
+	if service.Interactive() {
+		logFile, err := os.OpenFile(config.LogFilePath.GetValue(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			fmt.Println("open log file failed, err:", err)
+			fmt.Println("open log file failed, err:", err, config.LogFilePath.GetValue())
 			return
 		}
 
@@ -166,13 +152,21 @@ func main() {
 		log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
 	}
 
-	log.Println("starting ..., userHomeDir: ", userHomeDir)
+	log.Println("starting ..., userHomeDir: ", u.HomeDir)
 	log.Println("current user: ", u.Username)
 	log.Println("userHome: ", u.HomeDir)
 
 	var wg sync.WaitGroup
-	tunnel.Load(&config, &wg)
-	admin.Load(&config, &wg)
+	
+	// 初始化自动更新器
+	updater.InitializeUpdater()
+	
+	err = tunnel.Load(config, &wg)
+	if err != nil {
+		log.Printf("Failed to load tunnel configuration: %v", err)
+		return
+	}
+	admin.Load(config, &wg)
 	wg.Wait()
 }
 

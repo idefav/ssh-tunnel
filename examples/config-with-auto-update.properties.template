@@ -1,0 +1,37 @@
+# SSH隧道配置文件示例
+# SSH服务器配置
+server.ip=your-server-ip
+server.ssh.port=22
+login.username=root
+ssh.private_key_path=~/.ssh/id_rsa
+ssh.known_hosts_path=~/.ssh/known_hosts
+
+# 本地代理配置
+local.address=0.0.0.0:1081
+http.local.address=0.0.0.0:1082
+socks5.enable=true
+http.enable=false
+
+# 管理面板配置
+admin.enable=true
+admin.address=:1083
+
+# HTTP基本认证
+http.basic.enable=false
+http.basic.username=admin
+http.basic.password=password
+
+# 域名过滤
+http.domain-filter.enable=false
+http.domain-filter.file-path=~/.ssh-tunnel/domain.txt
+
+# 日志配置
+log.file.path=~/.ssh-tunnel/console.log
+retry.interval.sec=3
+
+# 自动更新配置
+auto-update.enabled=true
+auto-update.owner=idefav
+auto-update.repo=ssh-tunnel
+auto-update.current-version=v1.0.0
+auto-update.check-interval=3600

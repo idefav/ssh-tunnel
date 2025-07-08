@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>置顶按钮测试页面</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(45deg, #f0f2f5, #e6f3ff);
+        }
+        
+        .content {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .section {
+            margin-bottom: 50px;
+            padding: 30px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        h1 {
+            color: #007bff;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        p {
+            line-height: 1.6;
+            color: #666;
+            margin-bottom: 15px;
+        }
+        
+        /* 置顶按钮样式 - 与主项目保持一致 */
+        .back-to-top {
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            display: none;
+            width: 48px;
+            height: 48px;
+            background-color: #007bff;
+            color: white;
+            text-align: center;
+            border-radius: 50%;
+            z-index: 999;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        .back-to-top:hover {
+            background-color: #0056b3;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
+            text-decoration: none;
+        }
+        
+        .back-to-top:active {
+            transform: translateY(0px);
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+        }
+        
+        .back-to-top.animate-click {
+            animation: backToTopClick 0.15s ease-out;
+        }
+        
+        @keyframes backToTopClick {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.9); }
+            100% { transform: scale(1); }
+        }
+        
+        .back-to-top i {
+            transition: transform 0.2s ease;
+        }
+        
+        .back-to-top:hover i {
+            transform: translateY(-1px);
+        }
+        
+        .highlight {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+</head>
+<body>
+    <div class="content">
+        <h1>🚀 置顶按钮优化测试</h1>
+        
+        <div class="section">
+            <h2>📋 优化内容</h2>
+            <div class="highlight">
+                <p><strong>此页面用于测试置顶按钮的优化效果</strong></p>
+                <ul>
+                    <li>按钮尺寸从 40px 增加到 48px</li>
+                    <li>使用 flexbox 实现完美居中对齐</li>
+                    <li>添加现代化阴影效果</li>
+                    <li>优化悬停和点击动画</li>
+                    <li>提升整体视觉效果和用户体验</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🎯 测试说明</h2>
+            <p>向下滚动页面，当页面滚动超过100px时，右下角会出现置顶按钮。</p>
+            <p>测试要点：</p>
+            <ul>
+                <li>按钮出现/消失的动画效果</li>
+                <li>鼠标悬停时的视觉反馈</li>
+                <li>点击时的动画效果</li>
+                <li>回到顶部的滚动体验</li>
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>📊 技术细节</h2>
+            <p><strong>CSS优化：</strong></p>
+            <ul>
+                <li>使用 <code>display: flex</code> 和 <code>align-items: center</code> 实现图标居中</li>
+                <li>添加 <code>box-shadow</code> 提供层次感</li>
+                <li>使用 <code>transform</code> 实现流畅的动画效果</li>
+                <li>提高 <code>z-index</code> 确保按钮在最顶层</li>
+            </ul>
+            
+            <p><strong>JavaScript优化：</strong></p>
+            <ul>
+                <li>使用 <code>stop(true, true)</code> 防止动画队列堆积</li>
+                <li>增加滚动时间到800ms，使用swing缓动</li>
+                <li>添加点击动画类实现即时反馈</li>
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>🔍 浏览器兼容性</h2>
+            <p>优化后的置顶按钮支持以下浏览器：</p>
+            <ul>
+                <li>Chrome 29+</li>
+                <li>Firefox 28+</li>
+                <li>Safari 9+</li>
+                <li>Edge 12+</li>
+                <li>IE 11+ (部分效果)</li>
+            </ul>
+        </div>
+        
+        <!-- 添加更多内容以便测试滚动 -->
+        <div class="section">
+            <h2>📝 更多内容</h2>
+            <p>这里是更多的测试内容，用于增加页面高度，方便测试置顶按钮的显示效果。</p>
+            
+            <div style="height: 300px; background: linear-gradient(45deg, #f8f9fa, #e9ecef); border-radius: 10px; display: flex; align-items: center; justify-content: center; margin: 20px 0;">
+                <div style="text-align: center; color: #6c757d;">
+                    <h3>滚动测试区域</h3>
+                    <p>继续向下滚动查看更多内容</p>
+                </div>
+            </div>
+            
+            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+            
+            <div style="height: 300px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 10px; display: flex; align-items: center; justify-content: center; margin: 20px 0; color: white;">
+                <div style="text-align: center;">
+                    <h3>彩色测试区域</h3>
+                    <p>测试置顶按钮在不同背景下的显示效果</p>
+                </div>
+            </div>
+            
+            <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+        </div>
+        
+        <div class="section">
+            <h2>✅ 测试完成</h2>
+            <p>如果您看到了这里，说明页面足够长了！现在可以点击右下角的置顶按钮测试回到顶部的效果。</p>
+            <div class="highlight">
+                <p><strong>期望效果：</strong></p>
+                <ul>
+                    <li>按钮应该有漂亮的阴影效果</li>
+                    <li>悬停时按钮会轻微上移并加深阴影</li>
+                    <li>点击时会有缩放动画</li>
+                    <li>滚动回到顶部应该平滑流畅</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 置顶按钮 -->
+    <a href="#top" class="back-to-top" id="backToTop">
+        <i class="bi bi-arrow-up"></i>
+    </a>
+    
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // 置顶按钮功能 - 与主项目保持一致
+        $(window).scroll(function() {
+            if ($(this).scrollTop() > 100) {
+                $('.back-to-top').stop(true, true).fadeIn(300);
+            } else {
+                $('.back-to-top').stop(true, true).fadeOut(300);
+            }
+        });
+
+        $('.back-to-top').click(function(e) {
+            e.preventDefault();
+            // 添加点击动画效果
+            $(this).addClass('animate-click');
+            setTimeout(() => {
+                $(this).removeClass('animate-click');
+            }, 150);
+            
+            $('html, body').animate({scrollTop: 0}, 800, 'swing');
+            return false;
+        });
+        
+        // 页面加载完成后的提示
+        $(document).ready(function() {
+            console.log('置顶按钮测试页面已加载');
+            console.log('向下滚动页面查看置顶按钮效果');
+        });
+    </script>
+</body>
+</html>

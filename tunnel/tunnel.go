@@ -103,12 +103,19 @@ func (t Tunnel) bindSocks5Tunnel(ctx context.Context, wg *sync.WaitGroup) {
 
 }
 func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("socks5ProxyStart panic recovered: %v", err)
+		}
+	}()
+	
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	server, err := net.Listen("tcp", t.localAddress)
 	if err != nil {
-		log.Panic(err)
+		log.Printf("Failed to start socks5 proxy server: %v", err)
+		return
 	}
 
 	safe.GO(func() {
@@ -274,19 +281,27 @@ func (t *Tunnel) basicAuth(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("httpProxyStartEx panic recovered: %v", err)
+		}
+	}()
+	
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	l, err := net.Listen("tcp", t.httpLocalAddress)
 	if err != nil {
-		log.Panic(err)
+		log.Printf("Failed to start http proxy server: %v", err)
+		return
 	}
 	safe.GO(func() {
 		log.Println("Http Server Started at: " + t.httpLocalAddress)
 		for {
 			client, err := l.Accept()
 			if err != nil {
-				log.Panic(err)
+				log.Printf("Failed to accept http client connection: %v", err)
+				return
 			}
 
 			safe.GO(func() {
@@ -406,8 +421,8 @@ func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 
 	safe.GO(func() {
 		err := server.ListenAndServe()
-		if err != nil {
-			log.Fatalln(err)
+		if err != nil && err != http.ErrServerClosed {
+			log.Printf("Http server error: %v", err)
 		}
 	})
 	log.Printf("Http Server Started at %s", t.httpLocalAddress)
@@ -421,10 +436,10 @@ func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 	err := server.Shutdown(ctx)
 
 	if err != nil {
-		log.Fatalf("Server Shutdown Failed:%+v", err)
+		log.Printf("Server Shutdown Failed: %+v", err)
+	} else {
+		log.Print("Server Exited Properly")
 	}
-
-	log.Print("Server Exited Properly")
 
 }
 

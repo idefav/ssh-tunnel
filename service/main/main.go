@@ -12,6 +12,7 @@ import (
 	"path"
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
+	"ssh-tunnel/constants"
 	"ssh-tunnel/service/os_config"
 	"ssh-tunnel/tunnel"
 	"strings"
@@ -127,7 +128,7 @@ func innerStart() {
 		log.Fatal(err)
 	}
 
-	config := cfg.AppConfig{}
+	config := cfg.NewAppConfig()
 	vConfig := viper.New()
 
 	// 添加配置查找路径
@@ -146,34 +147,26 @@ func innerStart() {
 		vConfig.AddConfigPath(path.Join(u.HomeDir, ".ssh-tunnel"))
 		vConfig.SetConfigName("config")
 		vConfig.SetConfigType("properties")
-	}
-
-	os_config.SetConfig(vConfig)
-
-	// Windows 系统特定配置
-	// 是否使用OS 服务管理器运行
-	interactive := service.Interactive()
-	if !interactive {
-		// 通过服务管理器运行时，配置文件路径可能在特定目录下
-		vConfig.AddConfigPath(path.Join(DEFAULT_HOME, ".ssh-tunnel"))
+		os_config.SetConfig(vConfig)
 	}
 
 	// 默认值设置
-	vConfig.SetDefault("home.dir", path.Join(u.HomeDir, ".ssh-tunnel"))
-	vConfig.SetDefault("ssh.path.private_key", path.Join(u.HomeDir, ".ssh/id_rsa"))
-	vConfig.SetDefault("ssh.path.known_hosts", path.Join(u.HomeDir, ".ssh/known_hosts"))
-	vConfig.SetDefault("user", "root")
-	vConfig.SetDefault("local.addr", "0.0.0.0:1081")
-	vConfig.SetDefault("http.local.addr", "0.0.0.0:1082")
-	vConfig.SetDefault("http.enable", false)
-	vConfig.SetDefault("socks5.enable", true)
-	vConfig.SetDefault("http.basic.enable", false)
-	vConfig.SetDefault("http.over.ssh.enable", false)
-	vConfig.SetDefault("http.filter.domain.enable", false)
-	vConfig.SetDefault("http.filter.domain.file-path", path.Join(u.HomeDir, ".ssh-tunnel/domain.txt"))
-	vConfig.SetDefault("admin.enable", false)
-	vConfig.SetDefault("admin.addr", ":1083")
-	vConfig.SetDefault("retry.interval.sec", 3)
+	vConfig.SetDefault(config.HomeDir.GetKey(), config.HomeDir.GetDefaultValue())
+	vConfig.SetDefault(config.SshPrivateKeyPath.GetKey(), config.SshPrivateKeyPath.GetDefaultValue())
+	vConfig.SetDefault(config.SshKnownHostsPath.GetKey(), config.SshKnownHostsPath.GetDefaultValue())
+	vConfig.SetDefault(config.LoginUser.GetKey(), config.LoginUser.GetDefaultValue())
+	vConfig.SetDefault(config.LocalAddress.GetKey(), config.LocalAddress.GetDefaultValue())
+	vConfig.SetDefault(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue())
+	vConfig.SetDefault(config.EnableHttp.GetKey(), config.EnableHttp.GetDefaultValue())
+	vConfig.SetDefault(config.EnableSocks5.GetKey(), config.EnableSocks5.GetDefaultValue())
+	vConfig.SetDefault(config.HttpBasicAuthEnable.GetKey(), config.HttpBasicAuthEnable.GetDefaultValue())
+	vConfig.SetDefault(config.EnableHttpOverSSH.GetKey(), config.EnableHttpOverSSH.GetDefaultValue())
+	vConfig.SetDefault(config.EnableHttpDomainFilter.GetKey(), config.EnableHttpDomainFilter.GetDefaultValue())
+	vConfig.SetDefault(config.HttpDomainFilterFilePath.GetKey(), config.HttpDomainFilterFilePath.GetDefaultValue())
+	vConfig.SetDefault(config.EnableAdmin.GetKey(), config.EnableAdmin.GetDefaultValue())
+	vConfig.SetDefault(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue())
+	vConfig.SetDefault(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue())
+	vConfig.SetDefault(config.LogFilePath.GetKey(), config.LogFilePath.GetDefaultValue())
 
 	// 环境变量配置
 	vConfig.SetEnvPrefix("SSH_TUNNEL")       // 设置环境变量前缀
@@ -182,46 +175,38 @@ func innerStart() {
 	vConfig.AutomaticEnv()
 
 	if err := vConfig.ReadInConfig(); err != nil {
-		panic(err)
+		log.Printf("Failed to read config file: %v", err)
+		return
 	}
+
+	// 设置全局配置实例
+	cfg.SetConfigInstance(vConfig)
+
+	// 保存配置文件路径到常量
+	constants.ConfigFilePath = vConfig.ConfigFileUsed()
+
+	config.Update()
 
 	log.Println("成功读取配置文件:", vConfig.ConfigFileUsed())
 
+	// 打印配置内容
+	for _, key := range vConfig.AllKeys() {
+		value := vConfig.Get(key)
+		log.Printf("配置项: %s = %v\n", key, value)
+	}
 	vConfig.WatchConfig()
 	vConfig.OnConfigChange(func(e fsnotify.Event) {
 		fmt.Println("config file changed:", e.Name)
 		if err := vConfig.ReadInConfig(); err != nil {
-			panic(err)
+			log.Printf("Failed to reload config file: %v", err)
+			return
 		}
+		config.Update()
 	})
 
-	config.HomeDir = vConfig.GetString("home.dir")
-	config.ServerIp = vConfig.GetString("server.ip")
-	config.ServerSshPort = vConfig.GetInt("server.ssh.port")
-	config.SshPrivateKeyPath = vConfig.GetString("server.ssh.private_key_path")
-	config.SshKnownHostsPath = vConfig.GetString("server.ssh.known_hosts_path")
-	config.LoginUser = vConfig.GetString("login.username")
-	config.LocalAddress = vConfig.GetString("local.address")
-	config.HttpLocalAddress = vConfig.GetString("http.local.address")
-	config.HttpBasicUserName = vConfig.GetString("http.basic.username")
-	config.HttpBasicPassword = vConfig.GetString("http.basic.password")
-	config.HttpBasicAuthEnable = vConfig.GetBool("http.basic.enable")
-
-	config.EnableHttp = vConfig.GetBool("http.enable")
-	config.EnableSocks5 = vConfig.GetBool("socks5.enable")
-	config.EnableHttpOverSSH = vConfig.GetBool("http.over-ssh.enable")
-	config.EnableHttpDomainFilter = vConfig.GetBool("http.domain-filter.enable")
-	config.HttpDomainFilterFilePath = vConfig.GetString("http.filter.domain.file-path")
-
-	config.EnableAdmin = vConfig.GetBool("admin.enable")
-	config.AdminAddress = vConfig.GetString("admin.address")
-	config.RetryIntervalSec = vConfig.GetInt("retry.interval.sec")
-
-	config.LogFilePath = path.Join(config.HomeDir, ".ssh-tunnel", "console.log")
-
-	logFile, err := os.OpenFile(config.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	logFile, err := os.OpenFile(config.LogFilePath.GetValue(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		fmt.Println("open log file failed, err:", err)
+		fmt.Println("open log file failed, err:", err, ", log.file.path:", config.LogFilePath.GetValue())
 		return
 	}
 
@@ -237,8 +222,12 @@ func innerStart() {
 	log.Println("configPath: ", configPath)
 
 	var wg sync.WaitGroup
-	tunnel.Load(&config, &wg)
-	admin.Load(&config, &wg)
+	err = tunnel.Load(config, &wg)
+	if err != nil {
+		log.Printf("Failed to load tunnel configuration: %v", err)
+		return
+	}
+	admin.Load(config, &wg)
 	wg.Wait()
 }
 

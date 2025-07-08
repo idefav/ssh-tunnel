@@ -21,82 +21,88 @@ import (
 
 var DefaultSshTunnel = Tunnel{}
 
-func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
+func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	DefaultSshTunnel.SetAppConfig(config)
-	if config.EnableSocks5 {
-		DefaultSshTunnel.enableSocks5 = config.EnableSocks5
-		DefaultSshTunnel.serverAddress = config.ServerIp + ":" + strconv.Itoa(config.ServerSshPort)
-		DefaultSshTunnel.localAddress = config.LocalAddress
+	if config.EnableSocks5.GetValue() {
+		DefaultSshTunnel.enableSocks5 = config.EnableSocks5.GetValue()
+		DefaultSshTunnel.serverAddress = config.ServerIp.GetValue() + ":" + strconv.Itoa(config.ServerSshPort.GetValue())
+		DefaultSshTunnel.localAddress = config.LocalAddress.GetValue()
 		DefaultSshTunnel.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
 
 		var keys []ssh.Signer
-		b, err := ioutil.ReadFile(config.SshPrivateKeyPath)
+		b, err := ioutil.ReadFile(config.SshPrivateKeyPath.GetValue())
 		if err != nil {
-			log.Fatalf("private key error: %v", err)
+			log.Printf("Failed to read private key file: %v", err)
+			return err
 		}
 		k, err := ssh.ParsePrivateKey(b)
 		if err != nil {
-			log.Fatalf("private key error: %v", err)
+			log.Printf("Failed to parse private key: %v", err)
+			return err
 		}
 		keys = append(keys, k)
 		auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
 
-		hostKeys, err := knownhosts.New(config.SshKnownHostsPath)
+		hostKeys, err := knownhosts.New(config.SshKnownHostsPath.GetValue())
 		if err != nil {
-			log.Fatalf("public key error: %v", err)
+			log.Printf("Failed to load known hosts file: %v", err)
+			return err
 		}
 
 		DefaultSshTunnel.auth = auth
 		DefaultSshTunnel.hostKeys = hostKeys
-		DefaultSshTunnel.user = config.LoginUser
-		DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec) * time.Second
+		DefaultSshTunnel.user = config.LoginUser.GetValue()
+		DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec.GetValue()) * time.Second
 	}
 
-	if config.EnableHttp {
-		DefaultSshTunnel.enableHttp = config.EnableHttp
-		DefaultSshTunnel.httpLocalAddress = config.HttpLocalAddress
-		DefaultSshTunnel.httpBasicUserName = config.HttpBasicUserName
-		DefaultSshTunnel.httpBasicPassword = config.HttpBasicPassword
-		DefaultSshTunnel.enableHttpBasic = config.HttpBasicAuthEnable
-		DefaultSshTunnel.enableHttpOverSSH = config.EnableHttpOverSSH
-		DefaultSshTunnel.enableHttpDomainFilter = config.EnableHttpDomainFilter
+	if config.EnableHttp.GetValue() {
+		DefaultSshTunnel.enableHttp = config.EnableHttp.GetValue()
+		DefaultSshTunnel.httpLocalAddress = config.HttpLocalAddress.GetValue()
+		DefaultSshTunnel.httpBasicUserName = config.HttpBasicUserName.GetValue()
+		DefaultSshTunnel.httpBasicPassword = config.HttpBasicPassword.GetValue()
+		DefaultSshTunnel.enableHttpBasic = config.HttpBasicAuthEnable.GetValue()
+		DefaultSshTunnel.enableHttpOverSSH = config.EnableHttpOverSSH.GetValue()
+		DefaultSshTunnel.enableHttpDomainFilter = config.EnableHttpDomainFilter.GetValue()
 
-		if config.EnableHttpOverSSH {
-			DefaultSshTunnel.serverAddress = config.ServerIp + ":" + strconv.Itoa(config.ServerSshPort)
-			DefaultSshTunnel.localAddress = config.LocalAddress
+		if config.EnableHttpOverSSH.GetValue() {
+			DefaultSshTunnel.serverAddress = config.ServerIp.GetValue() + ":" + strconv.Itoa(config.ServerSshPort.GetValue())
+			DefaultSshTunnel.localAddress = config.LocalAddress.GetValue()
 			DefaultSshTunnel.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
 
 			var keys []ssh.Signer
-			b, err := ioutil.ReadFile(config.SshPrivateKeyPath)
+			b, err := ioutil.ReadFile(config.SshPrivateKeyPath.GetValue())
 			if err != nil {
-				log.Fatalf("private key error: %v", err)
+				log.Printf("Failed to read private key file for HttpOverSSH: %v", err)
+				return err
 			}
 			k, err := ssh.ParsePrivateKey(b)
 			if err != nil {
-				log.Fatalf("private key error: %v", err)
+				log.Printf("Failed to parse private key for HttpOverSSH: %v", err)
+				return err
 			}
 			keys = append(keys, k)
 			auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
 
-			hostKeys, err := knownhosts.New(config.SshKnownHostsPath)
+			hostKeys, err := knownhosts.New(config.SshKnownHostsPath.GetValue())
 			if err != nil {
-				log.Fatalf("public key error: %v", err)
+				log.Printf("Failed to load known hosts file for HttpOverSSH: %v", err)
+				return err
 			}
 
 			DefaultSshTunnel.auth = auth
 			DefaultSshTunnel.hostKeys = hostKeys
-			DefaultSshTunnel.user = config.LoginUser
-			DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec) * time.Second
+			DefaultSshTunnel.user = config.LoginUser.GetValue()
+			DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec.GetValue()) * time.Second
 		}
 
-		if config.EnableHttpDomainFilter && config.HttpDomainFilterFilePath != "" {
-			go func() {
-				err2 := domainFilterFileWatcher(config.HttpDomainFilterFilePath, &DefaultSshTunnel)
+		if config.EnableHttpDomainFilter.GetValue() && config.HttpDomainFilterFilePath.GetValue() != "" {
+			safe.GO(func() {
+				err2 := domainFilterFileWatcher(config.HttpDomainFilterFilePath.GetValue(), &DefaultSshTunnel)
 				if err2 != nil {
-					log.Fatal(err2)
+					log.Printf("Domain filter file watcher error: %v", err2)
 				}
-			}()
+			})
 		}
 	}
 
@@ -161,7 +167,8 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 		})
 	}
-
+	
+	return nil
 }
 
 func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
@@ -218,7 +225,8 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 				if result == true {
 					file, err2 := os.ReadFile(filePath)
 					if err2 != nil {
-						log.Fatal(err2)
+						log.Printf("Failed to read domain filter file: %v", err2)
+						continue
 					}
 					s := string(file)
 					log.Printf("domain list loaded!")
