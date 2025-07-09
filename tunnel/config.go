@@ -167,7 +167,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 
 		})
 	}
-	
+
 	return nil
 }
 
@@ -187,7 +187,7 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 	changed := make(chan bool)
 	done := make(chan bool)
 
-	go func() {
+	safe.GO(func() {
 		changed <- true
 		defer close(done)
 		for {
@@ -216,7 +216,7 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 				log.Println(err)
 			}
 		}
-	}()
+	})
 
 	for {
 		select {

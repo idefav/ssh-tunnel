@@ -4,6 +4,7 @@ import (
 	"context"
 	"golang.org/x/crypto/ssh"
 	"log"
+	"ssh-tunnel/safe"
 	"sync"
 	"time"
 )
@@ -76,7 +77,9 @@ func (t *Tunnel) ReconnectSSH(ctx context.Context) {
 		log.Printf("SSH连接已关闭，准备重新连接")
 
 		// 立即开始新的重连循环
-		go t.ReconnectSSH(ctx)
+		safe.GO(func() {
+			t.ReconnectSSH(ctx)
+		})
 		return
 	}
 

@@ -108,7 +108,7 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 			log.Printf("socks5ProxyStart panic recovered: %v", err)
 		}
 	}()
-	
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -286,7 +286,7 @@ func (t *Tunnel) httpProxyStartEx(ctx context.Context, wg *sync.WaitGroup) {
 			log.Printf("httpProxyStartEx panic recovered: %v", err)
 		}
 	}()
-	
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -446,10 +446,10 @@ func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
 func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go func() {
+	safe.GO(func() {
 		<-connCtx.Done()
 		conn.Close()
-	}()
+	})
 
 	var b [1024]byte
 
@@ -503,10 +503,10 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 func (t *Tunnel) httpProxy(ctx context.Context, conn net.Conn) error {
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go func() {
+	safe.GO(func() {
 		<-connCtx.Done()
 		conn.Close()
-	}()
+	})
 
 	var b [1024]byte
 

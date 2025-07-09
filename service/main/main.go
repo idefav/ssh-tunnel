@@ -13,6 +13,7 @@ import (
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/constants"
+	"ssh-tunnel/safe"
 	"ssh-tunnel/service/os_config"
 	"ssh-tunnel/tunnel"
 	"strings"
@@ -80,7 +81,9 @@ func main() {
 			}
 			return
 		case "exec":
-			innerStart()
+			safe.SafeCall(func() {
+				innerStart()
+			})
 		}
 	}
 
@@ -95,7 +98,9 @@ type program struct{}
 
 func (p *program) Start(s service.Service) error {
 	fmt.Println("服务运行...")
-	go p.run()
+	safe.GO(func() {
+		p.run()
+	})
 	return nil
 }
 

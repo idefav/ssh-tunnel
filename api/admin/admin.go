@@ -229,11 +229,11 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			// 返回成功响应
 			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 			response := map[string]interface{}{
-				"success": true,
-				"message": "日志文件已成功清理",
+				"success":   true,
+				"message":   "日志文件已成功清理",
 				"timestamp": time.Now().Format("2006-01-02 15:04:05"),
 			}
-			
+
 			responseBytes, _ := json.Marshal(response)
 			writer.Write(responseBytes)
 		})
@@ -465,12 +465,12 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 			// 返回成功响应
 			response := map[string]interface{}{
-				"success":    true,
-				"message":    fmt.Sprintf("配置项 %s 已成功更新为 %v", configKey, typedValue),
-				"key":        configKey,
-				"actualKey":  actualConfigKey,
-				"value":      typedValue,
-				"type":       configType,
+				"success":   true,
+				"message":   fmt.Sprintf("配置项 %s 已成功更新为 %v", configKey, typedValue),
+				"key":       configKey,
+				"actualKey": actualConfigKey,
+				"value":     typedValue,
+				"type":      configType,
 			}
 
 			jsonResponse, _ := json.Marshal(response)
@@ -611,15 +611,15 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 			jsonResponse, _ := json.Marshal(response)
 			writer.WriteHeader(http.StatusOK)
-			writer.Write(jsonResponse)			// 异步执行重启操作，给响应时间返回
-			go func() {
+			writer.Write(jsonResponse) // 异步执行重启操作，给响应时间返回
+			safe.GO(func() {
 				log.Println("开始执行服务重启...")
 				time.Sleep(2 * time.Second) // 等待2秒让响应返回
-				
+
 				// 检查运行模式
 				isService := checkIfRunningAsService()
 				log.Printf("运行模式检测: 服务模式=%v", isService)
-				
+
 				if isService {
 					// 服务模式：尝试重启服务
 					log.Println("使用服务模式重启...")
@@ -627,13 +627,13 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				} else {
 					// 直接运行模式：尝试重新加载配置
 					log.Println("检测到直接运行模式，尝试重新加载配置...")
-					
+
 					// 先尝试优雅关闭SSH连接，触发重连
 					if tunnel != nil && tunnel.GetSSHClient() != nil {
 						log.Println("正在关闭SSH连接以触发重连...")
 						tunnel.GetSSHClient().Close()
 					}
-					
+
 					// 尝试重新加载配置
 					err := triggerConfigReload()
 					if err != nil {
@@ -643,7 +643,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 						log.Println("配置重载完成，SSH连接将自动重新建立")
 					}
 				}
-			}()
+			})
 		})
 
 		// 检查运行模式接口
@@ -668,7 +668,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 			// 检查运行模式
 			isService := checkIfRunningAsService()
-			
+
 			response := map[string]interface{}{
 				"success":    true,
 				"isService":  isService,
@@ -724,22 +724,22 @@ func triggerConfigReload() error {
 	if vConfig == nil {
 		return fmt.Errorf("配置实例未初始化")
 	}
-	
+
 	// 尝试重新读取配置文件
 	if err := vConfig.ReadInConfig(); err != nil {
 		log.Printf("重新读取配置文件失败: %v", err)
 		return err
 	}
-	
+
 	log.Println("配置文件重新加载成功")
-	
+
 	// 获取应用配置并更新
 	appConfig := tunnel.DefaultSshTunnel.AppConfig()
 	if appConfig != nil {
 		appConfig.Update()
 		log.Println("应用配置更新完成")
 	}
-	
+
 	return nil
 }
 
@@ -749,7 +749,7 @@ func restartAsService() {
 		log.Println("服务重启处理完成，退出程序...")
 		os.Exit(0)
 	}()
-	
+
 	switch runtime.GOOS {
 	case "windows":
 		restartWindowsService()
@@ -766,7 +766,7 @@ func restartAsService() {
 // Windows服务重启
 func restartWindowsService() {
 	log.Println("正在重启Windows服务...")
-	
+
 	// 停止服务
 	stopCmd := exec.Command("sc", "stop", "SSHTunnelService")
 	if err := stopCmd.Run(); err != nil {
@@ -777,10 +777,10 @@ func restartWindowsService() {
 			log.Printf("使用net命令停止服务也失败: %v", err)
 		}
 	}
-	
+
 	// 等待服务停止
 	time.Sleep(3 * time.Second)
-	
+
 	// 启动服务
 	startCmd := exec.Command("sc", "start", "SSHTunnelService")
 	if err := startCmd.Run(); err != nil {
@@ -800,30 +800,30 @@ func restartWindowsService() {
 // macOS服务重启
 func restartMacOSService() {
 	log.Println("正在重启macOS服务...")
-	
+
 	// macOS使用launchctl管理服务
 	serviceName := "com.idefav.ssh-tunnel"
-	
+
 	// 尝试停止服务
 	stopCmd := exec.Command("launchctl", "stop", serviceName)
 	if err := stopCmd.Run(); err != nil {
 		log.Printf("停止macOS服务失败: %v", err)
-		
+
 		// 尝试卸载并重新加载
 		unloadCmd := exec.Command("launchctl", "unload", "/Library/LaunchDaemons/"+serviceName+".plist")
 		if err := unloadCmd.Run(); err != nil {
 			log.Printf("卸载服务失败: %v", err)
 		}
 	}
-	
+
 	// 等待服务停止
 	time.Sleep(2 * time.Second)
-	
+
 	// 尝试启动服务
 	startCmd := exec.Command("launchctl", "start", serviceName)
 	if err := startCmd.Run(); err != nil {
 		log.Printf("启动macOS服务失败: %v", err)
-		
+
 		// 尝试重新加载服务
 		loadCmd := exec.Command("launchctl", "load", "/Library/LaunchDaemons/"+serviceName+".plist")
 		if err := loadCmd.Run(); err != nil {
@@ -839,9 +839,9 @@ func restartMacOSService() {
 // Linux服务重启
 func restartLinuxService() {
 	log.Println("正在重启Linux服务...")
-	
+
 	serviceName := "ssh-tunnel"
-	
+
 	// 优先尝试systemctl（systemd）
 	if isSystemdAvailable() {
 		restartSystemdService(serviceName)
@@ -861,20 +861,20 @@ func isSystemdAvailable() bool {
 // 使用systemd重启服务
 func restartSystemdService(serviceName string) {
 	log.Println("使用systemctl重启服务...")
-	
+
 	// 直接重启服务
 	restartCmd := exec.Command("systemctl", "restart", serviceName)
 	if err := restartCmd.Run(); err != nil {
 		log.Printf("systemctl restart失败: %v", err)
-		
+
 		// 尝试先停止再启动
 		stopCmd := exec.Command("systemctl", "stop", serviceName)
 		if err := stopCmd.Run(); err != nil {
 			log.Printf("systemctl stop失败: %v", err)
 		}
-		
+
 		time.Sleep(2 * time.Second)
-		
+
 		startCmd := exec.Command("systemctl", "start", serviceName)
 		if err := startCmd.Run(); err != nil {
 			log.Printf("systemctl start失败: %v", err)
@@ -889,20 +889,20 @@ func restartSystemdService(serviceName string) {
 // 使用SysV init重启服务
 func restartSysVService(serviceName string) {
 	log.Println("使用service命令重启服务...")
-	
+
 	// 直接重启服务
 	restartCmd := exec.Command("service", serviceName, "restart")
 	if err := restartCmd.Run(); err != nil {
 		log.Printf("service restart失败: %v", err)
-		
+
 		// 尝试先停止再启动
 		stopCmd := exec.Command("service", serviceName, "stop")
 		if err := stopCmd.Run(); err != nil {
 			log.Printf("service stop失败: %v", err)
 		}
-		
+
 		time.Sleep(2 * time.Second)
-		
+
 		startCmd := exec.Command("service", serviceName, "start")
 		if err := startCmd.Run(); err != nil {
 			log.Printf("service start失败: %v", err)
@@ -917,7 +917,7 @@ func restartSysVService(serviceName string) {
 // 通用服务重启方法
 func restartGenericService() {
 	log.Println("使用通用方法重启服务...")
-	
+
 	// 对于不支持的系统，简单地退出程序
 	// 假设有外部监控程序会重新启动
 	log.Println("不支持的操作系统，程序将退出，期望外部监控重启")
@@ -956,18 +956,18 @@ func cleanupDuplicateConfigs() error {
 
 	// 定义需要删除的重复或错误配置键
 	keysToRemove := []string{
-		"adminaddress",                    // 错误的键名
-		"http.basic.password",             // 重复
-		"http.basic.username",             // 重复  
-		"http.domain-filter.enable",       // 连字符版本，应该用点号
-		"http.domain-filter.file-path",    // 连字符版本，应该用点号
-		"http.filter.domain.file-path",    // 顺序错误的版本
-		"http.over-ssh.enable",            // 连字符版本，应该用点号
-		"ssh.known.hosts.path",            // 重复（原文件中有两个版本）
-		"ssh.private.key.path",            // 重复（原文件中有两个版本）
-		"ssh.known_hosts_path",            // 下划线版本，应该用点号
-		"ssh.private_key_path",            // 下划线版本，应该用点号
-		"http.domain.filter.enable",       // 如果有重复的话
+		"adminaddress",                 // 错误的键名
+		"http.basic.password",          // 重复
+		"http.basic.username",          // 重复
+		"http.domain-filter.enable",    // 连字符版本，应该用点号
+		"http.domain-filter.file-path", // 连字符版本，应该用点号
+		"http.filter.domain.file-path", // 顺序错误的版本
+		"http.over-ssh.enable",         // 连字符版本，应该用点号
+		"ssh.known.hosts.path",         // 重复（原文件中有两个版本）
+		"ssh.private.key.path",         // 重复（原文件中有两个版本）
+		"ssh.known_hosts_path",         // 下划线版本，应该用点号
+		"ssh.private_key_path",         // 下划线版本，应该用点号
+		"http.domain.filter.enable",    // 如果有重复的话
 	}
 
 	// 删除重复和错误的配置键
@@ -980,7 +980,7 @@ func cleanupDuplicateConfigs() error {
 
 	// 创建新的配置，只保留有效的配置项
 	newConfig := make(map[string]interface{})
-	
+
 	// 保留有效配置的值
 	for _, validKey := range validKeys {
 		if vConfig.IsSet(validKey) {

@@ -1,8 +1,8 @@
 package handler
 
 import (
-	_ "embed"
 	"crypto/tls"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/constants"
+	"ssh-tunnel/safe"
 	tunnel2 "ssh-tunnel/tunnel"
 	"ssh-tunnel/updater"
 	"ssh-tunnel/views"
@@ -206,7 +207,7 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 	}
 	// 获取应用配置
 	appConfig := tunnel.AppConfig()
-	
+
 	// 手动提取配置值，而不是序列化整个ConfigItem结构
 	data := map[string]interface{}{
 		"ServerIp":                 appConfig.ServerIp.GetValue(),
@@ -287,7 +288,7 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 		ExecutablePath:   getExecutablePath(),
 		WorkingDirectory: getWorkingDirectory(),
 	}
-	
+
 	tmpl.Execute(response, app_config)
 }
 
@@ -333,26 +334,26 @@ func ShowVersionView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	appConfig := cfg.NewAppConfig()
-	
+
 	// 检查是否运行在服务模式
 	isServiceMode := !service.Interactive()
-	
+
 	// 获取当前版本信息
 	currentVersion := appConfig.AutoUpdateCurrentVersion.GetValue()
-	
+
 	// 获取当前文件的校验和
 	currentChecksum, _ := getCurrentFileChecksum()
-	
+
 	// 获取文件信息
 	fileInfo, _ := getCurrentFileInfo()
-	
+
 	// 获取版本信息和检查更新（命令模式和服务模式都支持）
 	var releases []VersionInfo
 	var latestRelease *VersionInfo
 	hasUpdate := false
 	updateCount := 0
 	latestVersion := currentVersion
-	
+
 	updaterInstance := updater.GetGlobalUpdater()
 	if updaterInstance != nil {
 		githubReleases, err := updaterInstance.GetReleases()
@@ -361,23 +362,23 @@ func ShowVersionView(w http.ResponseWriter, r *http.Request) {
 				// 只处理非预发布、非草稿版本
 				if !release.Prerelease && !release.Draft {
 					versionInfo := VersionInfo{
-						TagName:      release.TagName,
-						Name:         release.Name,
-						Body:         release.Body,
-						Prerelease:   release.Prerelease,
-						PublishedAt:  release.PublishedAt,
-						IsNewer:      isNewerVersion(release.TagName, currentVersion),
+						TagName:       release.TagName,
+						Name:          release.Name,
+						Body:          release.Body,
+						Prerelease:    release.Prerelease,
+						PublishedAt:   release.PublishedAt,
+						IsNewer:       isNewerVersion(release.TagName, currentVersion),
 						MatchingAsset: findMatchingAsset(release.Assets),
 					}
-					
+
 					releases = append(releases, versionInfo)
-					
+
 					// 找到最新版本
 					if latestRelease == nil || isNewerVersion(versionInfo.TagName, latestRelease.TagName) {
 						latestRelease = &versionInfo
 						latestVersion = versionInfo.TagName
 					}
-					
+
 					if versionInfo.IsNewer {
 						hasUpdate = true
 						updateCount++
@@ -386,7 +387,7 @@ func ShowVersionView(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	
+
 	data := VersionPageData{
 		IsServiceMode:        isServiceMode,
 		CurrentVersion:       currentVersion,
@@ -405,14 +406,14 @@ func ShowVersionView(w http.ResponseWriter, r *http.Request) {
 		HasUpdate:            hasUpdate,
 		UpdateCount:          updateCount,
 		LatestVersion:        latestVersion,
-		
+
 		// 代理配置
-		ProxyEnabled:         appConfig.DownloadProxyEnabled.GetValue(),
-		ProxyURL:             appConfig.DownloadProxyURL.GetValue(),
-		ProxyUsername:        appConfig.DownloadProxyUsername.GetValue(),
-		ProxyPassword:        appConfig.DownloadProxyPassword.GetValue(),
+		ProxyEnabled:  appConfig.DownloadProxyEnabled.GetValue(),
+		ProxyURL:      appConfig.DownloadProxyURL.GetValue(),
+		ProxyUsername: appConfig.DownloadProxyUsername.GetValue(),
+		ProxyPassword: appConfig.DownloadProxyPassword.GetValue(),
 	}
-	
+
 	err = tmpl.Execute(w, data)
 	if err != nil {
 		http.Error(w, "模板执行错误: "+err.Error(), http.StatusInternalServerError)
@@ -425,7 +426,7 @@ func CheckForUpdatesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	updaterInstance := updater.GetGlobalUpdater()
 	if updaterInstance == nil {
 		writeJSONResponse(w, map[string]interface{}{
@@ -434,20 +435,20 @@ func CheckForUpdatesHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	release, hasUpdate := updaterInstance.CheckForUpdates()
-	
+
 	response := map[string]interface{}{
 		"success":   true,
 		"hasUpdate": hasUpdate,
 	}
-	
+
 	if hasUpdate && release != nil {
 		response["latestVersion"] = release.TagName
 		response["releaseName"] = release.Name
 		response["releaseBody"] = release.Body
 	}
-	
+
 	writeJSONResponse(w, response)
 }
 
@@ -456,11 +457,11 @@ func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	version := r.FormValue("version")
 	fileName := r.FormValue("fileName")
 	downloadURL := r.FormValue("downloadUrl")
-	
+
 	if version == "" || fileName == "" || downloadURL == "" {
 		writeJSONResponse(w, map[string]interface{}{
 			"success": false,
@@ -468,7 +469,7 @@ func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	updaterInstance := updater.GetGlobalUpdater()
 	if updaterInstance == nil {
 		writeJSONResponse(w, map[string]interface{}{
@@ -477,7 +478,7 @@ func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 创建下载目录
 	appConfig := cfg.NewAppConfig()
 	downloadDir := filepath.Join(appConfig.HomeDir.GetValue(), "downloads")
@@ -488,18 +489,18 @@ func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 生成下载ID
 	downloadID := fmt.Sprintf("download_%d", time.Now().Unix())
-	
+
 	// 启动后台下载
 	filePath := filepath.Join(downloadDir, fileName)
-	go func() {
+	safe.GO(func() {
 		if err := downloadFileWithProgress(downloadURL, filePath, downloadID); err != nil {
 			downloadManager.SetError(downloadID, err.Error())
 		}
-	}()
-	
+	})
+
 	writeJSONResponse(w, map[string]interface{}{
 		"success":    true,
 		"downloadId": downloadID,
@@ -512,11 +513,11 @@ func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	version := r.FormValue("version")
 	fileName := r.FormValue("fileName")
 	downloadURL := r.FormValue("downloadUrl")
-	
+
 	if version == "" || fileName == "" || downloadURL == "" {
 		writeJSONResponse(w, map[string]interface{}{
 			"success": false,
@@ -524,10 +525,10 @@ func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 检查是否为服务模式
 	isServiceMode := !service.Interactive()
-	
+
 	// 创建下载目录
 	appConfig := cfg.NewAppConfig()
 	downloadDir := filepath.Join(appConfig.HomeDir.GetValue(), "downloads")
@@ -538,10 +539,10 @@ func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 生成下载ID用于进度跟踪
 	downloadID := fmt.Sprintf("update_%d", time.Now().Unix())
-	
+
 	// 下载新版本文件
 	newFilePath := filepath.Join(downloadDir, fileName)
 	if err := downloadFileWithProgress(downloadURL, newFilePath, downloadID); err != nil {
@@ -552,7 +553,7 @@ func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 获取当前执行文件路径
 	currentExe, err := os.Executable()
 	if err != nil {
@@ -562,7 +563,7 @@ func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 备份当前文件
 	backupPath := currentExe + ".backup." + time.Now().Format("20060102150405")
 	if err := copyFile(currentExe, backupPath); err != nil {
@@ -572,7 +573,7 @@ func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 替换文件（Windows下使用批处理脚本）
 	if err := replaceExecutable(currentExe, newFilePath); err != nil {
 		// 恢复备份
@@ -583,11 +584,11 @@ func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 更新版本配置
 	appConfig.AutoUpdateCurrentVersion.SetValue(version)
 	cfg.SaveConfig()
-	
+
 	var message string
 	if runtime.GOOS == "windows" {
 		if isServiceMode {
@@ -596,23 +597,23 @@ func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
 			message = "更新脚本已启动，程序即将退出，请按批处理提示操作"
 		}
 		// Windows下使用批处理脚本处理，程序需要退出
-		go func() {
+		safe.GO(func() {
 			time.Sleep(2 * time.Second)
 			os.Exit(0)
-		}()
+		})
 	} else {
 		if isServiceMode {
 			message = "更新完成，服务将自动重启"
 			// 非Windows服务模式下的重启
-			go func() {
+			safe.GO(func() {
 				time.Sleep(2 * time.Second)
 				os.Exit(0)
-			}()
+			})
 		} else {
 			message = "更新完成，请手动重启程序"
 		}
 	}
-	
+
 	writeJSONResponse(w, map[string]interface{}{
 		"success": true,
 		"message": message,
@@ -624,7 +625,7 @@ func SaveUpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var settings UpdateSettings
 	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
 		writeJSONResponse(w, map[string]interface{}{
@@ -633,20 +634,20 @@ func SaveUpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 更新配置
 	appConfig := cfg.NewAppConfig()
 	appConfig.AutoUpdateEnabled.SetValue(settings.Enabled)
 	appConfig.AutoUpdateCheckInterval.SetValue(settings.CheckInterval * 60) // 转换为秒
 	appConfig.AutoUpdateOwner.SetValue(settings.GitHubOwner)
 	appConfig.AutoUpdateRepo.SetValue(settings.GitHubRepo)
-	
+
 	// 更新代理配置
 	appConfig.DownloadProxyEnabled.SetValue(settings.ProxyEnabled)
 	appConfig.DownloadProxyURL.SetValue(settings.ProxyURL)
 	appConfig.DownloadProxyUsername.SetValue(settings.ProxyUsername)
 	appConfig.DownloadProxyPassword.SetValue(settings.ProxyPassword)
-	
+
 	// 保存配置
 	if err := cfg.SaveConfig(); err != nil {
 		writeJSONResponse(w, map[string]interface{}{
@@ -655,10 +656,10 @@ func SaveUpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	// 更新更新器配置
 	updater.UpdateConfig()
-	
+
 	writeJSONResponse(w, map[string]interface{}{
 		"success": true,
 		"message": "设置已保存",
@@ -690,7 +691,7 @@ var downloadManager = &DownloadManager{
 func (dm *DownloadManager) CreateDownload(id, fileName string, totalSize int64) *DownloadProgress {
 	dm.mutex.Lock()
 	defer dm.mutex.Unlock()
-	
+
 	progress := &DownloadProgress{
 		ID:        id,
 		FileName:  fileName,
@@ -698,7 +699,7 @@ func (dm *DownloadManager) CreateDownload(id, fileName string, totalSize int64) 
 		Status:    "downloading",
 		StartTime: time.Now(),
 	}
-	
+
 	dm.downloads[id] = progress
 	return progress
 }
@@ -713,7 +714,7 @@ func (dm *DownloadManager) UpdateProgress(id string, downloaded int64) {
 	dm.mutex.RLock()
 	progress := dm.downloads[id]
 	dm.mutex.RUnlock()
-	
+
 	if progress != nil {
 		progress.mutex.Lock()
 		progress.DownloadedSize = downloaded
@@ -728,7 +729,7 @@ func (dm *DownloadManager) SetStatus(id, status string) {
 	dm.mutex.RLock()
 	progress := dm.downloads[id]
 	dm.mutex.RUnlock()
-	
+
 	if progress != nil {
 		progress.mutex.Lock()
 		progress.Status = status
@@ -740,7 +741,7 @@ func (dm *DownloadManager) SetError(id, error string) {
 	dm.mutex.RLock()
 	progress := dm.downloads[id]
 	dm.mutex.RUnlock()
-	
+
 	if progress != nil {
 		progress.mutex.Lock()
 		progress.Status = "error"
@@ -754,7 +755,7 @@ func GetDownloadProgressHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "仅支持GET方法", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	downloadID := r.URL.Query().Get("id")
 	if downloadID == "" {
 		writeJSONResponse(w, map[string]interface{}{
@@ -763,7 +764,7 @@ func GetDownloadProgressHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	progress := downloadManager.GetDownload(downloadID)
 	if progress == nil {
 		writeJSONResponse(w, map[string]interface{}{
@@ -772,7 +773,7 @@ func GetDownloadProgressHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	progress.mutex.RLock()
 	data := map[string]interface{}{
 		"success":        true,
@@ -786,7 +787,7 @@ func GetDownloadProgressHandler(w http.ResponseWriter, r *http.Request) {
 		"startTime":      progress.StartTime,
 	}
 	progress.mutex.RUnlock()
-	
+
 	writeJSONResponse(w, data)
 }
 
@@ -796,12 +797,12 @@ func getCurrentFileChecksum() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	updaterInstance := updater.GetGlobalUpdater()
 	if updaterInstance == nil {
 		return "", fmt.Errorf("更新服务未初始化")
 	}
-	
+
 	return updaterInstance.GetFileChecksum(executable)
 }
 
@@ -810,12 +811,12 @@ func getCurrentFileInfo() (FileInfo, error) {
 	if err != nil {
 		return FileInfo{}, err
 	}
-	
+
 	stat, err := os.Stat(executable)
 	if err != nil {
 		return FileInfo{}, err
 	}
-	
+
 	return FileInfo{
 		FileSize:    formatFileSize(stat.Size()),
 		InstallTime: stat.ModTime().Format("2006-01-02 15:04:05"),
@@ -846,19 +847,19 @@ func downloadFile(downloadURL, filepath string) error {
 
 func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 	appConfig := cfg.NewAppConfig()
-	
+
 	// 创建 HTTP 客户端
 	client := &http.Client{
 		Timeout: 30 * time.Minute,
 	}
-	
+
 	// 配置代理
 	if appConfig.DownloadProxyEnabled.GetValue() && appConfig.DownloadProxyURL.GetValue() != "" {
 		proxyURL, err := url.Parse(appConfig.DownloadProxyURL.GetValue())
 		if err != nil {
 			return fmt.Errorf("代理URL解析失败: %v", err)
 		}
-		
+
 		// 设置代理认证
 		if appConfig.DownloadProxyUsername.GetValue() != "" {
 			proxyURL.User = url.UserPassword(
@@ -866,39 +867,39 @@ func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 				appConfig.DownloadProxyPassword.GetValue(),
 			)
 		}
-		
+
 		transport := &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
+			Proxy:           http.ProxyURL(proxyURL),
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 		client.Transport = transport
 	}
-	
+
 	req, err := http.NewRequest("GET", downloadURL, nil)
 	if err != nil {
 		return err
 	}
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("下载失败: HTTP %d", resp.StatusCode)
 	}
-	
+
 	// 创建目标文件
 	out, err := os.Create(filepath)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
-	
+
 	// 获取文件大小
 	totalSize := resp.ContentLength
-	
+
 	// 如果提供了进度ID，创建进度跟踪
 	var progress *DownloadProgress
 	if progressID != "" {
@@ -908,7 +909,7 @@ func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 		}
 		progress = downloadManager.CreateDownload(progressID, fileName, totalSize)
 	}
-	
+
 	// 创建进度读取器
 	var reader io.Reader = resp.Body
 	if progress != nil {
@@ -921,7 +922,7 @@ func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 			},
 		}
 	}
-	
+
 	// 复制文件内容
 	_, err = io.Copy(out, reader)
 	if err != nil {
@@ -930,12 +931,12 @@ func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 		}
 		return err
 	}
-	
+
 	// 设置完成状态
 	if progress != nil {
 		downloadManager.SetStatus(progressID, "completed")
 	}
-	
+
 	return nil
 }
 
@@ -980,12 +981,12 @@ type VersionPageData struct {
 	HasUpdate            bool
 	UpdateCount          int
 	LatestVersion        string
-	
+
 	// 下载代理配置
-	ProxyEnabled         bool
-	ProxyURL             string
-	ProxyUsername        string
-	ProxyPassword        string
+	ProxyEnabled  bool
+	ProxyURL      string
+	ProxyUsername string
+	ProxyPassword string
 }
 
 type VersionInfo struct {
@@ -1017,7 +1018,7 @@ type UpdateSettings struct {
 	CheckInterval int    `json:"checkInterval"`
 	GitHubOwner   string `json:"githubOwner"`
 	GitHubRepo    string `json:"githubRepo"`
-	
+
 	// 代理配置
 	ProxyEnabled  bool   `json:"proxyEnabled"`
 	ProxyURL      string `json:"proxyUrl"`
@@ -1029,7 +1030,7 @@ type UpdateSettings struct {
 func findMatchingAsset(assets []updater.Asset) *AssetInfo {
 	osName := runtime.GOOS
 	archName := runtime.GOARCH
-	
+
 	// 构建平台标识符，优先匹配服务版本
 	platformIdentifiers := []string{
 		fmt.Sprintf("svc-%s-%s", osName, archName),
@@ -1037,7 +1038,7 @@ func findMatchingAsset(assets []updater.Asset) *AssetInfo {
 		fmt.Sprintf("%s-%s", osName, archName),
 		fmt.Sprintf("%s_%s", osName, archName),
 	}
-	
+
 	// 查找匹配的资源文件
 	for _, asset := range assets {
 		assetNameLower := strings.ToLower(asset.Name)
@@ -1052,7 +1053,7 @@ func findMatchingAsset(assets []updater.Asset) *AssetInfo {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1063,13 +1064,13 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer sourceFile.Close()
-	
+
 	destFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 	defer destFile.Close()
-	
+
 	_, err = io.Copy(destFile, sourceFile)
 	return err
 }
@@ -1089,13 +1090,13 @@ func replaceExecutableWindows(currentExe, newFile string) error {
 	// 获取当前程序的目录
 	dir := filepath.Dir(currentExe)
 	baseName := filepath.Base(currentExe)
-	
+
 	// 创建批处理更新脚本
 	batchFile := filepath.Join(dir, "update_"+time.Now().Format("20060102150405")+".bat")
-	
+
 	// 检查是否为服务模式
 	isServiceMode := !service.Interactive()
-	
+
 	var batchContent string
 	if isServiceMode {
 		// 服务模式：停止服务、替换文件、启动服务
@@ -1140,20 +1141,20 @@ echo Cleaning up...
 del "%%~f0"
 `, currentExe, currentExe, currentExe, baseName, baseName, newFile, currentExe)
 	}
-	
+
 	// 写入批处理文件
 	if err := os.WriteFile(batchFile, []byte(batchContent), 0755); err != nil {
 		return fmt.Errorf("创建更新脚本失败: %v", err)
 	}
-	
+
 	// 启动批处理文件
 	cmd := exec.Command("cmd", "/c", "start", "/min", batchFile)
 	cmd.Dir = dir
-	
+
 	if err := cmd.Start(); err != nil {
 		os.Remove(batchFile) // 清理失败的脚本
 		return fmt.Errorf("启动更新脚本失败: %v", err)
 	}
-	
+
 	return nil
 }
