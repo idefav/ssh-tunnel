@@ -3,3 +3,5 @@
 *.xml
 *.log
 *.exe
+ssh-tunnel
+/tmp/
