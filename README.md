@@ -416,3 +416,9 @@ A:
 ## 📊 贡献者
 
 [![Contributors over time](https://contributor-graph-api.apiseven.com/contributors-svg?chart=contributorOverTime&repo=idefav/ssh-tunnel)](https://www.apiseven.com/en/contributor-graph?chart=contributorOverTime&repo=idefav/ssh-tunnel)
+
+---
+
+## 🤖 AI 辅助编码
+
+本项目文档的优化和完善由 AI 辅助完成，提升了文档的专业度和用户体验。
