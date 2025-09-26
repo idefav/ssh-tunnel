@@ -1,6 +1,6 @@
 module ssh-tunnel
 
-go 1.24
+go 1.25.1
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0
