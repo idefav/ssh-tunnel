@@ -175,7 +175,7 @@ admin.address=:1083
 ```
 
 ### 3. 查看服务
-win+r 输入 services.svc 打开服务管理窗口
+win+r 输入 services.msc 打开服务管理窗口
 找到 SSHTunnelService 并启动它
 
 ## Contributors
