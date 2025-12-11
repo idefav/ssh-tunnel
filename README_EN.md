@@ -178,8 +178,5 @@ admin.address=:1083
 Press Win+R, type services.msc to open the Service Management window
 Find SSHTunnelService and start it
 
-### 4. Configure Proxy in Windows Settings
-
-
 ## Contributors
 [![Contributors over time](https://contributor-graph-api.apiseven.com/contributors-svg?chart=contributorOverTime&repo=idefav/ssh-tunnel)](https://www.apiseven.com/en/contributor-graph?chart=contributorOverTime&repo=idefav/ssh-tunnel)

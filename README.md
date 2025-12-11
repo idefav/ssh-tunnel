@@ -178,8 +178,5 @@ admin.address=:1083
 win+r 输入 services.svc 打开服务管理窗口
 找到 SSHTunnelService 并启动它
 
-### 4. 在windows配置中启动代理
-
-
 Contributors
 [![Contributors over time](https://contributor-graph-api.apiseven.com/contributors-svg?chart=contributorOverTime&repo=idefav/ssh-tunnel)](https://www.apiseven.com/en/contributor-graph?chart=contributorOverTime&repo=idefav/ssh-tunnel)
