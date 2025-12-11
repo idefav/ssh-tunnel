@@ -12,7 +12,7 @@
 [![GitHub watchers](https://badgen.net/github/watchers/idefav/ssh-tunnel/)](https://GitHub.com/idefav/ssh-tunnel/watchers/)
 [![GitHub contributors](https://img.shields.io/github/contributors/idefav/ssh-tunnel.svg)](https://GitHub.com/idefav/ssh-tunnel/graphs/contributors/)
 
-Open ssh tunnel, start Sock5 port locally by default 1081
+Open ssh tunnel, start SOCKS5 port locally by default 1081
 
 ## Quick Start
 
@@ -66,7 +66,7 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
   -server.ssh.port int
         Server SSH port (default 22)
   -socks5.enable
-        Enable Socks5 proxy (default true)
+        Enable SOCKS5 proxy (default true)
   -ssh.path.known_hosts string
         Known hosts path (default "C:\\Users\\idefav/.ssh/known_hosts")
   -ssh.path.private_key string
@@ -181,5 +181,5 @@ Find SSHTunnelService and start it
 ### 4. Configure Proxy in Windows Settings
 
 
-Contributors
+## Contributors
 [![Contributors over time](https://contributor-graph-api.apiseven.com/contributors-svg?chart=contributorOverTime&repo=idefav/ssh-tunnel)](https://www.apiseven.com/en/contributor-graph?chart=contributorOverTime&repo=idefav/ssh-tunnel)
