@@ -1,6 +1,6 @@
 # Introduction
 
-中文 | [English](README_EN.md)
+[中文](README.md) | English
 
 [![Apache license](https://img.shields.io/badge/License-Apache-blue.svg)](https://lbesson.mit-license.org/)
 [![Build Release](https://github.com/idefav/ssh-tunnel/actions/workflows/release.yml/badge.svg)](https://github.com/idefav/ssh-tunnel/actions/workflows/release.yml)
@@ -14,67 +14,67 @@
 
 Open ssh tunnel, start Sock5 port locally by default 1081
 
-## quick start
+## Quick Start
 
 ```bash
 ./ssh-tunnel -s xx.xx.xx.xx
 ```
 
-注意: 需要配置本地服务器到目标服务器的SSH免密登录, 免密登录请参考: [SSH免密登录](https://idefav.github.io/ssh-tunnel/ssh-key-setup.html)
+Note: You need to configure SSH passwordless login from your local server to the target server. For passwordless login, please refer to: [SSH Passwordless Login](https://idefav.github.io/ssh-tunnel/ssh-key-setup.html)
 
-## commands
+## Commands
 
 ```bash
 ./ssh-tunnel -h
 Usage of ./bin/ssh-tunnel-amd64-darwin:
   -admin.addr string
-        Admin监听地址 (default ":1083")
+        Admin listening address (default ":1083")
   -admin.enable
-        是否启用Admin页面
+        Enable Admin page
   -http.basic.enable
-        是否开启Http的Basic认证
+        Enable HTTP Basic Authentication
   -http.basic.password string
-        Http Basic认证, 密码
+        HTTP Basic Authentication password
   -http.basic.username string
-        Basic认证, 用户名
+        Basic Authentication username
   -http.enable
-        是否开启Http代理
+        Enable HTTP proxy
   -http.filter.domain.enable
-        是否启用Http域名过滤
+        Enable HTTP domain filtering
   -http.filter.domain.file-path string
-        过滤http请求 (default "C:\\Users\\idefav/.ssh-tunnel/domain.txt")
+        HTTP request filter (default "C:\\Users\\idefav/.ssh-tunnel/domain.txt")
   -http.local.addr string
-        Http监听地址 (default "0.0.0.0:1082")
+        HTTP listening address (default "0.0.0.0:1082")
   -http.over.ssh.enable
-        是否开启Http Over SSH
+        Enable HTTP Over SSH
   -l string
-        本地地址(短命令) (default "0.0.0.0:1081")
+        Local address (short command) (default "0.0.0.0:1081")
   -local.addr string
-        本地地址 (default "0.0.0.0:1081")
+        Local address (default "0.0.0.0:1081")
   -p int
-        服务器SSH端口(短命令) (default 22)
+        Server SSH port (short command) (default 22)
   -pk string
-        私钥地址(短命令) (default "C:\\Users\\idefav/.ssh/id_rsa")
+        Private key path (short command) (default "C:\\Users\\idefav/.ssh/id_rsa")
   -pkh string
-        已知主机地址(短命令) (default "C:\\Users\\idefav/.ssh/known_hosts")
+        Known hosts path (short command) (default "C:\\Users\\idefav/.ssh/known_hosts")
   -retry.interval.sec int
-        重试间隔时间(秒) (default 3)
+        Retry interval time (seconds) (default 3)
   -s string
-        服务器IP地址(短命令)
+        Server IP address (short command)
   -server.ip string
-        服务器IP地址
+        Server IP address
   -server.ssh.port int
-        服务器SSH端口 (default 22)
+        Server SSH port (default 22)
   -socks5.enable
-        是否开启Socks5代理 (default true)
+        Enable Socks5 proxy (default true)
   -ssh.path.known_hosts string
-        已知主机地址 (default "C:\\Users\\idefav/.ssh/known_hosts")
+        Known hosts path (default "C:\\Users\\idefav/.ssh/known_hosts")
   -ssh.path.private_key string
-        私钥地址 (default "C:\\Users\\idefav/.ssh/id_rsa")
+        Private key path (default "C:\\Users\\idefav/.ssh/id_rsa")
   -u string
-        用户名(短命令) (default "root")
+        Username (short command) (default "root")
   -user string
-        用户名 (default "root")
+        Username (default "root")
 
 
 
@@ -82,13 +82,13 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 
 ## AdminUI
 
-默认地址: localhost:1083/view/index
+Default address: localhost:1083/view/index
 ![image](https://github.com/user-attachments/assets/fb5b016d-5e98-4a5f-ac37-1b7fe5fc5c50)
 
 
-## MacOS boot auto-start settings
+## MacOS Auto-Start Settings
 
-把 ssh-tunnel 放到 /usr/local/bin 目录下
+Place ssh-tunnel in the /usr/local/bin directory
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -125,31 +125,31 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 </plist>
 ```
 
-把这个文件保持到 `com.idefav.macos.ssh-tunnel.plist` 注意文件名要和`label` 相同
+Save this file as `com.idefav.macos.ssh-tunnel.plist` (note: the filename should match the `label`)
 
-放到 `/Library/LaunchAgents` 目录下
+Place it in the `/Library/LaunchAgents` directory
 
 ```bash
 sudo chown -R root /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 ```
 
 ```bash
-# 加载配置
+# Load configuration
 launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 
-# 卸载配置
+# Unload configuration
 launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 
-# 修改配置后重载配置
+# Reload configuration after modification
 launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist && \
 launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 ```
 
-# Windows Service支持
-### 1. 配置文件准备
-在C盘跟目录参加 `ssh-tunnel`
-在该目录下参加 `.ssh-tunnel` 目录， 并写入 `config.properties`
-配置文件完整路径: `C:\ssh-tunnel\.ssh-tunnel\config.properties`
+# Windows Service Support
+### 1. Configuration File Preparation
+Create a `ssh-tunnel` directory in the C: drive root
+Create a `.ssh-tunnel` directory within it, and add the `config.properties` file
+Complete configuration file path: `C:\ssh-tunnel\.ssh-tunnel\config.properties`
 
 ```properties
 server.ip=xx.xx.xx.xx
@@ -168,17 +168,17 @@ admin.enable=true
 admin.address=:1083
 ```
 
-### 2. 安装windows服务
+### 2. Install Windows Service
 
 ```text
  .\ssh-tunnel-svc-windows-amd64.exe install  --config=C:\ssh-tunnel\.ssh-tunnel\config.properties
 ```
 
-### 3. 查看服务
-win+r 输入 services.svc 打开服务管理窗口
-找到 SSHTunnelService 并启动它
+### 3. View Service
+Press Win+R, type services.msc to open the Service Management window
+Find SSHTunnelService and start it
 
-### 4. 在windows配置中启动代理
+### 4. Configure Proxy in Windows Settings
 
 
 Contributors
