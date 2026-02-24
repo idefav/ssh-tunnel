@@ -5,8 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/kardianos/service"
 	"html/template"
 	"io"
 	"io/fs"
@@ -26,6 +24,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/kardianos/service"
 )
 
 type Data struct {
@@ -214,7 +215,6 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 		"ServerSshPort":            appConfig.ServerSshPort.GetValue(),
 		"LoginUser":                appConfig.LoginUser.GetValue(),
 		"SshPrivateKeyPath":        appConfig.SshPrivateKeyPath.GetValue(),
-		"SshKnownHostsPath":        appConfig.SshKnownHostsPath.GetValue(),
 		"LocalAddress":             appConfig.LocalAddress.GetValue(),
 		"HttpLocalAddress":         appConfig.HttpLocalAddress.GetValue(),
 		"EnableHttp":               appConfig.EnableHttp.GetValue(),
@@ -238,7 +238,6 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 		"ServerSshPort":            {Type: "int", Description: "SSH服务器端口", Category: "服务器配置", Required: true, ActualKey: appConfig.ServerSshPort.Key},
 		"LoginUser":                {Type: "string", Description: "SSH登录用户名", Category: "服务器配置", Required: true, ActualKey: appConfig.LoginUser.Key},
 		"SshPrivateKeyPath":        {Type: "string", Description: "SSH私钥文件路径", Category: "SSH配置", Required: true, ActualKey: appConfig.SshPrivateKeyPath.Key},
-		"SshKnownHostsPath":        {Type: "string", Description: "SSH已知主机文件路径", Category: "SSH配置", Required: false, ActualKey: appConfig.SshKnownHostsPath.Key},
 		"LocalAddress":             {Type: "string", Description: "本地SOCKS5代理监听地址", Category: "代理配置", Required: true, ActualKey: appConfig.LocalAddress.Key},
 		"HttpLocalAddress":         {Type: "string", Description: "本地HTTP代理监听地址", Category: "代理配置", Required: false, ActualKey: appConfig.HttpLocalAddress.Key},
 		"EnableHttp":               {Type: "bool", Description: "启用HTTP代理", Category: "代理配置", Required: false, ActualKey: appConfig.EnableHttp.Key},
@@ -262,7 +261,6 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 		"ServerSshPort":            appConfig.ServerSshPort.Key,
 		"LoginUser":                appConfig.LoginUser.Key,
 		"SshPrivateKeyPath":        appConfig.SshPrivateKeyPath.Key,
-		"SshKnownHostsPath":        appConfig.SshKnownHostsPath.Key,
 		"LocalAddress":             appConfig.LocalAddress.Key,
 		"HttpLocalAddress":         appConfig.HttpLocalAddress.Key,
 		"EnableHttp":               appConfig.EnableHttp.Key,

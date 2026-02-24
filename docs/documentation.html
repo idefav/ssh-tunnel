@@ -127,11 +127,6 @@
                                     <td>~/.ssh/id_rsa</td>
                                 </tr>
                                 <tr>
-                                    <td><code>-pkh</code>, <code>-ssh.path.known_hosts</code></td>
-                                    <td>已知主机地址</td>
-                                    <td>~/.ssh/known_hosts</td>
-                                </tr>
-                                <tr>
                                     <td><code>-socks5.enable</code></td>
                                     <td>是否开启Socks5代理</td>
                                     <td>true</td>
@@ -309,7 +304,6 @@ launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist</code>
                     <pre class="bg-dark text-light p-3 rounded"><code>server.ip=xx.xx.xx.xx
 server.ssh.port=22
 server.ssh.private_key_path=C:\\Users\\username\\.ssh\\id_rsa
-server.ssh.known_hosts_path=C:\\Users\\username\\.ssh\\known_hosts
 login.username=root
 local.address=0.0.0.0:1081
 http.local.address=0.0.0.0:1082

@@ -1,7 +1,6 @@
 server.ip=xx.xx.xx.xx
 server.ssh.port=22
 server.ssh.private_key_path=C:\\Users\\xx\\.ssh\\id_rsa
-server.ssh.known_hosts_path=C:\\Users\\xx\\.ssh\\known_hosts
 login.username=root
 local.address=0.0.0.0:1081
 http.local.address=0.0.0.0:1082

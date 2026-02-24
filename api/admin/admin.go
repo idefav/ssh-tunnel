@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/kardianos/service"
 	"io"
 	"log"
 	"net/http"
@@ -21,6 +19,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/kardianos/service"
 )
 
 // 获取配置键映射（前端配置键 -> 实际配置文件键）
@@ -31,7 +32,6 @@ func getConfigKeyMapping() map[string]string {
 		"ServerSshPort":            appConfig.ServerSshPort.Key,
 		"LoginUser":                appConfig.LoginUser.Key,
 		"SshPrivateKeyPath":        appConfig.SshPrivateKeyPath.Key,
-		"SshKnownHostsPath":        appConfig.SshKnownHostsPath.Key,
 		"LocalAddress":             appConfig.LocalAddress.Key,
 		"HttpLocalAddress":         appConfig.HttpLocalAddress.Key,
 		"EnableHttp":               appConfig.EnableHttp.Key,
@@ -511,7 +511,6 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				{"key": "server.ssh.port", "type": "int", "description": "SSH端口", "category": "服务器"},
 				{"key": "user", "type": "string", "description": "登录用户名", "category": "服务器"},
 				{"key": "ssh.path.private_key", "type": "string", "description": "私钥文件路径", "category": "SSH"},
-				{"key": "ssh.path.known_hosts", "type": "string", "description": "已知主机文件路径", "category": "SSH"},
 				{"key": "local.addr", "type": "string", "description": "本地SOCKS5监听地址", "category": "代理"},
 				{"key": "http.local.addr", "type": "string", "description": "本地HTTP监听地址", "category": "代理"},
 				{"key": "http.enable", "type": "bool", "description": "启用HTTP代理", "category": "代理"},
@@ -936,7 +935,6 @@ func cleanupDuplicateConfigs() error {
 		"server.ip",
 		"server.ssh.port",
 		"ssh.private.key.path",
-		"ssh.known.hosts.path",
 		"login.username",
 		"local.address",
 		"http.local.address",
@@ -963,9 +961,7 @@ func cleanupDuplicateConfigs() error {
 		"http.domain-filter.file-path", // 连字符版本，应该用点号
 		"http.filter.domain.file-path", // 顺序错误的版本
 		"http.over-ssh.enable",         // 连字符版本，应该用点号
-		"ssh.known.hosts.path",         // 重复（原文件中有两个版本）
 		"ssh.private.key.path",         // 重复（原文件中有两个版本）
-		"ssh.known_hosts_path",         // 下划线版本，应该用点号
 		"ssh.private_key_path",         // 下划线版本，应该用点号
 		"http.domain.filter.enable",    // 如果有重复的话
 	}

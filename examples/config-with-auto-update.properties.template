@@ -4,7 +4,6 @@ server.ip=your-server-ip
 server.ssh.port=22
 login.username=root
 ssh.private_key_path=~/.ssh/id_rsa
-ssh.known_hosts_path=~/.ssh/known_hosts
 
 # 本地代理配置
 local.address=0.0.0.0:1081

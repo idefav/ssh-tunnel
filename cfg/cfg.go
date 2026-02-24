@@ -2,13 +2,14 @@ package cfg
 
 import (
 	"fmt"
-	"github.com/spf13/viper"
 	"log"
 	"os"
 	"os/user"
 	"path"
 	"runtime"
 	"sync"
+
+	"github.com/spf13/viper"
 )
 
 var (
@@ -68,7 +69,6 @@ func NewAppConfig() *AppConfig {
 				ServerIp:                 NewConfigItem(SERVER_IP_KEY, "s", "", "服务器IP地址", ""),
 				ServerSshPort:            NewConfigItem(SERVER_SSH_PORT_KEY, "p", 22, "SSH服务器端口", 22),
 				SshPrivateKeyPath:        NewConfigItem(SSH_PRIVATE_KEY_PATH_KEY, "", path.Join(defaultHomeDir, ".ssh/id_rsa"), "SSH私钥文件路径", ""),
-				SshKnownHostsPath:        NewConfigItem(SSH_KNOWN_HOSTS_PATH_KEY, "", path.Join(defaultHomeDir, ".ssh/known_hosts"), "SSH已知主机文件路径", ""),
 				LoginUser:                NewConfigItem(LOGIN_USER_KEY, "u", "root", "SSH登录用户名", ""),
 				LocalAddress:             NewConfigItem(LOCAL_ADDRESS_KEY, "l", "0.0.0.0:1081", "本地地址", ""),
 				HttpLocalAddress:         NewConfigItem(HTTP_LOCAL_ADDRESS_KEY, "", "0.0.0.0:1082", "HTTP本地地址", ""),
@@ -98,7 +98,6 @@ func NewAppConfig() *AppConfig {
 				ServerIp:                 NewConfigItem(SERVER_IP_KEY, "s", "", "服务器IP地址", ""),
 				ServerSshPort:            NewConfigItem(SERVER_SSH_PORT_KEY, "p", 22, "SSH服务器端口", 22),
 				SshPrivateKeyPath:        NewConfigItem(SSH_PRIVATE_KEY_PATH_KEY, "", path.Join(u.HomeDir, ".ssh/id_rsa"), "SSH私钥文件路径", ""),
-				SshKnownHostsPath:        NewConfigItem(SSH_KNOWN_HOSTS_PATH_KEY, "", path.Join(u.HomeDir, ".ssh/known_hosts"), "SSH已知主机文件路径", ""),
 				LoginUser:                NewConfigItem(LOGIN_USER_KEY, "u", "root", "SSH登录用户名", ""),
 				LocalAddress:             NewConfigItem(LOCAL_ADDRESS_KEY, "l", "0.0.0.0:1081", "本地地址", ""),
 				HttpLocalAddress:         NewConfigItem(HTTP_LOCAL_ADDRESS_KEY, "", "0.0.0.0:1082", "HTTP本地地址", ""),
@@ -121,12 +120,12 @@ func NewAppConfig() *AppConfig {
 				AutoUpdateRepo:           NewConfigItem(AUTO_UPDATE_REPO_KEY, "", "ssh-tunnel", "GitHub仓库名称", ""),
 				AutoUpdateCurrentVersion: NewConfigItem(AUTO_UPDATE_CURRENT_VERSION_KEY, "", "v1.0.0", "当前版本号", ""),
 				AutoUpdateCheckInterval:  NewConfigItem(AUTO_UPDATE_CHECK_INTERVAL_KEY, "", 3600, "检查更新间隔(秒)", 3600),
-			
+
 				// 下载代理配置
-				DownloadProxyEnabled:     NewConfigItem(DOWNLOAD_PROXY_ENABLED_KEY, "", false, "是否启用下载代理", false),
-				DownloadProxyURL:         NewConfigItem(DOWNLOAD_PROXY_URL_KEY, "", "", "下载代理地址", ""),
-				DownloadProxyUsername:    NewConfigItem(DOWNLOAD_PROXY_USERNAME_KEY, "", "", "代理用户名", ""),
-				DownloadProxyPassword:    NewConfigItem(DOWNLOAD_PROXY_PASSWORD_KEY, "", "", "代理密码", ""),
+				DownloadProxyEnabled:  NewConfigItem(DOWNLOAD_PROXY_ENABLED_KEY, "", false, "是否启用下载代理", false),
+				DownloadProxyURL:      NewConfigItem(DOWNLOAD_PROXY_URL_KEY, "", "", "下载代理地址", ""),
+				DownloadProxyUsername: NewConfigItem(DOWNLOAD_PROXY_USERNAME_KEY, "", "", "代理用户名", ""),
+				DownloadProxyPassword: NewConfigItem(DOWNLOAD_PROXY_PASSWORD_KEY, "", "", "代理密码", ""),
 			}
 		}
 	})
@@ -151,7 +150,6 @@ func (appConfig *AppConfig) Update() {
 	appConfigInstance.ServerIp.SetValue(config.GetString(appConfigInstance.ServerIp.Key))
 	appConfigInstance.ServerSshPort.SetValue(config.GetInt(appConfigInstance.ServerSshPort.Key))
 	appConfigInstance.SshPrivateKeyPath.SetValue(config.GetString(appConfigInstance.SshPrivateKeyPath.Key))
-	appConfigInstance.SshKnownHostsPath.SetValue(config.GetString(appConfigInstance.SshKnownHostsPath.Key))
 	appConfigInstance.LoginUser.SetValue(config.GetString(appConfigInstance.LoginUser.Key))
 	appConfigInstance.LocalAddress.SetValue(config.GetString(appConfigInstance.LocalAddress.Key))
 	appConfigInstance.HttpLocalAddress.SetValue(config.GetString(appConfigInstance.HttpLocalAddress.Key))
@@ -190,7 +188,6 @@ const (
 	SERVER_IP_KEY            = "server.ip"
 	SERVER_SSH_PORT_KEY      = "server.ssh.port"
 	SSH_PRIVATE_KEY_PATH_KEY = "ssh.private_key_path"
-	SSH_KNOWN_HOSTS_PATH_KEY = "ssh.known_hosts_path"
 	LOGIN_USER_KEY           = "login.username"
 	LOCAL_ADDRESS_KEY        = "local.address"
 	HTTP_LOCAL_ADDRESS_KEY   = "http.local.address"
@@ -217,7 +214,7 @@ const (
 	AUTO_UPDATE_REPO_KEY            = "auto-update.repo"
 	AUTO_UPDATE_CURRENT_VERSION_KEY = "auto-update.current-version"
 	AUTO_UPDATE_CHECK_INTERVAL_KEY  = "auto-update.check-interval"
-	
+
 	// 下载代理相关配置
 	DOWNLOAD_PROXY_ENABLED_KEY  = "download.proxy.enabled"
 	DOWNLOAD_PROXY_URL_KEY      = "download.proxy.url"
@@ -276,7 +273,6 @@ type AppConfig struct {
 	ServerIp                 ConfigItem[string]
 	ServerSshPort            ConfigItem[int]
 	SshPrivateKeyPath        ConfigItem[string]
-	SshKnownHostsPath        ConfigItem[string]
 	LoginUser                ConfigItem[string]
 	LocalAddress             ConfigItem[string]
 	HttpLocalAddress         ConfigItem[string]
@@ -299,10 +295,10 @@ type AppConfig struct {
 	AutoUpdateRepo           ConfigItem[string]
 	AutoUpdateCurrentVersion ConfigItem[string]
 	AutoUpdateCheckInterval  ConfigItem[int]
-	
+
 	// 下载代理配置
-	DownloadProxyEnabled     ConfigItem[bool]
-	DownloadProxyURL         ConfigItem[string]
-	DownloadProxyUsername    ConfigItem[string]
-	DownloadProxyPassword    ConfigItem[string]
+	DownloadProxyEnabled  ConfigItem[bool]
+	DownloadProxyURL      ConfigItem[string]
+	DownloadProxyUsername ConfigItem[string]
+	DownloadProxyPassword ConfigItem[string]
 }

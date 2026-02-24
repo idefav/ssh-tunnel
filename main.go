@@ -4,10 +4,6 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"github.com/kardianos/service"
-	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
 	"io"
 	"log"
 	"os"
@@ -21,6 +17,11 @@ import (
 	"ssh-tunnel/updater"
 	"strings"
 	"sync"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/kardianos/service"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 )
 
 func main() {
@@ -50,7 +51,6 @@ func main() {
 	// 默认值设置
 	vConfig.SetDefault(config.HomeDir.GetKey(), config.HomeDir.GetDefaultValue())
 	vConfig.SetDefault(config.SshPrivateKeyPath.GetKey(), config.SshPrivateKeyPath.GetDefaultValue())
-	vConfig.SetDefault(config.SshKnownHostsPath.GetKey(), config.SshKnownHostsPath.GetDefaultValue())
 	vConfig.SetDefault(config.LoginUser.GetKey(), config.LoginUser.GetDefaultValue())
 	vConfig.SetDefault(config.LocalAddress.GetKey(), config.LocalAddress.GetDefaultValue())
 	vConfig.SetDefault(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue())
@@ -64,14 +64,14 @@ func main() {
 	vConfig.SetDefault(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue())
 	vConfig.SetDefault(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue())
 	vConfig.SetDefault(config.LogFilePath.GetKey(), config.LogFilePath.GetDefaultValue())
-	
+
 	// 自动更新默认值
 	vConfig.SetDefault(config.AutoUpdateEnabled.GetKey(), config.AutoUpdateEnabled.GetDefaultValue())
 	vConfig.SetDefault(config.AutoUpdateOwner.GetKey(), config.AutoUpdateOwner.GetDefaultValue())
 	vConfig.SetDefault(config.AutoUpdateRepo.GetKey(), config.AutoUpdateRepo.GetDefaultValue())
 	vConfig.SetDefault(config.AutoUpdateCurrentVersion.GetKey(), config.AutoUpdateCurrentVersion.GetDefaultValue())
 	vConfig.SetDefault(config.AutoUpdateCheckInterval.GetKey(), config.AutoUpdateCheckInterval.GetDefaultValue())
-	
+
 	// 自动更新配置默认值
 	vConfig.SetDefault(config.AutoUpdateEnabled.GetKey(), config.AutoUpdateEnabled.GetDefaultValue())
 	vConfig.SetDefault(config.AutoUpdateOwner.GetKey(), config.AutoUpdateOwner.GetDefaultValue())
@@ -118,7 +118,6 @@ func main() {
 	pflag.StringP(config.ServerIp.GetKey(), config.ServerIp.GetShorthand(), config.ServerIp.GetDefaultValue(), config.ServerIp.GetDescription())
 	pflag.IntP(config.ServerSshPort.GetKey(), config.ServerSshPort.GetShorthand(), config.ServerSshPort.GetDefaultValue(), config.ServerSshPort.GetDescription())
 	pflag.String(config.SshPrivateKeyPath.GetKey(), config.SshPrivateKeyPath.GetDefaultValue(), config.SshPrivateKeyPath.GetDescription())
-	pflag.String(config.SshKnownHostsPath.GetKey(), config.SshKnownHostsPath.GetDefaultValue(), config.SshKnownHostsPath.GetDescription())
 	pflag.StringP(config.LoginUser.GetKey(), config.LoginUser.GetShorthand(), config.LoginUser.GetDefaultValue(), config.LoginUser.GetDescription())
 	pflag.StringP(config.LocalAddress.GetKey(), config.LocalAddress.GetShorthand(), config.LocalAddress.GetDefaultValue(), config.LocalAddress.GetDescription())
 	pflag.String(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue(), config.HttpLocalAddress.GetDescription())
@@ -157,10 +156,10 @@ func main() {
 	log.Println("userHome: ", u.HomeDir)
 
 	var wg sync.WaitGroup
-	
+
 	// 初始化自动更新器
 	updater.InitializeUpdater()
-	
+
 	err = tunnel.Load(config, &wg)
 	if err != nil {
 		log.Printf("Failed to load tunnel configuration: %v", err)

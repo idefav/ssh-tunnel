@@ -251,7 +251,6 @@ user=your-username
 
 # SSH配置
 ssh.path.private_key=/etc/ssh-tunnel/id_rsa
-ssh.path.known_hosts=/etc/ssh-tunnel/known_hosts
 
 # 本地代理配置
 local.addr=127.0.0.1:1080

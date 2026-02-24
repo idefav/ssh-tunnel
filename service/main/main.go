@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"github.com/kardianos/service"
-	"github.com/spf13/viper"
 	"io"
 	"log"
 	"os"
@@ -18,6 +15,10 @@ import (
 	"ssh-tunnel/tunnel"
 	"strings"
 	"sync"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/kardianos/service"
+	"github.com/spf13/viper"
 )
 
 const DEFAULT_HOME = "C:\\ssh-tunnel"
@@ -158,7 +159,6 @@ func innerStart() {
 	// 默认值设置
 	vConfig.SetDefault(config.HomeDir.GetKey(), config.HomeDir.GetDefaultValue())
 	vConfig.SetDefault(config.SshPrivateKeyPath.GetKey(), config.SshPrivateKeyPath.GetDefaultValue())
-	vConfig.SetDefault(config.SshKnownHostsPath.GetKey(), config.SshKnownHostsPath.GetDefaultValue())
 	vConfig.SetDefault(config.LoginUser.GetKey(), config.LoginUser.GetDefaultValue())
 	vConfig.SetDefault(config.LocalAddress.GetKey(), config.LocalAddress.GetDefaultValue())
 	vConfig.SetDefault(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue())

@@ -2,9 +2,6 @@ package tunnel
 
 import (
 	"context"
-	"github.com/fsnotify/fsnotify"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 	"io/ioutil"
 	"log"
 	"os"
@@ -17,6 +14,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
+	"golang.org/x/crypto/ssh"
 )
 
 var DefaultSshTunnel = Tunnel{}
@@ -44,14 +44,8 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 		keys = append(keys, k)
 		auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
 
-		hostKeys, err := knownhosts.New(config.SshKnownHostsPath.GetValue())
-		if err != nil {
-			log.Printf("Failed to load known hosts file: %v", err)
-			return err
-		}
-
 		DefaultSshTunnel.auth = auth
-		DefaultSshTunnel.hostKeys = hostKeys
+		DefaultSshTunnel.hostKeys = ssh.InsecureIgnoreHostKey()
 		DefaultSshTunnel.user = config.LoginUser.GetValue()
 		DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec.GetValue()) * time.Second
 	}
@@ -84,14 +78,8 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 			keys = append(keys, k)
 			auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
 
-			hostKeys, err := knownhosts.New(config.SshKnownHostsPath.GetValue())
-			if err != nil {
-				log.Printf("Failed to load known hosts file for HttpOverSSH: %v", err)
-				return err
-			}
-
 			DefaultSshTunnel.auth = auth
-			DefaultSshTunnel.hostKeys = hostKeys
+			DefaultSshTunnel.hostKeys = ssh.InsecureIgnoreHostKey()
 			DefaultSshTunnel.user = config.LoginUser.GetValue()
 			DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec.GetValue()) * time.Second
 		}

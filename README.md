@@ -52,8 +52,6 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
         服务器SSH端口(短命令) (default 22)
   -pk string
         私钥地址(短命令) (default "C:\\Users\\idefav/.ssh/id_rsa")
-  -pkh string
-        已知主机地址(短命令) (default "C:\\Users\\idefav/.ssh/known_hosts")
   -retry.interval.sec int
         重试间隔时间(秒) (default 3)
   -s string
@@ -64,8 +62,6 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
         服务器SSH端口 (default 22)
   -socks5.enable
         是否开启Socks5代理 (default true)
-  -ssh.path.known_hosts string
-        已知主机地址 (default "C:\\Users\\idefav/.ssh/known_hosts")
   -ssh.path.private_key string
         私钥地址 (default "C:\\Users\\idefav/.ssh/id_rsa")
   -u string
@@ -174,7 +170,6 @@ launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 server.ip=xx.xx.xx.xx
 server.ssh.port=22
 server.ssh.private_key_path=C:\\Users\\idefav\\.ssh\\id_rsa
-server.ssh.known_hosts_path=C:\\Users\\idefav\\.ssh\\known_hosts
 login.username=root
 local.address=0.0.0.0:1081
 http.local.address=0.0.0.0:1082

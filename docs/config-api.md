@@ -103,7 +103,7 @@ func getWorkingDirectory() string {
 
 ### SSH配置
 - `SshPrivateKeyPath` - SSH私钥文件路径
-- `SshKnownHostsPath` - SSH已知主机文件路径
+
 
 ### 代理配置
 - `LocalAddress` - 本地SOCKS5代理监听地址
