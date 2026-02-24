@@ -25,5 +25,14 @@ func RegisterRoutes(r *mux.Router, tunnel *tunnel.Tunnel) {
 	viewRouter.HandleFunc("/ssh/state", handler.ShowSSHClientStateView)
 	viewRouter.HandleFunc("/app/config", handler.ShowAppConfigView)
 	viewRouter.HandleFunc("/logs", handler.ShowLogsView)
+	viewRouter.HandleFunc("/version", handler.ShowVersionView)
+
+	// API路由
+	apiRouter := r.PathPrefix("/api").Subrouter()
+	apiRouter.HandleFunc("/version/check", handler.CheckForUpdatesHandler)
+	apiRouter.HandleFunc("/version/download", handler.DownloadReleaseHandler)
+	apiRouter.HandleFunc("/version/update", handler.UpdateToVersionHandler)
+	apiRouter.HandleFunc("/version/settings", handler.SaveUpdateSettingsHandler)
+	apiRouter.HandleFunc("/version/progress", handler.GetDownloadProgressHandler)
 
 }

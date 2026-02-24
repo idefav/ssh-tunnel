@@ -29,15 +29,18 @@
                         <a id="nav-ssh-state" class="nav-link" href="/view/ssh/state">
                             <i class="bi bi-terminal"></i> SSH状态
                         </a>
-                    </li>
-                    <li class="nav-item">
+                    </li>                    <li class="nav-item">
                         <a id="nav-app-config" class="nav-link" href="/view/app/config">
                             <i class="bi bi-gear"></i> 配置
                         </a>
-                    </li>
-                    <li class="nav-item">
+                    </li>                    <li class="nav-item">
                         <a id="nav-logs" class="nav-link" href="/view/logs">
                             <i class="bi bi-journal-text"></i> 日志
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a id="nav-version" class="nav-link" href="/view/version">
+                            <i class="bi bi-arrow-clockwise"></i> 版本
                         </a>
                     </li>
                 </ul>
@@ -55,11 +58,12 @@
             } else if (path.includes('/view/caches')) {
                 $('#nav-caches').addClass('active');
             } else if (path.includes('/view/ssh/state')) {
-                $('#nav-ssh-state').addClass('active');
-            } else if (path.includes('/view/app/config')) {
+                $('#nav-ssh-state').addClass('active');            } else if (path.includes('/view/app/config')) {
                 $('#nav-app-config').addClass('active');
             } else if (path.includes('/view/logs')) {
                 $('#nav-logs').addClass('active');
+            } else if (path.includes('/view/version')) {
+                $('#nav-version').addClass('active');
             }
         });
 

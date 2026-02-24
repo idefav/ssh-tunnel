@@ -2,10 +2,12 @@ package tunnel
 
 import (
 	"context"
-	"golang.org/x/crypto/ssh"
 	"log"
+	"ssh-tunnel/safe"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // reconnectSSH 实现SSH连接的重连逻辑
@@ -25,7 +27,12 @@ func (t *Tunnel) ReconnectSSH(ctx context.Context) {
 
 	log.Printf("正在尝试重新连接SSH服务器: %s", t.serverAddress)
 	var once sync.Once
-	withContinue, _ := t.dialSSH(&once)
+	withContinue, err2 := t.dialSSH(&once)
+
+	if err2 != nil {
+		log.Println(err2)
+	}
+
 	if !withContinue {
 		return
 	}
@@ -76,7 +83,9 @@ func (t *Tunnel) ReconnectSSH(ctx context.Context) {
 		log.Printf("SSH连接已关闭，准备重新连接")
 
 		// 立即开始新的重连循环
-		go t.ReconnectSSH(ctx)
+		safe.GO(func() {
+			t.ReconnectSSH(ctx)
+		})
 		return
 	}
 

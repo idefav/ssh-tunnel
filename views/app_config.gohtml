@@ -1,145 +1,711 @@
 {{define "content"}}
     <h2>应用配置详情</h2>
-    <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">配置信息</h5>
-            <input type="text" class="form-control form-control-sm w-25" id="configSearch" placeholder="搜索配置...">
+      <!-- 配置文件路径显示 -->
+    <div class="card mb-3">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-file-text"></i> 配置文件路径</h6>
         </div>
-        <div class="card-body">
-            <div id="config-container">
-                {{if eq (printf "%T" .) "map[string]interface {}"}}
-                    <table class="table table-striped table-hover">
-                        <thead>
-                        <tr>
-                            <th style="width: 30%">配置项</th>
-                            <th>值</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {{range $key, $value := .}}
-                            <tr class="config-item">
-                                <td class="font-weight-bold">{{$key}}</td>
-                                <td><pre class="mb-0">{{printf "%v" $value}}</pre></td>
-                            </tr>
-                        {{end}}
-                        </tbody>
-                    </table>
-                {{else}}
-                    <pre id="config-content" class="p-3 bg-light rounded">{{.}}</pre>
-                {{end}}
+        <div class="card-body py-2">
+            <div class="input-group">
+                <input type="text" class="form-control" value="{{.ConfigFilePath}}" readonly>
+                <button class="btn btn-outline-secondary" type="button" id="copyPathBtn" title="复制路径">
+                    <i class="bi bi-clipboard"></i>
+                </button>
             </div>
-        </div>
-        <div class="card-footer">
-            <button class="btn btn-sm btn-primary" id="copyBtn">复制配置</button>
         </div>
     </div>
 
-    <script>
+    <!-- 进程信息显示 -->
+    <div class="card mb-3">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-cpu"></i> 进程信息</h6>
+        </div>
+        <div class="card-body py-2">
+            <div class="row">
+                <div class="col-md-6 mb-2">
+                    <label class="form-label text-muted small">程序执行路径</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" value="{{.ExecutablePath}}" readonly>
+                        <button class="btn btn-outline-secondary" type="button" id="copyExecPathBtn" title="复制程序路径">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-2">
+                    <label class="form-label text-muted small">工作目录</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" value="{{.WorkingDirectory}}" readonly>
+                        <button class="btn btn-outline-secondary" type="button" id="copyWorkDirBtn" title="复制工作目录">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 搜索和操作区域 -->
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="configSearch" 
+                               placeholder="搜索配置项或描述...">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="categoryFilter">
+                        <option value="">所有分类</option>
+                        <option value="服务器配置">服务器配置</option>
+                        <option value="SSH配置">SSH配置</option>
+                        <option value="代理配置">代理配置</option>
+                        <option value="认证配置">认证配置</option>
+                        <option value="过滤配置">过滤配置</option>
+                        <option value="管理配置">管理配置</option>
+                        <option value="高级配置">高级配置</option>
+                    </select>
+                </div>                <div class="col-md-3 text-end">
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-outline-success" onclick="location.reload()" title="刷新配置">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新
+                        </button>
+                        <button class="btn btn-outline-warning" id="cleanupBtn" title="清理重复配置">
+                            <i class="bi bi-trash3"></i> 清理
+                        </button>
+                        <button class="btn btn-outline-primary" id="copyAllBtn" title="复制所有配置">
+                            <i class="bi bi-clipboard"></i> 复制
+                        </button>
+                        <button class="btn btn-outline-danger" id="restartServiceBtn" title="重启服务" style="display: none;">
+                            <i class="bi bi-arrow-repeat"></i> 重启服务
+                        </button>
+                    </div>
+                    <div id="runningModeInfo" class="mt-2" style="display: none;">
+                        <small class="text-muted" id="runningModeText"></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">配置信息</h5>
+        </div>
+        <div class="card-body">
+            <div id="config-container">
+                {{if eq (printf "%T" .Config) "map[string]interface {}"}}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">                            <thead>
+                            <tr>
+                                <th style="width: 20%">配置项</th>
+                                <th style="width: 30%">值</th>
+                                <th style="width: 15%">实际配置键</th>
+                                <th style="width: 12%">分类</th>
+                                <th style="width: 13%">类型</th>
+                                <th style="width: 10%">操作</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {{range $key, $value := .Config}}
+                                {{$meta := index $.ConfigMeta $key}}
+                                <tr class="config-item" data-category="{{if $meta}}{{$meta.Category}}{{else}}未分类{{end}}">
+                                    <td class="font-weight-bold">
+                                        <div>{{$key}}</div>
+                                        {{if $meta}}
+                                            <small class="text-muted">{{$meta.Description}}</small>
+                                            {{if $meta.Required}}
+                                                <span class="badge bg-danger ms-1">必需</span>
+                                            {{end}}
+                                        {{end}}
+                                    </td>
+                                    <td>
+                                        <div class="config-value-display">
+                                            {{if eq (printf "%T" $value) "bool"}}
+                                                {{if $value}}
+                                                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> 启用</span>
+                                                {{else}}
+                                                    <span class="badge bg-secondary"><i class="bi bi-x-circle"></i> 禁用</span>
+                                                {{end}}
+                                            {{else if or (eq (printf "%T" $value) "string") (eq (printf "%T" $value) "int") (eq (printf "%T" $value) "float64")}}
+                                                <code class="bg-light p-1 rounded">{{printf "%v" $value}}</code>
+                                            {{else}}
+                                                <pre class="mb-0">{{printf "%v" $value}}</pre>
+                                            {{end}}                                        </div>
+                                    </td>
+                                    <td>
+                                        {{if $meta}}
+                                            <code class="bg-light p-1 rounded small">{{$meta.ActualKey}}</code>
+                                        {{else}}
+                                            <span class="text-muted">-</span>
+                                        {{end}}
+                                    </td>
+                                    <td>
+                                        {{if $meta}}
+                                            <span class="badge bg-info">{{$meta.Category}}</span>
+                                        {{else}}
+                                            <span class="badge bg-secondary">未分类</span>
+                                        {{end}}
+                                    </td>
+                                    <td>
+                                        {{if $meta}}
+                                            <span class="badge bg-light text-dark">{{$meta.Type}}</span>
+                                        {{else}}
+                                            <span class="badge bg-light text-dark">{{printf "%T" $value}}</span>
+                                        {{end}}
+                                    </td>
+                                    <td>                                        <button class="btn btn-sm btn-outline-primary edit-config-btn" 
+                                                data-key="{{$key}}" 
+                                                data-value="{{printf "%v" $value}}"
+                                                data-type="{{if $meta}}{{$meta.Type}}{{else}}string{{end}}"
+                                                data-description="{{if $meta}}{{$meta.Description}}{{else}}{{$key}}{{end}}"
+                                                data-actual-key="{{if $meta}}{{$meta.ActualKey}}{{else}}{{$key}}{{end}}"
+                                                onclick="openEditModal('{{$key}}', '{{printf "%v" $value}}', '{{if $meta}}{{$meta.Type}}{{else}}string{{end}}', '{{if $meta}}{{$meta.Description}}{{else}}{{$key}}{{end}}', '{{if $meta}}{{$meta.ActualKey}}{{else}}{{$key}}{{end}}')">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            {{end}}
+                            </tbody>
+                        </table>
+                    </div>                {{else}}
+                    <pre id="config-content" class="p-3 bg-light rounded">{{.Config}}</pre>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <!-- 配置编辑弹窗 -->
+    <div class="modal fade" id="editConfigModal" tabindex="-1" aria-labelledby="editConfigModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editConfigModalLabel">
+                        <i class="bi bi-gear"></i> 编辑配置项
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="editConfigForm">
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="modalConfigKey" class="form-label">配置项名称</label>
+                                    <input type="text" class="form-control" id="modalConfigKey" name="key" readonly>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="modalConfigType" class="form-label">数据类型</label>
+                                    <select class="form-control" id="modalConfigType" name="type">
+                                        <option value="string">字符串 (string)</option>
+                                        <option value="int">整数 (int)</option>
+                                        <option value="bool">布尔值 (bool)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                          <div class="mb-3">
+                            <label for="modalConfigDescription" class="form-label">配置描述</label>
+                            <input type="text" class="form-control" id="modalConfigDescription" readonly>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="modalActualKey" class="form-label">实际配置键</label>
+                            <input type="text" class="form-control" id="modalActualKey" readonly>
+                            <div class="form-text">
+                                <small class="text-muted">这是保存到配置文件中的实际键名</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3" id="stringValueGroup">
+                            <label for="modalConfigValue" class="form-label">配置值</label>
+                            <input type="text" class="form-control" id="modalConfigValue" name="value" 
+                                   placeholder="输入新的配置值">
+                        </div>
+                        
+                        <div class="mb-3" id="boolValueGroup" style="display: none;">
+                            <label class="form-label">配置值</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="boolValue" id="boolTrue" value="true">
+                                <label class="form-check-label" for="boolTrue">
+                                    <i class="bi bi-check-circle text-success"></i> 启用 (true)
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="boolValue" id="boolFalse" value="false">
+                                <label class="form-check-label" for="boolFalse">
+                                    <i class="bi bi-x-circle text-secondary"></i> 禁用 (false)
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>注意：</strong>配置修改后将立即保存到配置文件，部分配置可能需要重启应用才能生效。
+                        </div>
+                        
+                        <div class="alert alert-warning" id="typeHintAlert">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <strong>类型提示：</strong>
+                            <div id="typeHintContent">
+                                <!-- 动态内容 -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary" id="saveConfigBtn">
+                            <i class="bi bi-save"></i> 保存配置
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 操作结果提示 -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="resultToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto">操作结果</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toastMessage">
+                <!-- 消息内容 -->
+            </div>
+        </div>    </div>    <script>
+        // 页面加载时检查运行模式
+        document.addEventListener('DOMContentLoaded', function() {
+            checkRunningMode();
+        });
+
+        // 检查运行模式
+        function checkRunningMode() {
+            fetch('/admin/service/mode', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const restartBtn = document.getElementById('restartServiceBtn');
+                    const modeInfo = document.getElementById('runningModeInfo');
+                    const modeText = document.getElementById('runningModeText');
+                    
+                    if (data.canRestart) {
+                        // 服务模式：显示重启按钮
+                        restartBtn.style.display = 'inline-block';
+                    } else {
+                        // 直接运行模式：隐藏重启按钮，显示提示信息
+                        restartBtn.style.display = 'none';
+                        modeInfo.style.display = 'block';
+                        modeText.textContent = data.message;
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('检查运行模式失败:', error);
+                // 出错时隐藏重启按钮以确保安全
+                document.getElementById('restartServiceBtn').style.display = 'none';
+            });
+        }
+
         // 搜索功能
         document.getElementById('configSearch').addEventListener('keyup', function() {
-            const searchText = this.value.toLowerCase();
-            const items = document.querySelectorAll('.config-item');
+            filterConfigs();
+        });
 
-            if (searchText === '') {
-                // 如果搜索框为空，恢复所有配置项的显示和移除高亮
-                items.forEach(item => {
-                    item.style.display = '';
-                    // 移除高亮
-                    removeHighlight(item);
-                });
-                return;
-            }
+        // 分类过滤功能
+        document.getElementById('categoryFilter').addEventListener('change', function() {
+            filterConfigs();
+        });
+
+        function filterConfigs() {
+            const searchText = document.getElementById('configSearch').value.toLowerCase();
+            const selectedCategory = document.getElementById('categoryFilter').value;
+            const items = document.querySelectorAll('.config-item');
 
             items.forEach(item => {
                 const itemText = item.textContent.toLowerCase();
-                const keyCell = item.querySelector('td:first-child');
-                const valueCell = item.querySelector('td:last-child');
-
-                if (itemText.includes(searchText)) {
+                const itemCategory = item.getAttribute('data-category');
+                
+                // 移除高亮
+                removeHighlight(item);
+                
+                let showItem = true;
+                
+                // 检查搜索条件
+                if (searchText && !itemText.includes(searchText)) {
+                    showItem = false;
+                }
+                
+                // 检查分类条件
+                if (selectedCategory && itemCategory !== selectedCategory) {
+                    showItem = false;
+                }
+                
+                if (showItem) {
                     item.style.display = '';
-                    // 高亮匹配文本
-                    highlightText(keyCell, searchText);
-                    highlightText(valueCell, searchText);
+                    // 如果有搜索文本，高亮匹配内容
+                    if (searchText) {
+                        highlightText(item.querySelector('td:first-child'), searchText);
+                        highlightText(item.querySelector('td:nth-child(2)'), searchText);
+                    }
                 } else {
                     item.style.display = 'none';
                 }
             });
-        });
+        }
 
         // 高亮文本函数
         function highlightText(element, searchText) {
-            // 先移除现有高亮
-            removeHighlight(element);
-
             if (!element || !searchText) return;
 
-            // 获取原始HTML内容
-            const originalText = element.innerText;
-            const lowerText = originalText.toLowerCase();
+            const walker = document.createTreeWalker(
+                element,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
 
-            let result = '';
-            let lastIndex = 0;
-
-            // 查找所有匹配项并高亮
-            let index = lowerText.indexOf(searchText);
-            while (index !== -1) {
-                // 添加前面不匹配的部分
-                result += originalText.substring(lastIndex, index);
-
-                // 添加高亮的匹配部分
-                result += '<span class="highlight">' + originalText.substring(index, index + searchText.length) + '</span>';
-
-                lastIndex = index + searchText.length;
-                index = lowerText.indexOf(searchText, lastIndex);
+            const textNodes = [];
+            let node;
+            while (node = walker.nextNode()) {
+                textNodes.push(node);
             }
 
-            // 添加剩余部分
-            result += originalText.substring(lastIndex);
-
-            // 判断如果元素��含pre标签，特殊处理
-            const preElement = element.querySelector('pre');
-            if (preElement) {
-                preElement.innerHTML = result;
-            } else {
-                element.innerHTML = result;
-            }
+            textNodes.forEach(textNode => {
+                const text = textNode.textContent;
+                const lowerText = text.toLowerCase();
+                const index = lowerText.indexOf(searchText);
+                
+                if (index !== -1) {
+                    const before = text.substring(0, index);
+                    const match = text.substring(index, index + searchText.length);
+                    const after = text.substring(index + searchText.length);
+                    
+                    const span = document.createElement('span');
+                    span.innerHTML = before + '<span class="highlight">' + match + '</span>' + after;
+                    
+                    textNode.parentNode.replaceChild(span, textNode);
+                }
+            });
         }
 
         // 移除高亮
         function removeHighlight(element) {
             if (!element) return;
-
-            // 处理pre元素的情况
-            const preElement = element.querySelector('pre');
-            if (preElement) {
-                const original = preElement.innerText;
-                preElement.innerHTML = original;
-            } else {
-                // 获取原始文本，移除所有高亮标记
-                const highlightedElements = element.querySelectorAll('.highlight');
-                if (highlightedElements.length > 0) {
-                    const original = element.innerText;
-                    element.innerHTML = original;
-                }
-            }
+            
+            const highlighted = element.querySelectorAll('.highlight');
+            highlighted.forEach(span => {
+                const parent = span.parentNode;
+                parent.replaceChild(document.createTextNode(span.textContent), span);
+                parent.normalize();
+            });
         }
 
-        // 复制功能
-        document.getElementById('copyBtn').addEventListener('click', function() {
-            const content = document.getElementById('config-content')
-                ? document.getElementById('config-content').textContent
-                : document.querySelector('table').textContent;
+        // 复制全部配置功能
+        document.getElementById('copyAllBtn').addEventListener('click', function() {
+            const table = document.querySelector('table');
+            let content = '';
+            
+            if (table) {
+                const rows = table.querySelectorAll('tbody tr');
+                rows.forEach(row => {
+                    if (row.style.display !== 'none') {
+                        const cells = row.querySelectorAll('td');
+                        const key = cells[0].textContent.split('\n')[0].trim();
+                        const value = cells[1].textContent.trim();
+                        content += `${key}: ${value}\n`;
+                    }
+                });
+            } else {
+                content = document.getElementById('config-content').textContent;
+            }
 
             navigator.clipboard.writeText(content)
                 .then(() => {
-                    this.textContent = '已复制';
-                    setTimeout(() => this.textContent = '复制配置', 2000);
+                    const btn = this;
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<i class="bi bi-check"></i> 已复制';
+                    btn.classList.remove('btn-outline-primary');
+                    btn.classList.add('btn-success');
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                        btn.classList.remove('btn-success');
+                        btn.classList.add('btn-outline-primary');
+                    }, 2000);
                 })
                 .catch(err => console.error('复制失败:', err));
-        });
-    </script>
+        });        // 复制配置文件路径功能
+        document.getElementById('copyPathBtn').addEventListener('click', function() {
+            const pathInput = this.parentElement.querySelector('input');
+            const path = pathInput.value;
 
-    <style>
+            navigator.clipboard.writeText(path)
+                .then(() => {
+                    const originalContent = this.innerHTML;
+                    this.innerHTML = '<i class="bi bi-check"></i>';
+                    setTimeout(() => this.innerHTML = originalContent, 2000);
+                })
+                .catch(err => console.error('复制路径失败:', err));
+        });
+
+        // 复制程序执行路径功能
+        document.getElementById('copyExecPathBtn').addEventListener('click', function() {
+            const pathInput = this.parentElement.querySelector('input');
+            const path = pathInput.value;
+
+            navigator.clipboard.writeText(path)
+                .then(() => {
+                    const originalContent = this.innerHTML;
+                    this.innerHTML = '<i class="bi bi-check"></i>';
+                    setTimeout(() => this.innerHTML = originalContent, 2000);
+                })
+                .catch(err => console.error('复制程序路径失败:', err));
+        });
+
+        // 复制工作目录功能
+        document.getElementById('copyWorkDirBtn').addEventListener('click', function() {
+            const pathInput = this.parentElement.querySelector('input');
+            const path = pathInput.value;
+
+            navigator.clipboard.writeText(path)
+                .then(() => {
+                    const originalContent = this.innerHTML;
+                    this.innerHTML = '<i class="bi bi-check"></i>';
+                    setTimeout(() => this.innerHTML = originalContent, 2000);
+                })
+                .catch(err => console.error('复制工作目录失败:', err));
+        });
+
+        // 清理重复配置功能
+        document.getElementById('cleanupBtn').addEventListener('click', function() {
+            if (!confirm('确定要清理重复配置吗？这将移除配置文件中的重复和无效配置项。\n\n建议在清理前备份配置文件。')) {
+                return;
+            }
+            
+            const btn = this;
+            const originalText = btn.innerHTML;
+            
+            // 显示加载状态
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>清理中...';
+            btn.disabled = true;
+            
+            fetch('/admin/config/cleanup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('success', data.message || '配置清理完成！');
+                    // 延迟刷新页面以显示最新配置
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showToast('error', data.message || '配置清理失败！');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('error', '清理请求失败：' + error.message);
+            })
+            .finally(() => {
+                // 恢复按钮状态
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        });        // 打开编辑弹窗
+        function openEditModal(key, value, type, description, actualKey) {
+            document.getElementById('modalConfigKey').value = key;
+            document.getElementById('modalConfigValue').value = value;
+            document.getElementById('modalConfigDescription').value = description || key;
+            document.getElementById('modalActualKey').value = actualKey || key;
+            document.getElementById('modalConfigType').value = type || 'string';
+            
+            // 根据类型显示不同的输入界面
+            toggleValueInput(type || 'string');
+            
+            // 设置布尔值的选中状态
+            if (type === 'bool') {
+                const boolValue = value.toLowerCase() === 'true';
+                document.getElementById('boolTrue').checked = boolValue;
+                document.getElementById('boolFalse').checked = !boolValue;
+            }
+            
+            // 更新类型提示
+            updateTypeHint(type || 'string');
+            
+            // 显示弹窗
+            const modal = new bootstrap.Modal(document.getElementById('editConfigModal'));
+            modal.show();
+        }
+
+        // 根据类型切换输入界面
+        function toggleValueInput(type) {
+            const stringGroup = document.getElementById('stringValueGroup');
+            const boolGroup = document.getElementById('boolValueGroup');
+            
+            if (type === 'bool') {
+                stringGroup.style.display = 'none';
+                boolGroup.style.display = 'block';
+            } else {
+                stringGroup.style.display = 'block';
+                boolGroup.style.display = 'none';
+            }
+        }
+
+        // 更新类型提示
+        function updateTypeHint(type) {
+            const hintContent = document.getElementById('typeHintContent');
+            const hints = {
+                'string': '输入任意文本，如文件路径、IP地址等',
+                'int': '输入整数，如端口号：22、8080',
+                'bool': '选择启用或禁用状态'
+            };
+            hintContent.textContent = hints[type] || '请输入合适的值';
+        }
+
+        // 监听类型选择变化
+        document.getElementById('modalConfigType').addEventListener('change', function() {
+            const selectedType = this.value;
+            toggleValueInput(selectedType);
+            updateTypeHint(selectedType);
+        });
+
+        // 配置编辑表单提交
+        document.getElementById('editConfigForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const saveBtn = document.getElementById('saveConfigBtn');
+            const originalBtnText = saveBtn.innerHTML;
+            
+            // 显示加载状态
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>保存中...';
+            saveBtn.disabled = true;
+            
+            const formData = new FormData();
+            formData.append('key', document.getElementById('modalConfigKey').value);
+            formData.append('type', document.getElementById('modalConfigType').value);
+            
+            // 根据类型获取值
+            let value;
+            if (document.getElementById('modalConfigType').value === 'bool') {
+                const checkedRadio = document.querySelector('input[name="boolValue"]:checked');
+                value = checkedRadio ? checkedRadio.value : 'false';
+            } else {
+                value = document.getElementById('modalConfigValue').value;
+            }
+            formData.append('value', value);
+            
+            fetch('/admin/config/update', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('success', data.message || '配置更新成功！');
+                    // 关闭弹窗
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editConfigModal'));
+                    modal.hide();
+                    // 延迟刷新页面以显示最新配置
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showToast('error', data.message || '配置更新失败！');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('error', '请求失败：' + error.message);
+            })
+            .finally(() => {
+                // 恢复按钮状态
+                saveBtn.innerHTML = originalBtnText;
+                saveBtn.disabled = false;            });
+        });        // 重启服务按钮事件
+        document.getElementById('restartServiceBtn').addEventListener('click', function() {
+            const btn = this;
+            
+            // 确认对话框
+            if (!confirm('确定要重启服务吗？\n\n重启服务将会：\n1. 重新加载配置文件\n2. 重新建立SSH隧道连接\n3. 如果是服务模式，将重启整个服务\n\n此操作大约需要几秒钟时间。')) {
+                return;
+            }
+            
+            const originalText = btn.innerHTML;
+            
+            // 显示加载状态
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>重启中...';
+            btn.disabled = true;
+            
+            fetch('/admin/service/restart', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('success', data.message || '服务重启请求已发送！');
+                    
+                    // 显示倒计时提示
+                    let countdown = 8;
+                    const countdownInterval = setInterval(() => {
+                        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>处理中... ${countdown}s`;
+                        countdown--;
+                        if (countdown <= 0) {
+                            clearInterval(countdownInterval);
+                            // 恢复按钮状态
+                            btn.innerHTML = originalText;
+                            btn.disabled = false;
+                            showToast('info', '重启处理完成，请检查服务状态');
+                        }
+                    }, 1000);
+                    
+                } else {
+                    showToast('error', data.message || '服务重启失败！');
+                    // 恢复按钮状态
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('error', '重启请求失败：' + error.message);
+                // 恢复按钮状态
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        });
+
+        // 显示Toast消息
+        function showToast(type, message) {
+            const toast = document.getElementById('resultToast');
+            const toastBody = document.getElementById('toastMessage');
+            
+            // 设置消息内容
+            toastBody.textContent = message;
+            
+            // 重置样式
+            toast.className = 'toast';
+            if (type === 'success') {
+                toast.classList.add('text-bg-success');
+            } else if (type === 'error') {
+                toast.classList.add('text-bg-danger');
+            }
+            
+            // 显示Toast
+            const bsToast = new bootstrap.Toast(toast);
+            bsToast.show();
+        }
+    </script>    <style>
         pre {
             white-space: pre-wrap;
             word-break: break-all;
@@ -156,6 +722,58 @@
             font-weight: bold;
             padding: 1px;
             border-radius: 2px;
+        }
+        /* 配置值显示样式 */
+        .config-value-display code {
+            font-size: 0.875rem;
+            word-break: break-all;
+        }
+        /* 表格行悬停效果 */
+        .config-item:hover {
+            background-color: rgba(0,123,255,0.1) !important;
+        }
+        /* 分类徽章样式 */
+        .badge {
+            font-size: 0.75rem;
+        }
+        /* 编辑按钮样式 */
+        .edit-config-btn {
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        /* 弹窗样式增强 */
+        .modal-lg {
+            max-width: 800px;
+        }
+        /* 表单控件样式 */
+        .form-check-label {
+            font-size: 0.95rem;
+            margin-left: 0.5rem;
+        }
+        /* 响应式表格 */
+        @media (max-width: 768px) {
+            .table-responsive {
+                font-size: 0.875rem;
+            }
+            .edit-config-btn {
+                width: 28px;
+                height: 28px;
+            }
+        }
+        /* 配置项描述样式 */
+        .config-item td small {
+            display: block;
+            margin-top: 0.25rem;
+            line-height: 1.3;
+        }
+        /* Toast 样式调整 */
+        .toast-container {
+            z-index: 9999;
         }
     </style>
 {{end}}

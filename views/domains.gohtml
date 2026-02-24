@@ -41,10 +41,9 @@
         </div>
 
         <div class="row">
-            <div class="col-12">
-                {{if .Domains}}
-                    <div class="card shadow-sm">
-                        <div class="list-group list-group-flush" id="domainsList" style="max-height: 400px; overflow-y: auto;">
+            <div class="col-12">                {{if .Domains}}
+                    <div class="card shadow-sm domains-container">
+                        <div class="list-group list-group-flush" id="domainsList">
                             {{range $key,$value := .Domains}}
                                 <div class="list-group-item d-flex justify-content-between align-items-center py-3 domain-item">
                                     <div>
@@ -243,8 +242,69 @@
                     $("#toast").show();
                     btn.html(originalText);
                     btn.prop('disabled', false);
-                });
-            }
+                });            }
         });
     </script>
+
+    <style>
+        /* 域名管理页面专用样式 */
+        .domains-container {
+            min-height: 70vh; /* 至少占据70%的视窗高度 */
+        }
+        
+        #domainsList {
+            max-height: calc(100vh - 300px); /* 动态计算高度，减去头部和其他元素的高度 */
+            overflow-y: auto;
+            min-height: 60vh; /* 最小高度确保足够的显示空间 */
+        }
+        
+        /* 优化域名项的显示 */
+        .domain-item:hover {
+            background-color: rgba(0, 123, 255, 0.05);
+            transform: translateX(3px);
+            transition: all 0.2s ease;
+        }
+        
+        /* 搜索框样式优化 */
+        #domainSearch {
+            border-left: 3px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        #domainSearch:focus {
+            border-left: 3px solid #007bff;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.15);
+        }
+        
+        /* 响应式设计 */
+        @media (max-height: 600px) {
+            .domains-container {
+                min-height: 50vh;
+            }
+            #domainsList {
+                min-height: 40vh;
+                max-height: calc(100vh - 250px);
+            }
+        }
+        
+        @media (min-height: 900px) {
+            .domains-container {
+                min-height: 75vh;
+            }
+            #domainsList {
+                min-height: 70vh;
+                max-height: calc(100vh - 250px);
+            }
+        }
+        
+        /* 空状态样式优化 */
+        .alert-info {
+            min-height: 60vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            font-size: 1.1rem;
+        }
+    </style>
 {{end}}

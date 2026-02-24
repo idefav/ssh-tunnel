@@ -1,0 +1,387 @@
+{{define "content"}}
+<style>
+    .version-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        transition: box-shadow 0.3s ease;
+    }
+    .version-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .version-header {
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 15px;
+        border-radius: 8px 8px 0 0;
+    }
+    .version-body {
+        padding: 15px;
+    }
+    .current-version {
+        border-left: 4px solid #28a745;
+    }
+    .latest-version {
+        border-left: 4px solid #007bff;
+    }
+    .update-available {
+        border-left: 4px solid #ffc107;
+    }
+    .badge-current {
+        background-color: #28a745;
+    }
+    .badge-latest {
+        background-color: #007bff;
+    }
+    .badge-update {
+        background-color: #ffc107;
+        color: #000;
+    }
+    .release-notes {
+        max-height: 200px;
+        overflow-y: auto;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px;
+        margin-top: 10px;
+    }
+    .checksum-info {
+        font-family: 'Courier New', monospace;
+        font-size: 0.85em;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 8px;
+        word-break: break-all;
+    }
+</style>
+
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-arrow-clockwise"></i> 版本管理</h2>
+                <div>
+                    <button type="button" class="btn btn-outline-primary me-2" onclick="checkForUpdates()">
+                        <i class="bi bi-search"></i> 检查更新
+                    </button>
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#updateSettingsModal">
+                        <i class="bi bi-gear"></i> 更新设置
+                    </button>
+                </div>
+            </div>
+
+            <!-- 自动更新状态 -->
+            <div class="alert {{if .AutoUpdateEnabled}}alert-success{{else}}alert-warning{{end}} mb-4" role="alert">
+                <i class="bi bi-info-circle"></i>
+                自动更新状态: 
+                <strong>{{if .AutoUpdateEnabled}}已启用{{else}}已禁用{{end}}</strong>
+                {{if .AutoUpdateEnabled}}
+                <span class="ms-2">检查间隔: {{.CheckInterval}}分钟</span>
+                {{end}}
+            </div>
+
+            <!-- 当前版本信息 -->
+            <div class="version-card current-version">
+                <div class="version-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-bookmark-check"></i> 当前版本
+                            <span class="badge badge-current ms-2">{{.CurrentVersion}}</span>
+                        </h5>
+                        <div>
+                            <small class="text-muted">SHA256: </small>
+                            <code class="text-muted">{{if .CurrentChecksum}}{{.CurrentChecksum}}{{else}}计算中...{{end}}</code>
+                        </div>
+                    </div>
+                </div>
+                <div class="version-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>安装时间:</strong> {{if .InstallTime}}{{.InstallTime}}{{else}}未知{{end}}</p>
+                            <p><strong>文件大小:</strong> {{if .CurrentFileSize}}{{.CurrentFileSize}}{{else}}未知{{end}}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>平台:</strong> {{.Platform}}</p>
+                            <p><strong>架构:</strong> {{.Architecture}}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 可用版本列表 -->
+            {{if .HasUpdate}}
+            <div class="alert alert-warning" role="alert">
+                <i class="bi bi-exclamation-triangle"></i>
+                <strong>发现新版本!</strong> 有 {{.UpdateCount}} 个新版本可用。
+            </div>
+            {{else}}
+            <div class="alert alert-info" role="alert">
+                <i class="bi bi-info-circle"></i>
+                <strong>当前已是最新版本</strong>
+            </div>
+            {{end}}
+
+            <h4 class="mb-3">可用版本列表</h4>
+            
+            {{if .Releases}}
+            {{range $index, $release := .Releases}}
+            <div class="version-card {{if eq $release.TagName $.LatestVersion}}latest-version{{end}} {{if $release.IsNewer}}update-available{{end}}">
+                <div class="version-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-tag"></i> {{$release.Name}}
+                            <span class="badge {{if eq $release.TagName $.LatestVersion}}badge-latest{{else if $release.IsNewer}}badge-update{{else}}bg-secondary{{end}} ms-2">
+                                {{$release.TagName}}
+                            </span>
+                            {{if $release.Prerelease}}
+                            <span class="badge bg-warning text-dark ms-1">预发布</span>
+                            {{end}}
+                        </h5>
+                        <div>
+                            <small class="text-muted">发布于: {{$release.PublishedAt}}</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="version-body">
+                    {{if $release.Body}}
+                    <div class="release-notes">
+                        <strong>发布说明:</strong>
+                        <div class="mt-2">{{$release.Body}}</div>
+                    </div>
+                    {{end}}
+                    
+                    {{if $release.Assets}}
+                    <div class="mt-3">
+                        <h6>下载文件:</h6>
+                        {{range $asset := $release.Assets}}
+                        <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
+                            <div>
+                                <strong>{{$asset.Name}}</strong>
+                                <small class="text-muted ms-2">({{$asset.Size}}, 下载次数: {{$asset.DownloadCount}})</small>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-outline-success me-1" 
+                                        onclick="downloadRelease('{{$release.TagName}}', '{{$asset.Name}}', '{{$asset.DownloadURL}}')">
+                                    <i class="bi bi-download"></i> 下载
+                                </button>
+                                {{if $release.IsNewer}}
+                                <button type="button" class="btn btn-sm btn-warning" 
+                                        onclick="updateToVersion('{{$release.TagName}}', '{{$asset.Name}}', '{{$asset.DownloadURL}}')">
+                                    <i class="bi bi-arrow-up"></i> 更新
+                                </button>
+                                {{end}}
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+            {{else}}
+            <div class="alert alert-info" role="alert">
+                <i class="bi bi-info-circle"></i>
+                <strong>暂无版本信息</strong> - 可能是网络连接问题或仓库配置错误
+            </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+
+<!-- 更新设置模态框 -->
+<div class="modal fade" id="updateSettingsModal" tabindex="-1" aria-labelledby="updateSettingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="updateSettingsModalLabel">更新设置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="updateSettingsForm">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="autoUpdateEnabled" 
+                                   {{if .AutoUpdateEnabled}}checked{{end}}>
+                            <label class="form-check-label" for="autoUpdateEnabled">
+                                启用自动更新检查
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="checkInterval" class="form-label">检查间隔 (分钟)</label>
+                        <input type="number" class="form-control" id="checkInterval" 
+                               value="{{.CheckIntervalMinutes}}" min="5" max="1440">
+                        <div class="form-text">设置自动检查更新的时间间隔，范围: 5-1440分钟</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="githubOwner" class="form-label">GitHub 仓库所有者</label>
+                        <input type="text" class="form-control" id="githubOwner" value="{{.GitHubOwner}}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="githubRepo" class="form-label">GitHub 仓库名称</label>
+                        <input type="text" class="form-control" id="githubRepo" value="{{.GitHubRepo}}">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveUpdateSettings()">保存设置</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 进度模态框 -->
+<div class="modal fade" id="progressModal" tabindex="-1" aria-labelledby="progressModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="progressModalLabel">处理中...</h5>
+            </div>
+            <div class="modal-body">
+                <div class="progress mb-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%" id="progressBar"></div>
+                </div>
+                <div id="progressText">正在处理，请稍候...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function checkForUpdates() {
+        showProgress('检查更新中...', 50);
+        
+        $.ajax({
+            url: '/api/version/check',
+            method: 'POST',
+            success: function(response) {
+                hideProgress();
+                if (response.hasUpdate) {
+                    alert('发现新版本: ' + response.latestVersion);
+                    location.reload();
+                } else {
+                    alert('当前已是最新版本');
+                }
+            },
+            error: function(xhr, status, error) {
+                hideProgress();
+                alert('检查更新失败: ' + error);
+            }
+        });
+    }
+
+    function downloadRelease(version, fileName, downloadUrl) {
+        showProgress('下载中: ' + fileName, 0);
+        
+        $.ajax({
+            url: '/api/version/download',
+            method: 'POST',
+            data: {
+                version: version,
+                fileName: fileName,
+                downloadUrl: downloadUrl
+            },
+            success: function(response) {
+                hideProgress();
+                if (response.success) {
+                    alert('下载完成: ' + response.filePath);
+                } else {
+                    alert('下载失败: ' + response.error);
+                }
+            },
+            error: function(xhr, status, error) {
+                hideProgress();
+                alert('下载失败: ' + error);
+            }
+        });
+    }
+
+    function updateToVersion(version, fileName, downloadUrl) {
+        if (!confirm('确定要更新到版本 ' + version + ' 吗？\n\n注意：更新过程中服务将会重启。')) {
+            return;
+        }
+        
+        showProgress('准备更新到版本 ' + version, 20);
+        
+        $.ajax({
+            url: '/api/version/update',
+            method: 'POST',
+            data: {
+                version: version,
+                fileName: fileName,
+                downloadUrl: downloadUrl
+            },
+            success: function(response) {
+                if (response.success) {
+                    updateProgress(80, '更新完成，即将重启服务...');
+                    setTimeout(function() {
+                        updateProgress(100, '服务重启中，请稍候...');
+                        setTimeout(function() {
+                            location.reload();
+                        }, 3000);
+                    }, 1000);
+                } else {
+                    hideProgress();
+                    alert('更新失败: ' + response.error);
+                }
+            },
+            error: function(xhr, status, error) {
+                hideProgress();
+                alert('更新失败: ' + error);
+            }
+        });
+    }
+
+    function saveUpdateSettings() {
+        const settings = {
+            enabled: $('#autoUpdateEnabled').is(':checked'),
+            checkInterval: parseInt($('#checkInterval').val()),
+            githubOwner: $('#githubOwner').val(),
+            githubRepo: $('#githubRepo').val()
+        };
+        
+        $.ajax({
+            url: '/api/version/settings',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(settings),
+            success: function(response) {
+                if (response.success) {
+                    alert('设置保存成功');
+                    $('#updateSettingsModal').modal('hide');
+                    location.reload();
+                } else {
+                    alert('设置保存失败: ' + response.error);
+                }
+            },
+            error: function(xhr, status, error) {
+                alert('设置保存失败: ' + error);
+            }
+        });
+    }
+
+    function showProgress(text, percent) {
+        $('#progressText').text(text);
+        $('#progressBar').css('width', percent + '%');
+        $('#progressModal').modal('show');
+    }
+
+    function updateProgress(percent, text) {
+        $('#progressBar').css('width', percent + '%');
+        if (text) {
+            $('#progressText').text(text);
+        }
+    }
+
+    function hideProgress() {
+        $('#progressModal').modal('hide');
+    }
+</script>
+{{end}}

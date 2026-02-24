@@ -10,8 +10,10 @@
         </div>
 
         <div class="d-flex justify-content-between mb-3">
-            <button id="connectBtn" class="btn btn-primary">连接</button>
-            <button id="clearBtn" class="btn btn-secondary">清除日志</button>
+            <button id="connectBtn" class="btn btn-primary">连接</button>            <div>
+                <button id="clearBtn" class="btn btn-secondary me-2">清除显示</button>
+                <button id="deleteLogsBtn" class="btn btn-warning">清理日志内容</button>
+            </div>
         </div>
 
         <div class="card">
@@ -23,13 +25,12 @@
                 <pre id="logOutput" class="m-0 p-3" style="height: 500px; overflow-y: auto; background-color: #f8f9fa; font-size: 0.85rem;"></pre>
             </div>
         </div>
-    </div>
-
-    <script>
+    </div>    <script>
         let eventSource = null;
         const logOutput = document.getElementById('logOutput');
         const connectBtn = document.getElementById('connectBtn');
         const clearBtn = document.getElementById('clearBtn');
+        const deleteLogsBtn = document.getElementById('deleteLogsBtn');
         const onlyNewLogs = document.getElementById('onlyNewLogs');
         const connectionStatus = document.getElementById('connectionStatus');
 
@@ -46,10 +47,46 @@
             scrollToBottom();
         }
 
-        // 清除日志
+        // 清除显示的日志
         clearBtn.addEventListener('click', () => {
             logOutput.innerHTML = '';
-        });
+        });        // 清理日志文件内容
+        if (deleteLogsBtn) {
+            deleteLogsBtn.addEventListener('click', async () => {
+                if (!confirm('确定要清理日志文件内容吗？此操作会清空日志文件，但不会删除文件本身！')) {
+                    return;
+                }
+
+                try {
+                    deleteLogsBtn.disabled = true;
+                    deleteLogsBtn.textContent = '清理中...';
+
+                    const response = await fetch('/admin/logs/clear', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        alert(result.message || '日志文件内容已成功清理');
+                        logOutput.innerHTML = '';
+                        addLogLine(`[${result.timestamp}] 日志文件内容已清理`);
+                    } else {
+                        const errorText = await response.text();
+                        alert('清理日志文件内容失败: ' + errorText);
+                    }
+                } catch (error) {
+                    alert('清理日志文件内容时发生错误: ' + error.message);
+                } finally {
+                    deleteLogsBtn.disabled = false;
+                    deleteLogsBtn.textContent = '清理日志内容';
+                }
+            });
+        } else {
+            console.error('找不到deleteLogsBtn元素');
+        }
 
         // 连接或断开SSE
         connectBtn.addEventListener('click', () => {
@@ -87,10 +124,8 @@
                 connectBtn.textContent = '连接';
                 addLogLine('[系统] SSE连接错误，请重新连接');
             };
-        });
-
-        // 页面加载时自动连接
-        window.addEventListener('load', () => {
+        });        // 页面加载时自动连接
+        document.addEventListener('DOMContentLoaded', () => {
             connectBtn.click();
         });
     </script>
