@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"runtime"
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/constants"
@@ -29,6 +30,14 @@ func main() {
 		Name:        "SSHTunnelService",
 		DisplayName: "SSHTunnelService",
 		Description: "SSHTunnelService",
+	}
+
+	if runtime.GOOS == "darwin" {
+		srvConfig.Option = service.KeyValue{
+			"UserService": true,
+			"RunAtLoad":   true,
+			"KeepAlive":   true,
+		}
 	}
 
 	prg := &program{}
