@@ -3,7 +3,6 @@ package main
 import (
 	_ "embed"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -12,11 +11,14 @@ import (
 	"ssh-tunnel/api/admin"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/constants"
+	"ssh-tunnel/safe"
 	"ssh-tunnel/service/os_config"
 	"ssh-tunnel/tunnel"
 	"ssh-tunnel/updater"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/kardianos/service"
@@ -24,15 +26,35 @@ import (
 	"github.com/spf13/viper"
 )
 
+var started atomic.Bool
+
 func main() {
-	defer func() { // 必须要先声明defer，否则不能捕获到panic异常
-		if err := recover(); err != nil {
-			fmt.Println(err) // 这里的err其实就是panic传入的内容
+	for {
+		err := safe.SafeCallWithReturnRecover(runOnce)
+		if err == nil {
+			return
 		}
-	}()
+		if started.Load() {
+			log.Printf("panic/error after startup: %v; keep process alive to avoid double-start", err)
+			select {}
+		}
+		log.Printf("main loop recovered/error: %v; restarting in 2s", err)
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func runOnce() error {
 	u, err := user.Current()
 	if err != nil {
-		log.Fatal(err)
+		homeDir := os.Getenv("USERPROFILE")
+		if homeDir == "" {
+			homeDir = os.Getenv("HOME")
+		}
+		if homeDir == "" {
+			homeDir = "."
+		}
+		log.Printf("Failed to get current user (%v), fallback home: %s", err, homeDir)
+		u = &user.User{HomeDir: homeDir}
 	}
 
 	config := cfg.NewAppConfig()
@@ -86,8 +108,12 @@ func main() {
 	vConfig.AutomaticEnv()
 
 	if err := vConfig.ReadInConfig(); err != nil {
-		log.Printf("Failed to read config file: %v", err)
-		return
+		// 配置文件不存在时，使用默认值继续运行
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.Printf("Config file not found, using defaults: %v", err)
+		} else {
+			return err
+		}
 	}
 
 	// 设置全局配置实例
@@ -103,7 +129,7 @@ func main() {
 
 	vConfig.WatchConfig()
 	vConfig.OnConfigChange(func(e fsnotify.Event) {
-		fmt.Println("config file changed:", e.Name)
+		log.Println("config file changed:", e.Name)
 		if err := vConfig.ReadInConfig(); err != nil {
 			log.Printf("Failed to reload config file: %v", err)
 			return
@@ -141,14 +167,13 @@ func main() {
 	if service.Interactive() {
 		logFile, err := os.OpenFile(config.LogFilePath.GetValue(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			fmt.Println("open log file failed, err:", err, config.LogFilePath.GetValue())
-			return
+			log.Printf("open log file failed, err: %v, path: %s", err, config.LogFilePath.GetValue())
+			// 日志文件不可用时，继续输出到stdout
+		} else {
+			mw := io.MultiWriter(logFile, os.Stdout)
+			log.SetOutput(mw)
+			log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
 		}
-
-		// 替换原来的log.SetOutput(logFile)为：
-		mw := io.MultiWriter(logFile, os.Stdout)
-		log.SetOutput(mw)
-		log.SetFlags(log.Llongfile | log.Lmicroseconds | log.Ldate)
 	}
 
 	log.Println("starting ..., userHomeDir: ", u.HomeDir)
@@ -162,11 +187,12 @@ func main() {
 
 	err = tunnel.Load(config, &wg)
 	if err != nil {
-		log.Printf("Failed to load tunnel configuration: %v", err)
-		return
+		return err
 	}
 	admin.Load(config, &wg)
+	started.Store(true)
 	wg.Wait()
+	return nil
 }
 
 func PathExists(path string) (bool, error) {

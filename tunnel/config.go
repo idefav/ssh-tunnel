@@ -184,7 +184,7 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 				if !ok {
 					return
 				}
-				log.Println(event)
+
 				if event.Name != filePath {
 					continue
 				}
