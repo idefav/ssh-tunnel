@@ -15,6 +15,7 @@ import (
 	"ssh-tunnel/tunnel"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/kardianos/service"
@@ -82,9 +83,7 @@ func main() {
 			}
 			return
 		case "exec":
-			safe.SafeCall(func() {
-				innerStart()
-			})
+			foreverStart()
 		}
 	}
 
@@ -100,17 +99,32 @@ type program struct{}
 func (p *program) Start(s service.Service) error {
 	fmt.Println("服务运行...")
 	safe.GO(func() {
-		p.run()
+		foreverStart()
 	})
 	return nil
 }
 
 func (p *program) run() {
-	innerStart()
+	foreverStart()
 }
 
 func (p *program) Stop(s service.Service) error {
 	return nil
+}
+
+func foreverStart() {
+	for {
+		err := safe.SafeCallWithReturnRecover(innerStartOnce)
+		if err != nil {
+			log.Printf("service loop recovered/error: %v; restarting in 2s", err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func innerStartOnce() error {
+	innerStart()
+	return fmt.Errorf("innerStart exited")
 }
 
 func innerStart() {
@@ -131,7 +145,15 @@ func innerStart() {
 
 	u, err := user.Current()
 	if err != nil {
-		log.Fatal(err)
+		homeDir := os.Getenv("USERPROFILE")
+		if homeDir == "" {
+			homeDir = os.Getenv("HOME")
+		}
+		if homeDir == "" {
+			homeDir = DEFAULT_HOME
+		}
+		log.Printf("Failed to get current user (%v), fallback home: %s", err, homeDir)
+		u = &user.User{HomeDir: homeDir}
 	}
 
 	config := cfg.NewAppConfig()
@@ -180,8 +202,12 @@ func innerStart() {
 	vConfig.AutomaticEnv()
 
 	if err := vConfig.ReadInConfig(); err != nil {
-		log.Printf("Failed to read config file: %v", err)
-		return
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.Printf("Config file not found, using defaults: %v", err)
+		} else {
+			log.Printf("Failed to read config file: %v", err)
+			return
+		}
 	}
 
 	// 设置全局配置实例
