@@ -226,6 +226,9 @@ func innerStart() {
 	constants.ConfigFilePath = vConfig.ConfigFileUsed()
 
 	config.Update()
+	if err := cfg.EnsureAndApplyActiveProfile(config); err != nil {
+		log.Printf("apply active profile failed: %v", err)
+	}
 
 	log.Println("成功读取配置文件:", vConfig.ConfigFileUsed())
 
@@ -242,6 +245,9 @@ func innerStart() {
 			return
 		}
 		config.Update()
+		if err := cfg.EnsureAndApplyActiveProfile(config); err != nil {
+			log.Printf("apply active profile on reload failed: %v", err)
+		}
 	})
 
 	logFile, err := os.OpenFile(config.LogFilePath.GetValue(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)

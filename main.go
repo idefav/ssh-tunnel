@@ -124,6 +124,9 @@ func runOnce() error {
 
 	// 从viper 更新配置数据
 	config.Update()
+	if err := cfg.EnsureAndApplyActiveProfile(config); err != nil {
+		log.Printf("apply active profile failed: %v", err)
+	}
 
 	log.Println("成功读取配置文件:", vConfig.ConfigFileUsed())
 
@@ -135,6 +138,9 @@ func runOnce() error {
 			return
 		}
 		config.Update()
+		if err := cfg.EnsureAndApplyActiveProfile(config); err != nil {
+			log.Printf("apply active profile on reload failed: %v", err)
+		}
 	})
 
 	// 命令行处理

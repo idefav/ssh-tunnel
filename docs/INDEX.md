@@ -13,6 +13,7 @@
 |------|------|------|
 | 进程信息显示 | [docs/features/process-info-feature.md](features/process-info-feature.md) | 进程信息显示功能详细说明 |
 | 服务重启 | [docs/features/restart-service-feature.md](features/restart-service-feature.md) | 服务重启功能详细说明 |
+| 多 Profile 动态切换 | [docs/features/multi-profile-switch-design.md](features/multi-profile-switch-design.md) | 多 SSH Profile 动态切换技术方案 |
 
 ### 🔧 部署文档
 | 文档 | 路径 | 描述 |

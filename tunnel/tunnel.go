@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"log"
 	"net"
@@ -20,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -65,6 +66,16 @@ type Tunnel struct {
 
 func (t *Tunnel) GetSSHClient() *ssh.Client {
 	return t.client
+}
+
+func (t *Tunnel) DisconnectSSHClient() {
+	t.reconnectMutex.Lock()
+	defer t.reconnectMutex.Unlock()
+
+	if t.client != nil {
+		_ = t.client.Close()
+		t.client = nil
+	}
 }
 
 func (t *Tunnel) AppConfig() *cfg.AppConfig {
@@ -357,45 +368,94 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 		}
 	}
 
-	destConn, done := t.getConn(ctx, client, err, address)
+	destConn, done := t.getConn(ctx, client, address)
 	if done {
 		log.Println("Get Dest Connection Failed!")
+		return
+	}
+	if destConn == nil {
+		log.Println("Get Dest Connection Failed: destination connection is nil")
+		fmt.Fprint(client, "HTTP/1.1 500 destination connection is nil\r\n\r\n")
 		return
 	}
 
 	if method == "CONNECT" {
 		fmt.Fprint(client, "HTTP/1.1 200 Connection established\r\n\r\n")
 	} else {
-		destConn.Write(b[:n])
+		if _, writeErr := destConn.Write(b[:n]); writeErr != nil {
+			log.Printf("write initial request to destination failed: %v", writeErr)
+			fmt.Fprint(client, "HTTP/1.1 500 "+writeErr.Error()+"\r\n\r\n")
+			return
+		}
 	}
 	//进行转发
-	go io.Copy(destConn, client)
-	io.Copy(client, destConn)
+	safe.GO(func() {
+		if _, copyErr := io.Copy(destConn, client); copyErr != nil && !isIgnorableProxyErr(copyErr) {
+			log.Printf("copy client->destination failed: %v", copyErr)
+		}
+	})
+	if _, copyErr := io.Copy(client, destConn); copyErr != nil && !isIgnorableProxyErr(copyErr) {
+		log.Printf("copy destination->client failed: %v", copyErr)
+	}
 }
 
-func (t *Tunnel) getConn(ctx context.Context, client net.Conn, err error, address string) (net.Conn, bool) {
+func (t *Tunnel) getConn(ctx context.Context, client net.Conn, address string) (net.Conn, bool) {
 	destConn, err := t.getDestConn(address)
+	if err == nil && destConn != nil {
+		return destConn, false
+	}
+
 	for {
 		if err == nil && destConn != nil {
-			break
+			return destConn, false
 		}
 
-		if strings.Contains(err.Error(), "unexpected packet in response") || strings.Contains(err.Error(), "context deadline exceeded") || strings.Contains(err.Error(), "max packet length exceeded") || t.client == nil {
+		if shouldReconnect(err, t.client) {
 			t.client = nil
 			t.ReconnectSSH(ctx)
 			if t.client == nil {
+				fmt.Fprint(client, "HTTP/1.1 500 ssh reconnect failed\r\n\r\n")
 				return nil, true
 			}
 			destConn, err = t.getDestConn(address)
-			return destConn, false
-		} else {
-			log.Println(err)
-			fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
-			return nil, true
+			if err == nil && destConn != nil {
+				return destConn, false
+			}
+			continue
 		}
 
+		if err != nil {
+			log.Println(err)
+			fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
+		} else {
+			log.Println("destination connection is nil")
+			fmt.Fprint(client, "HTTP/1.1 500 destination connection is nil\r\n\r\n")
+		}
+		return nil, true
 	}
-	return destConn, false
+}
+
+func shouldReconnect(err error, client *ssh.Client) bool {
+	if client == nil {
+		return true
+	}
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "unexpected packet in response") ||
+		strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "max packet length exceeded")
+}
+
+func isIgnorableProxyErr(err error) bool {
+	if err == nil {
+		return true
+	}
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "use of closed network connection") ||
+		strings.Contains(errText, "wsarecv") ||
+		strings.Contains(errText, "forcibly closed by the remote host")
 }
 
 func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {

@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -24,30 +25,14 @@ var DefaultSshTunnel = Tunnel{}
 func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	DefaultSshTunnel.SetAppConfig(config)
+	if err := DefaultSshTunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
+		return err
+	}
+
 	if config.EnableSocks5.GetValue() {
 		DefaultSshTunnel.enableSocks5 = config.EnableSocks5.GetValue()
-		DefaultSshTunnel.serverAddress = config.ServerIp.GetValue() + ":" + strconv.Itoa(config.ServerSshPort.GetValue())
 		DefaultSshTunnel.localAddress = config.LocalAddress.GetValue()
 		DefaultSshTunnel.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
-
-		var keys []ssh.Signer
-		b, err := ioutil.ReadFile(config.SshPrivateKeyPath.GetValue())
-		if err != nil {
-			log.Printf("Failed to read private key file: %v", err)
-			return err
-		}
-		k, err := ssh.ParsePrivateKey(b)
-		if err != nil {
-			log.Printf("Failed to parse private key: %v", err)
-			return err
-		}
-		keys = append(keys, k)
-		auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
-
-		DefaultSshTunnel.auth = auth
-		DefaultSshTunnel.hostKeys = ssh.InsecureIgnoreHostKey()
-		DefaultSshTunnel.user = config.LoginUser.GetValue()
-		DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec.GetValue()) * time.Second
 	}
 
 	if config.EnableHttp.GetValue() {
@@ -58,31 +43,6 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 		DefaultSshTunnel.enableHttpBasic = config.HttpBasicAuthEnable.GetValue()
 		DefaultSshTunnel.enableHttpOverSSH = config.EnableHttpOverSSH.GetValue()
 		DefaultSshTunnel.enableHttpDomainFilter = config.EnableHttpDomainFilter.GetValue()
-
-		if config.EnableHttpOverSSH.GetValue() {
-			DefaultSshTunnel.serverAddress = config.ServerIp.GetValue() + ":" + strconv.Itoa(config.ServerSshPort.GetValue())
-			DefaultSshTunnel.localAddress = config.LocalAddress.GetValue()
-			DefaultSshTunnel.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
-
-			var keys []ssh.Signer
-			b, err := ioutil.ReadFile(config.SshPrivateKeyPath.GetValue())
-			if err != nil {
-				log.Printf("Failed to read private key file for HttpOverSSH: %v", err)
-				return err
-			}
-			k, err := ssh.ParsePrivateKey(b)
-			if err != nil {
-				log.Printf("Failed to parse private key for HttpOverSSH: %v", err)
-				return err
-			}
-			keys = append(keys, k)
-			auth := []ssh.AuthMethod{ssh.PublicKeys(keys...)}
-
-			DefaultSshTunnel.auth = auth
-			DefaultSshTunnel.hostKeys = ssh.InsecureIgnoreHostKey()
-			DefaultSshTunnel.user = config.LoginUser.GetValue()
-			DefaultSshTunnel.retryInterval = time.Duration(config.RetryIntervalSec.GetValue()) * time.Second
-		}
 
 		if config.EnableHttpDomainFilter.GetValue() && config.HttpDomainFilterFilePath.GetValue() != "" {
 			safe.GO(func() {
@@ -154,6 +114,44 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 			}
 
 		})
+	}
+
+	return nil
+}
+
+func (t *Tunnel) RefreshRuntimeConfigFromAppConfig() error {
+	config := t.AppConfig()
+	if config == nil {
+		return fmt.Errorf("app config is nil")
+	}
+
+	t.enableSocks5 = config.EnableSocks5.GetValue()
+	t.enableHttp = config.EnableHttp.GetValue()
+	t.enableHttpBasic = config.HttpBasicAuthEnable.GetValue()
+	t.enableHttpOverSSH = config.EnableHttpOverSSH.GetValue()
+	t.enableHttpDomainFilter = config.EnableHttpDomainFilter.GetValue()
+	t.httpLocalAddress = config.HttpLocalAddress.GetValue()
+	t.httpBasicUserName = config.HttpBasicUserName.GetValue()
+	t.httpBasicPassword = config.HttpBasicPassword.GetValue()
+	t.serverAddress = config.ServerIp.GetValue() + ":" + strconv.Itoa(config.ServerSshPort.GetValue())
+	t.localAddress = config.LocalAddress.GetValue()
+	t.user = config.LoginUser.GetValue()
+	t.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
+	t.retryInterval = time.Duration(config.RetryIntervalSec.GetValue()) * time.Second
+	t.hostKeys = ssh.InsecureIgnoreHostKey()
+
+	if t.enableSocks5 || t.enableHttpOverSSH {
+		b, err := ioutil.ReadFile(config.SshPrivateKeyPath.GetValue())
+		if err != nil {
+			log.Printf("Failed to read private key file: %v", err)
+			return err
+		}
+		k, err := ssh.ParsePrivateKey(b)
+		if err != nil {
+			log.Printf("Failed to parse private key: %v", err)
+			return err
+		}
+		t.auth = []ssh.AuthMethod{ssh.PublicKeys(k)}
 	}
 
 	return nil

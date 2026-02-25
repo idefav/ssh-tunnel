@@ -11,6 +11,7 @@
 - `log-clear-feature.md` - 日志清理功能详细说明
 - `back-to-top-optimization.md` - 置顶按钮样式优化说明 🆕
 - `domain-management-ui-optimization.md` - 域名管理UI优化说明 🆕
+- `multi-profile-switch-design.md` - 多 SSH Profile 动态切换技术方案 🆕
 
 ### 📁 setup/
 部署和配置文档
