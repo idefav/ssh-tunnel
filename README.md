@@ -80,6 +80,8 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 ### 主要功能
 - 📊 **实时状态监控** - 查看SSH连接状态、隧道状态
 - ⚙️ **配置管理** - 在线修改配置参数，支持实时预览
+- 🧩 **多 Profile 管理** - 支持维护多套 SSH 配置并在管理页动态切换 🆕
+- 🗂️ **Profile 文件持久化** - 保存 Profile 时同步写入 `profiles.json`（格式化JSON）🆕
 - 📁 **进程信息** - 显示程序执行路径和工作目录，便于故障排查
 - 🔄 **服务控制** - 支持重启服务以应用新配置
 - 📋 **域名缓存** - 查看和管理域名匹配缓存
@@ -202,6 +204,21 @@ win+r 输入 services.svc 打开服务管理窗口
 ### 4. 在windows配置中启动代理
 
 ### 最近更新 🆕
+
+#### 2026-02-26 - Profile/SSH重连增强
+- ✅ Profile 编辑区改为弹窗，支持新增/编辑/复制（复制时自动清空 Profile ID）
+- ✅ Profile 列表新增 SSH 用户列，便于区分不同账号
+- ✅ 保存 Profile 时同步写入 `profiles.json` 文件，并使用美化 JSON 输出
+- ✅ Profile 切换后刷新隧道运行时参数（地址/端口/用户/私钥），再强制断开并重连
+- ✅ `重新连接 SSH` 按钮改为读取最新配置并应用 active profile 后再重连
+- ✅ 修复 HTTP 代理转发中 `io.Copy` 因目标连接为 nil 导致的 panic
+
+#### 2026-02-25 - Multi Profile MVP
+- ✅ 管理页新增 Profile 管理卡片（列表、切换、编辑回填、保存）
+- ✅ 新增管理API：`/admin/profiles`、`/admin/profiles/upsert`、`/admin/profiles/switch`
+- ✅ 新增切换状态查询API：`/admin/profiles/switch/status`
+- ✅ 新增 Profile 删除能力（禁止删除当前激活 Profile）
+- ✅ 切换 Profile 后自动触发 SSH 重连
 
 #### 2025-06-23 - UI优化
 - 🎨 **置顶按钮样式优化**: 改进置顶按钮的视觉效果和交互体验

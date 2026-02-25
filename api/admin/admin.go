@@ -24,6 +24,65 @@ import (
 	"github.com/kardianos/service"
 )
 
+type profileSwitchRequest struct {
+	TargetProfileID string `json:"targetProfileId"`
+}
+
+type profileUpsertRequest struct {
+	ProfileID string         `json:"profileId"`
+	Profile   cfg.SSHProfile `json:"profile"`
+}
+
+type profileDeleteRequest struct {
+	ProfileID string `json:"profileId"`
+}
+
+type profileSwitchStatus struct {
+	SwitchID      string `json:"switchId"`
+	FromProfileID string `json:"fromProfileId"`
+	ToProfileID   string `json:"toProfileId"`
+	Status        string `json:"status"`
+	Message       string `json:"message"`
+	StartedAt     string `json:"startedAt"`
+	UpdatedAt     string `json:"updatedAt"`
+	DurationMs    int64  `json:"durationMs"`
+}
+
+const (
+	SwitchStatusIdle      = "IDLE"
+	SwitchStatusSwitching = "SWITCHING"
+	SwitchStatusCompleted = "COMPLETED"
+	SwitchStatusFailed    = "FAILED"
+)
+
+var profileSwitchState = struct {
+	mu     sync.Mutex
+	latest profileSwitchStatus
+}{
+	latest: profileSwitchStatus{Status: SwitchStatusIdle, Message: "尚未执行切换", UpdatedAt: time.Now().Format(time.RFC3339)},
+}
+
+func getProfileSwitchStatus() profileSwitchStatus {
+	profileSwitchState.mu.Lock()
+	defer profileSwitchState.mu.Unlock()
+	return profileSwitchState.latest
+}
+
+func setProfileSwitchStatus(status profileSwitchStatus) {
+	profileSwitchState.mu.Lock()
+	defer profileSwitchState.mu.Unlock()
+	profileSwitchState.latest = status
+}
+
+func updateProfileSwitchStatusIfMatch(switchID string, updater func(*profileSwitchStatus)) {
+	profileSwitchState.mu.Lock()
+	defer profileSwitchState.mu.Unlock()
+	if profileSwitchState.latest.SwitchID != switchID {
+		return
+	}
+	updater(&profileSwitchState.latest)
+}
+
 // 获取配置键映射（前端配置键 -> 实际配置文件键）
 func getConfigKeyMapping() map[string]string {
 	appConfig := tunnel.DefaultSshTunnel.AppConfig()
@@ -60,6 +119,37 @@ func respondWithError(writer http.ResponseWriter, message string, statusCode int
 	jsonResponse, _ := json.Marshal(response)
 	writer.WriteHeader(statusCode)
 	writer.Write(jsonResponse)
+}
+
+func monitorProfileSwitchResult(switchID string, timeout time.Duration, tun *tunnel.Tunnel) {
+	startedAt := time.Now()
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	deadline := time.Now().Add(timeout)
+
+	for {
+		if tun.GetSSHClient() != nil {
+			updateProfileSwitchStatusIfMatch(switchID, func(status *profileSwitchStatus) {
+				status.Status = SwitchStatusCompleted
+				status.Message = "SSH重连成功"
+				status.UpdatedAt = time.Now().Format(time.RFC3339)
+				status.DurationMs = time.Since(startedAt).Milliseconds()
+			})
+			return
+		}
+
+		if time.Now().After(deadline) {
+			updateProfileSwitchStatusIfMatch(switchID, func(status *profileSwitchStatus) {
+				status.Status = SwitchStatusFailed
+				status.Message = "等待SSH重连超时"
+				status.UpdatedAt = time.Now().Format(time.RFC3339)
+				status.DurationMs = time.Since(startedAt).Milliseconds()
+			})
+			return
+		}
+
+		<-ticker.C
+	}
 }
 
 func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
@@ -243,6 +333,222 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			writer.Write(configBytes)
 		})
 
+		adminRouter.HandleFunc("/admin/profiles", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			writer.Header().Set("Access-Control-Allow-Origin", "*")
+			writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if request.Method == "OPTIONS" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			if request.Method != "GET" {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			store, err := cfg.ListProfiles(tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("读取profiles失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			response := map[string]interface{}{
+				"success": true,
+				"data":    store,
+			}
+			jsonResponse, _ := json.Marshal(response)
+			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/profiles/upsert", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			writer.Header().Set("Access-Control-Allow-Origin", "*")
+			writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if request.Method == "OPTIONS" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			if request.Method != "POST" {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			var req profileUpsertRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			if strings.TrimSpace(req.ProfileID) == "" {
+				respondWithError(writer, "profileId不能为空", http.StatusBadRequest)
+				return
+			}
+
+			store, err := cfg.UpsertProfile(strings.TrimSpace(req.ProfileID), req.Profile, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("保存profile失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			response := map[string]interface{}{
+				"success": true,
+				"data":    store,
+			}
+			jsonResponse, _ := json.Marshal(response)
+			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/profiles/switch", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			writer.Header().Set("Access-Control-Allow-Origin", "*")
+			writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if request.Method == "OPTIONS" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			if request.Method != "POST" {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			var req profileSwitchRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			profileID := strings.TrimSpace(req.TargetProfileID)
+			if profileID == "" {
+				respondWithError(writer, "targetProfileId不能为空", http.StatusBadRequest)
+				return
+			}
+
+			beforeStore, err := cfg.ListProfiles(tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("读取当前profile失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+			fromProfileID := beforeStore.ActiveProfileID
+			switchID := fmt.Sprintf("sw_%d", time.Now().UnixNano())
+			startAt := time.Now()
+
+			store, err := cfg.SwitchActiveProfile(profileID, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("切换profile失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			if err := tunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
+				respondWithError(writer, fmt.Sprintf("应用profile到隧道运行时失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			setProfileSwitchStatus(profileSwitchStatus{
+				SwitchID:      switchID,
+				FromProfileID: fromProfileID,
+				ToProfileID:   profileID,
+				Status:        SwitchStatusSwitching,
+				Message:       "已触发切换，等待SSH重连",
+				StartedAt:     startAt.Format(time.RFC3339),
+				UpdatedAt:     startAt.Format(time.RFC3339),
+				DurationMs:    0,
+			})
+
+			tunnel.DisconnectSSHClient()
+			safe.GO(func() {
+				tunnel.ReconnectSSH(connCtx)
+			})
+			safe.GO(func() {
+				monitorProfileSwitchResult(switchID, 30*time.Second, tunnel)
+			})
+
+			response := map[string]interface{}{
+				"success":  true,
+				"message":  fmt.Sprintf("已切换到profile: %s，正在重连", profileID),
+				"switchId": switchID,
+				"status":   SwitchStatusSwitching,
+				"data":     store,
+			}
+			jsonResponse, _ := json.Marshal(response)
+			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/profiles/switch/status", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			writer.Header().Set("Access-Control-Allow-Origin", "*")
+			writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if request.Method == "OPTIONS" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			if request.Method != "GET" {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			status := getProfileSwitchStatus()
+			requestedSwitchID := strings.TrimSpace(request.URL.Query().Get("switchId"))
+			if requestedSwitchID != "" && status.SwitchID != requestedSwitchID {
+				respondWithError(writer, fmt.Sprintf("未找到switchId: %s", requestedSwitchID), http.StatusNotFound)
+				return
+			}
+
+			response := map[string]interface{}{
+				"success": true,
+				"data":    status,
+			}
+			jsonResponse, _ := json.Marshal(response)
+			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/profiles/delete", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			writer.Header().Set("Access-Control-Allow-Origin", "*")
+			writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if request.Method == "OPTIONS" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			if request.Method != "POST" {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			var req profileDeleteRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+
+			profileID := strings.TrimSpace(req.ProfileID)
+			if profileID == "" {
+				respondWithError(writer, "profileId不能为空", http.StatusBadRequest)
+				return
+			}
+
+			store, err := cfg.DeleteProfile(profileID, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("删除profile失败: %v", err), http.StatusBadRequest)
+				return
+			}
+
+			response := map[string]interface{}{
+				"success": true,
+				"message": fmt.Sprintf("已删除profile: %s", profileID),
+				"data":    store,
+			}
+			jsonResponse, _ := json.Marshal(response)
+			writer.Write(jsonResponse)
+		})
+
 		adminRouter.HandleFunc("/admin/ssh/state", func(writer http.ResponseWriter, request *http.Request) {
 			client := tunnel.GetSSHClient()
 			if client == nil {
@@ -267,11 +573,35 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 		})
 
 		adminRouter.HandleFunc("/admin/ssh/reconnect", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			writer.Header().Set("Access-Control-Allow-Origin", "*")
+			writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if request.Method == "OPTIONS" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			if request.Method != "POST" {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			if err := triggerConfigReload(); err != nil {
+				respondWithError(writer, fmt.Sprintf("重载配置失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			if err := tunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
+				respondWithError(writer, fmt.Sprintf("刷新隧道运行时配置失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			tunnel.DisconnectSSHClient()
 			tunnel.ReconnectSSH(connCtx)
 			client := tunnel.GetSSHClient()
 			if client == nil {
-				writer.WriteHeader(500)
-				writer.Write([]byte("SSH client is not connected"))
+				respondWithError(writer, "SSH client is not connected", http.StatusInternalServerError)
 				return
 			}
 			version := client.ClientVersion()
@@ -286,6 +616,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			m["remoteAddr"] = remoteAddr
 			m["sessionId"] = id
 			m["user"] = user
+			m["message"] = "已按最新配置重新连接SSH"
 			mbytes, _ := json.Marshal(m)
 			writer.Write(mbytes)
 		})
@@ -736,6 +1067,9 @@ func triggerConfigReload() error {
 	appConfig := tunnel.DefaultSshTunnel.AppConfig()
 	if appConfig != nil {
 		appConfig.Update()
+		if err := cfg.EnsureAndApplyActiveProfile(appConfig); err != nil {
+			return fmt.Errorf("应用active profile失败: %w", err)
+		}
 		log.Println("应用配置更新完成")
 	}
 

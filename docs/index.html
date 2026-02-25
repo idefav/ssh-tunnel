@@ -114,6 +114,55 @@
 
     <section class="py-5">
         <div class="container">
+            <h2 class="text-center mb-4">profiles.json 快速配置示例</h2>
+            <div class="row justify-content-center">
+                <div class="col-lg-10">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">最小可用配置（复制即用）</h5>
+                            <p class="mb-2">将以下内容保存为 <code>profiles.json</code>，放在配置目录（如 <code>.ssh-tunnel</code>）下：</p>
+                            <pre class="bg-dark text-light p-3 rounded"><code>{
+  "activeProfileId": "default",
+  "profiles": {
+    "default": {
+      "serverIp": "127.0.0.1",
+      "serverSshPort": 22,
+      "loginUser": "root",
+      "sshPrivateKeyPath": "C:/Users/your-name/.ssh/id_rsa",
+      "localAddress": "0.0.0.0:1081",
+      "httpLocalAddress": "0.0.0.0:1082",
+      "enableHttp": false,
+      "enableSocks5": true,
+      "enableHttpOverSSH": false,
+      "httpBasicAuthEnable": false,
+      "httpBasicUserName": "",
+      "httpBasicPassword": "",
+      "enableHttpDomainFilter": false,
+      "httpDomainFilterFilePath": "C:/ssh-tunnel/.ssh-tunnel/domain.txt",
+      "retryIntervalSec": 3
+    }
+  }
+}</code></pre>
+                            <p class="mb-1"><strong>简单三步：</strong></p>
+                            <ol class="mb-0">
+                                <li>把 <code>serverIp</code>、<code>loginUser</code>、<code>sshPrivateKeyPath</code> 改成你的服务器信息。</li>
+                                <li>保持 <code>activeProfileId</code> 为 <code>default</code>，首次使用无需多 Profile。</li>
+                                <li>启动程序后进入管理页即可继续新增/切换 Profile。</li>
+                            </ol>
+                            <div class="mt-3">
+                                <a href="https://github.com/idefav/ssh-tunnel/blob/master/examples/profiles.json.template" target="_blank" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-file-earmark-code"></i> 查看完整模板
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-5">
+        <div class="container">
             <h2 class="text-center mb-5">主要功能</h2>
             <div class="row g-4">
                 <div class="col-md-6">

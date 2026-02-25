@@ -44,6 +44,146 @@
         </div>
     </div>
 
+    <!-- Profile 管理 -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <h6 class="mb-0"><i class="bi bi-diagram-3"></i> SSH Profile 管理</h6>
+                <small class="text-muted" id="profileSwitchStatusText">切换状态：未执行</small>
+            </div>
+            <div class="btn-group" role="group">
+                <button class="btn btn-sm btn-primary" type="button" id="openCreateProfileBtn">
+                    <i class="bi bi-plus-circle"></i> 新增 Profile
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" id="reloadProfilesBtn">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新列表
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-12">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                            <tr>
+                                <th style="width: 25%">Profile ID</th>
+                                <th style="width: 20%">SSH用户</th>
+                                <th style="width: 30%">目标地址</th>
+                                <th style="width: 25%">操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="profilesTableBody">
+                            <tr>
+                                <td colspan="4" class="text-muted">正在加载...</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile 编辑弹窗 -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-diagram-3"></i> 新增/更新 Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="profileForm">
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <label for="profileId" class="form-label mb-1">Profile ID（必填）</label>
+                                <input type="text" class="form-control" id="profileId" placeholder="例如：default" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profileServerIp" class="form-label mb-1">Server IP</label>
+                                <input type="text" class="form-control" id="profileServerIp" placeholder="例如：47.56.255.129" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profileServerSshPort" class="form-label mb-1">SSH Port</label>
+                                <input type="number" class="form-control" id="profileServerSshPort" placeholder="例如：22" value="22" min="1" max="65535" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profileLoginUser" class="form-label mb-1">Login User</label>
+                                <input type="text" class="form-control" id="profileLoginUser" placeholder="例如：root" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profilePrivateKeyPath" class="form-label mb-1">Private Key Path</label>
+                                <input type="text" class="form-control" id="profilePrivateKeyPath" placeholder="例如：C:/Users/xx/.ssh/id_rsa" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profileLocalAddress" class="form-label mb-1">SOCKS5 Local Address</label>
+                                <input type="text" class="form-control" id="profileLocalAddress" placeholder="例如：0.0.0.0:1081" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profileHttpLocalAddress" class="form-label mb-1">HTTP Local Address</label>
+                                <input type="text" class="form-control" id="profileHttpLocalAddress" placeholder="例如：0.0.0.0:1082">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profileRetryIntervalSec" class="form-label mb-1">Retry Interval Sec</label>
+                                <input type="number" class="form-control" id="profileRetryIntervalSec" placeholder="例如：5" value="5" min="1">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profileHttpBasicUserName" class="form-label mb-1">HTTP Basic User</label>
+                                <input type="text" class="form-control" id="profileHttpBasicUserName" placeholder="例如：admin">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="profileHttpBasicPassword" class="form-label mb-1">HTTP Basic Password</label>
+                                <input type="text" class="form-control" id="profileHttpBasicPassword" placeholder="例如：password">
+                            </div>
+                            <div class="col-12 mb-2">
+                                <label for="profileHttpDomainFilterFilePath" class="form-label mb-1">Domain Filter File Path</label>
+                                <input type="text" class="form-control" id="profileHttpDomainFilterFilePath" placeholder="例如：C:/ssh-tunnel/.ssh-tunnel/domain.txt">
+                            </div>
+                        </div>
+                        <div class="row mt-2 mb-0">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="profileEnableSocks5" checked>
+                                    <label class="form-check-label" for="profileEnableSocks5">启用 SOCKS5</label>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="profileEnableHttp">
+                                    <label class="form-check-label" for="profileEnableHttp">启用 HTTP</label>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="profileEnableHttpOverSSH">
+                                    <label class="form-check-label" for="profileEnableHttpOverSSH">启用 HTTP Over SSH</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="profileHttpBasicAuthEnable">
+                                    <label class="form-check-label" for="profileHttpBasicAuthEnable">启用 HTTP Basic</label>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="profileEnableHttpDomainFilter">
+                                    <label class="form-check-label" for="profileEnableHttpDomainFilter">启用域名过滤</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" id="clearProfileFormBtn">
+                            <i class="bi bi-eraser"></i> 清空
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary" id="saveProfileBtn">
+                            <i class="bi bi-save"></i> 保存 Profile
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- 搜索和操作区域 -->
     <div class="card mb-3">
         <div class="card-body py-2">
@@ -277,8 +417,15 @@
             </div>
         </div>    </div>    <script>
         // 页面加载时检查运行模式
+        let profilesStore = { activeProfileId: '', profiles: {} };
+        let currentSwitchId = '';
+        let profileModalMode = 'create';
+        let profileModalOriginalId = '';
+
         document.addEventListener('DOMContentLoaded', function() {
             checkRunningMode();
+            loadProfiles();
+            loadSwitchStatus();
         });
 
         // 检查运行模式
@@ -313,6 +460,376 @@
                 document.getElementById('restartServiceBtn').style.display = 'none';
             });
         }
+
+        async function loadProfiles() {
+            try {
+                const response = await fetch('/admin/profiles', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    showToast('error', result.message || '加载 profiles 失败');
+                    return;
+                }
+                profilesStore = result.data || { activeProfileId: '', profiles: {} };
+                renderProfilesTable();
+            } catch (error) {
+                console.error('加载profiles失败:', error);
+                showToast('error', '加载 profiles 失败：' + error.message);
+            }
+        }
+
+        function renderSwitchStatus(statusData) {
+            const textEl = document.getElementById('profileSwitchStatusText');
+            if (!textEl) return;
+
+            if (!statusData || !statusData.status) {
+                textEl.textContent = '切换状态：未执行';
+                return;
+            }
+
+            const parts = [];
+            parts.push(`切换状态：${statusData.status}`);
+            if (statusData.fromProfileId || statusData.toProfileId) {
+                parts.push(`(${statusData.fromProfileId || '-'} -> ${statusData.toProfileId || '-'})`);
+            }
+            if (statusData.message) {
+                parts.push(`- ${statusData.message}`);
+            }
+            textEl.textContent = parts.join(' ');
+        }
+
+        async function loadSwitchStatus(switchId = '') {
+            try {
+                const url = switchId
+                    ? `/admin/profiles/switch/status?switchId=${encodeURIComponent(switchId)}`
+                    : '/admin/profiles/switch/status';
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    return null;
+                }
+                const statusData = result.data || {};
+                renderSwitchStatus(statusData);
+                return statusData;
+            } catch (error) {
+                console.error('加载切换状态失败:', error);
+                return null;
+            }
+        }
+
+        async function pollSwitchStatus(switchId) {
+            if (!switchId) return;
+            currentSwitchId = switchId;
+            let tries = 0;
+            const maxTries = 35;
+
+            while (tries < maxTries && currentSwitchId === switchId) {
+                const statusData = await loadSwitchStatus(switchId);
+                if (!statusData) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    tries++;
+                    continue;
+                }
+
+                if (statusData.status === 'COMPLETED') {
+                    showToast('success', statusData.message || 'Profile 切换完成');
+                    await loadProfiles();
+                    setTimeout(() => location.reload(), 1000);
+                    return;
+                }
+
+                if (statusData.status === 'FAILED') {
+                    showToast('error', statusData.message || 'Profile 切换失败');
+                    await loadProfiles();
+                    return;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                tries++;
+            }
+        }
+
+        function renderProfilesTable() {
+            const tbody = document.getElementById('profilesTableBody');
+            const profiles = profilesStore.profiles || {};
+            const profileIds = Object.keys(profiles);
+
+            if (profileIds.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-muted">暂无 profile</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = '';
+            profileIds.forEach(profileId => {
+                const profile = profiles[profileId] || {};
+                const isActive = profileId === profilesStore.activeProfileId;
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>
+                        <code>${escapeHtml(profileId)}</code>
+                        ${isActive ? '<span class="badge bg-success ms-1">当前</span>' : ''}
+                    </td>
+                    <td><small>${escapeHtml(profile.loginUser || '-')}</small></td>
+                    <td><small>${escapeHtml(profile.serverIp || '-')} : ${profile.serverSshPort || '-'}</small></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="fillProfileForm('${escapeAttr(profileId)}')">编辑</button>
+                        <button class="btn btn-sm btn-outline-info me-1" onclick="copyProfile('${escapeAttr(profileId)}')">复制</button>
+                        <button class="btn btn-sm ${isActive ? 'btn-secondary' : 'btn-outline-success'}" 
+                            onclick="switchProfile('${escapeAttr(profileId)}')" ${isActive ? 'disabled' : ''}>切换</button>
+                        <button class="btn btn-sm btn-outline-danger ms-1"
+                            onclick="deleteProfile('${escapeAttr(profileId)}')" ${isActive ? 'disabled' : ''}>删除</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function escapeAttr(text) {
+            return escapeHtml(text);
+        }
+
+        function openProfileModal(title) {
+            const modalTitle = document.getElementById('profileModalLabel');
+            if (modalTitle && title) {
+                modalTitle.innerHTML = `<i class="bi bi-diagram-3"></i> ${title}`;
+            }
+            const modal = new bootstrap.Modal(document.getElementById('profileModal'));
+            modal.show();
+        }
+
+        function openCreateProfileModal() {
+            profileModalMode = 'create';
+            profileModalOriginalId = '';
+            clearProfileForm();
+            openProfileModal('新增 Profile');
+        }
+
+        function fillProfileForm(profileId) {
+            const profile = (profilesStore.profiles || {})[profileId];
+            if (!profile) return;
+            profileModalMode = 'edit';
+            profileModalOriginalId = profileId;
+            document.getElementById('profileId').value = profileId;
+            document.getElementById('profileServerIp').value = profile.serverIp || '';
+            document.getElementById('profileServerSshPort').value = profile.serverSshPort || 22;
+            document.getElementById('profileLoginUser').value = profile.loginUser || '';
+            document.getElementById('profilePrivateKeyPath').value = profile.sshPrivateKeyPath || '';
+            document.getElementById('profileLocalAddress').value = profile.localAddress || '';
+            document.getElementById('profileHttpLocalAddress').value = profile.httpLocalAddress || '';
+            document.getElementById('profileRetryIntervalSec').value = profile.retryIntervalSec || 5;
+            document.getElementById('profileHttpBasicUserName').value = profile.httpBasicUserName || '';
+            document.getElementById('profileHttpBasicPassword').value = profile.httpBasicPassword || '';
+            document.getElementById('profileHttpDomainFilterFilePath').value = profile.httpDomainFilterFilePath || '';
+            document.getElementById('profileEnableSocks5').checked = !!profile.enableSocks5;
+            document.getElementById('profileEnableHttp').checked = !!profile.enableHttp;
+            document.getElementById('profileEnableHttpOverSSH').checked = !!profile.enableHttpOverSSH;
+            document.getElementById('profileHttpBasicAuthEnable').checked = !!profile.httpBasicAuthEnable;
+            document.getElementById('profileEnableHttpDomainFilter').checked = !!profile.enableHttpDomainFilter;
+            openProfileModal(`编辑 Profile: ${profileId}`);
+        }
+
+        function copyProfile(profileId) {
+            const profile = (profilesStore.profiles || {})[profileId];
+            if (!profile) return;
+            profileModalMode = 'copy';
+            profileModalOriginalId = profileId;
+
+            document.getElementById('profileId').value = '';
+            document.getElementById('profileServerIp').value = profile.serverIp || '';
+            document.getElementById('profileServerSshPort').value = profile.serverSshPort || 22;
+            document.getElementById('profileLoginUser').value = profile.loginUser || '';
+            document.getElementById('profilePrivateKeyPath').value = profile.sshPrivateKeyPath || '';
+            document.getElementById('profileLocalAddress').value = profile.localAddress || '';
+            document.getElementById('profileHttpLocalAddress').value = profile.httpLocalAddress || '';
+            document.getElementById('profileRetryIntervalSec').value = profile.retryIntervalSec || 5;
+            document.getElementById('profileHttpBasicUserName').value = profile.httpBasicUserName || '';
+            document.getElementById('profileHttpBasicPassword').value = profile.httpBasicPassword || '';
+            document.getElementById('profileHttpDomainFilterFilePath').value = profile.httpDomainFilterFilePath || '';
+            document.getElementById('profileEnableSocks5').checked = !!profile.enableSocks5;
+            document.getElementById('profileEnableHttp').checked = !!profile.enableHttp;
+            document.getElementById('profileEnableHttpOverSSH').checked = !!profile.enableHttpOverSSH;
+            document.getElementById('profileHttpBasicAuthEnable').checked = !!profile.httpBasicAuthEnable;
+            document.getElementById('profileEnableHttpDomainFilter').checked = !!profile.enableHttpDomainFilter;
+
+            openProfileModal(`复制 Profile: ${profileId}`);
+        }
+
+        async function switchProfile(profileId) {
+            if (!profileId) return;
+            if (!confirm(`确定切换到 profile: ${profileId} ?\n\n切换后将触发SSH重连。`)) {
+                return;
+            }
+            try {
+                const response = await fetch('/admin/profiles/switch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ targetProfileId: profileId })
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    showToast('error', result.message || '切换 profile 失败');
+                    return;
+                }
+                const switchId = result.switchId || '';
+                renderSwitchStatus({
+                    switchId: switchId,
+                    fromProfileId: profilesStore.activeProfileId,
+                    toProfileId: profileId,
+                    status: result.status || 'SWITCHING',
+                    message: result.message || '已触发切换，等待SSH重连'
+                });
+                showToast('info', result.message || '切换已触发，等待重连完成');
+                await pollSwitchStatus(switchId);
+            } catch (error) {
+                console.error('切换profile失败:', error);
+                showToast('error', '切换 profile 失败：' + error.message);
+            }
+        }
+
+        async function deleteProfile(profileId) {
+            if (!profileId) return;
+            if (profileId === (profilesStore.activeProfileId || '')) {
+                showToast('error', '不能删除当前激活的 Profile');
+                return;
+            }
+            if (!confirm(`确定删除 profile: ${profileId} ?\n\n此操作不可撤销。`)) {
+                return;
+            }
+            try {
+                const response = await fetch('/admin/profiles/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ profileId: profileId })
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    showToast('error', result.message || '删除 profile 失败');
+                    return;
+                }
+                showToast('success', result.message || '删除 profile 成功');
+                await loadProfiles();
+            } catch (error) {
+                console.error('删除profile失败:', error);
+                showToast('error', '删除 profile 失败：' + error.message);
+            }
+        }
+
+        function collectProfilePayload() {
+            return {
+                profileId: document.getElementById('profileId').value.trim(),
+                profile: {
+                    serverIp: document.getElementById('profileServerIp').value.trim(),
+                    serverSshPort: parseInt(document.getElementById('profileServerSshPort').value, 10) || 22,
+                    loginUser: document.getElementById('profileLoginUser').value.trim(),
+                    sshPrivateKeyPath: document.getElementById('profilePrivateKeyPath').value.trim(),
+                    localAddress: document.getElementById('profileLocalAddress').value.trim(),
+                    httpLocalAddress: document.getElementById('profileHttpLocalAddress').value.trim(),
+                    enableHttp: document.getElementById('profileEnableHttp').checked,
+                    enableSocks5: document.getElementById('profileEnableSocks5').checked,
+                    enableHttpOverSSH: document.getElementById('profileEnableHttpOverSSH').checked,
+                    httpBasicAuthEnable: document.getElementById('profileHttpBasicAuthEnable').checked,
+                    httpBasicUserName: document.getElementById('profileHttpBasicUserName').value.trim(),
+                    httpBasicPassword: document.getElementById('profileHttpBasicPassword').value.trim(),
+                    enableHttpDomainFilter: document.getElementById('profileEnableHttpDomainFilter').checked,
+                    httpDomainFilterFilePath: document.getElementById('profileHttpDomainFilterFilePath').value.trim(),
+                    retryIntervalSec: parseInt(document.getElementById('profileRetryIntervalSec').value, 10) || 5
+                }
+            };
+        }
+
+        async function saveProfile(event) {
+            event.preventDefault();
+            const btn = document.getElementById('saveProfileBtn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>保存中...';
+
+            try {
+                const payload = collectProfilePayload();
+                if (!payload.profileId) {
+                    showToast('error', 'Profile ID 不能为空');
+                    return;
+                }
+
+                const existingProfiles = profilesStore.profiles || {};
+                const exists = Object.prototype.hasOwnProperty.call(existingProfiles, payload.profileId);
+                if (profileModalMode === 'create' || profileModalMode === 'copy') {
+                    if (exists) {
+                        showToast('error', `Profile ID 已存在: ${payload.profileId}，请使用新的 ID`);
+                        return;
+                    }
+                }
+                if (profileModalMode === 'edit') {
+                    if (exists && payload.profileId !== profileModalOriginalId) {
+                        showToast('error', `Profile ID 已存在: ${payload.profileId}，请使用新的 ID`);
+                        return;
+                    }
+                }
+
+                const response = await fetch('/admin/profiles/upsert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    showToast('error', result.message || '保存 profile 失败');
+                    return;
+                }
+                showToast('success', 'Profile 保存成功');
+                const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+                if (modal) {
+                    modal.hide();
+                }
+                await loadProfiles();
+            } catch (error) {
+                console.error('保存profile失败:', error);
+                showToast('error', '保存 profile 失败：' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+
+        function clearProfileForm() {
+            document.getElementById('profileForm').reset();
+            document.getElementById('profileId').value = '';
+            document.getElementById('profileServerSshPort').value = 22;
+            document.getElementById('profileRetryIntervalSec').value = 5;
+            document.getElementById('profileEnableSocks5').checked = true;
+            profileModalMode = 'create';
+            profileModalOriginalId = '';
+        }
+
+        document.getElementById('profileForm').addEventListener('submit', saveProfile);
+        document.getElementById('clearProfileFormBtn').addEventListener('click', clearProfileForm);
+        document.getElementById('openCreateProfileBtn').addEventListener('click', openCreateProfileModal);
+        document.getElementById('reloadProfilesBtn').addEventListener('click', loadProfiles);
 
         // 搜索功能
         document.getElementById('configSearch').addEventListener('keyup', function() {
@@ -699,6 +1216,8 @@
                 toast.classList.add('text-bg-success');
             } else if (type === 'error') {
                 toast.classList.add('text-bg-danger');
+            } else if (type === 'info') {
+                toast.classList.add('text-bg-info');
             }
             
             // 显示Toast

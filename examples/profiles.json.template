@@ -1,0 +1,39 @@
+{
+  "activeProfileId": "default",
+  "profiles": {
+    "default": {
+      "serverIp": "127.0.0.1",
+      "serverSshPort": 22,
+      "loginUser": "root",
+      "sshPrivateKeyPath": "C:/Users/xx/.ssh/id_rsa",
+      "localAddress": "0.0.0.0:1081",
+      "httpLocalAddress": "0.0.0.0:1082",
+      "enableHttp": false,
+      "enableSocks5": true,
+      "enableHttpOverSSH": false,
+      "httpBasicAuthEnable": false,
+      "httpBasicUserName": "",
+      "httpBasicPassword": "",
+      "enableHttpDomainFilter": false,
+      "httpDomainFilterFilePath": "C:/Users/xx/Documents/ssh-tunnel/domain.txt",
+      "retryIntervalSec": 3
+    },
+    "prod-main": {
+      "serverIp": "10.10.10.10",
+      "serverSshPort": 22,
+      "loginUser": "root",
+      "sshPrivateKeyPath": "C:/Users/ops/.ssh/id_rsa",
+      "localAddress": "0.0.0.0:2081",
+      "httpLocalAddress": "0.0.0.0:2082",
+      "enableHttp": true,
+      "enableSocks5": true,
+      "enableHttpOverSSH": true,
+      "httpBasicAuthEnable": true,
+      "httpBasicUserName": "admin",
+      "httpBasicPassword": "change-me",
+      "enableHttpDomainFilter": true,
+      "httpDomainFilterFilePath": "C:/ssh-tunnel/.ssh-tunnel/domain.txt",
+      "retryIntervalSec": 5
+    }
+  }
+}
