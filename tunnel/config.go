@@ -23,11 +23,13 @@ import (
 var DefaultSshTunnel = Tunnel{}
 
 func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
-	ctx, cancel := context.WithCancel(context.Background())
 	DefaultSshTunnel.SetAppConfig(config)
 	if err := DefaultSshTunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
 		return err
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	DefaultSshTunnel.SetTunnelContext(ctx)
 
 	if config.EnableSocks5.GetValue() {
 		DefaultSshTunnel.enableSocks5 = config.EnableSocks5.GetValue()
@@ -97,7 +99,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 				})
 				if err != nil {
 					once.Do(func() {
-						log.Printf("(%v) SSH dial error: %v", DefaultSshTunnel, err)
+						log.Printf("SSH dial error: %v", err)
 					})
 					continue
 				}
@@ -231,8 +233,4 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 
 		}
 	}
-
-	<-done
-
-	return err
 }

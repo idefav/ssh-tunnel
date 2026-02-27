@@ -61,11 +61,36 @@ type Tunnel struct {
 	keepAlive      KeepAliveConfig
 	needReBind     bool
 	client         *ssh.Client
+	tunnelCtx      context.Context
 	reconnectMutex sync.Mutex // 添加重连锁，确保同一时间只有一个重连过程
+	reconnecting   bool
+	reconnectDone  chan struct{}
 }
 
 func (t *Tunnel) GetSSHClient() *ssh.Client {
+	t.reconnectMutex.Lock()
+	defer t.reconnectMutex.Unlock()
 	return t.client
+}
+
+func (t *Tunnel) SetTunnelContext(ctx context.Context) {
+	t.reconnectMutex.Lock()
+	t.tunnelCtx = ctx
+	t.reconnectMutex.Unlock()
+}
+
+func (t *Tunnel) reconnectContext(ctx context.Context) context.Context {
+	t.reconnectMutex.Lock()
+	tunnelCtx := t.tunnelCtx
+	t.reconnectMutex.Unlock()
+
+	if tunnelCtx != nil && tunnelCtx.Err() == nil {
+		return tunnelCtx
+	}
+	if ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
 
 func (t *Tunnel) DisconnectSSHClient() {
@@ -108,7 +133,7 @@ func (t *Tunnel) bindHttpTunnel(ctx context.Context, wg *sync.WaitGroup) {
 
 }
 
-func (t Tunnel) bindSocks5Tunnel(ctx context.Context, wg *sync.WaitGroup) {
+func (t *Tunnel) bindSocks5Tunnel(ctx context.Context, wg *sync.WaitGroup) {
 	// Accept all incoming connections.
 	t.socks5ProxyStart(ctx)
 
@@ -210,17 +235,15 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 }
 
 func (t *Tunnel) createSSHConn(host string) (net.Conn, error) {
-	if t.client == nil {
-		log.Println("SSH client is not initialized, cannot dial to host:", host)
-		t.ReconnectSSH(context.Background())
-	}
-	if t.client == nil {
+	client := t.GetSSHClient()
+	if client == nil {
 		return nil, errors.New("SSH client is not initialized")
 	}
 	background := context.Background()
-	timeoutCtx, _ := context.WithTimeout(background, 3*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(background, 3*time.Second)
+	defer cancel()
 
-	return t.client.DialContext(timeoutCtx, "tcp", host)
+	return client.DialContext(timeoutCtx, "tcp", host)
 }
 
 func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -370,7 +393,6 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 
 	destConn, done := t.getConn(ctx, client, address)
 	if done {
-		log.Println("Get Dest Connection Failed!")
 		return
 	}
 	if destConn == nil {
@@ -405,34 +427,41 @@ func (t *Tunnel) getConn(ctx context.Context, client net.Conn, address string) (
 		return destConn, false
 	}
 
-	for {
+	if shouldReconnect(err, t.client) {
+		t.reconnectMutex.Lock()
+		t.client = nil
+		t.reconnectMutex.Unlock()
+
+		t.ReconnectSSH(t.reconnectContext(ctx))
+		if t.GetSSHClient() == nil {
+			log.Printf("Get Dest Connection Failed(%s): ssh reconnect failed", address)
+			fmt.Fprint(client, "HTTP/1.1 500 ssh reconnect failed\r\n\r\n")
+			return nil, true
+		}
+
+		destConn, err = t.getDestConn(address)
 		if err == nil && destConn != nil {
 			return destConn, false
 		}
 
-		if shouldReconnect(err, t.client) {
-			t.client = nil
-			t.ReconnectSSH(ctx)
-			if t.client == nil {
-				fmt.Fprint(client, "HTTP/1.1 500 ssh reconnect failed\r\n\r\n")
-				return nil, true
-			}
-			destConn, err = t.getDestConn(address)
-			if err == nil && destConn != nil {
-				return destConn, false
-			}
-			continue
-		}
-
 		if err != nil {
-			log.Println(err)
+			log.Printf("Get Dest Connection Failed(%s) after reconnect: %v", address, err)
 			fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
 		} else {
-			log.Println("destination connection is nil")
+			log.Printf("Get Dest Connection Failed(%s) after reconnect: destination connection is nil", address)
 			fmt.Fprint(client, "HTTP/1.1 500 destination connection is nil\r\n\r\n")
 		}
 		return nil, true
 	}
+
+	if err != nil {
+		log.Printf("Get Dest Connection Failed(%s): %v", address, err)
+		fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
+	} else {
+		log.Printf("Get Dest Connection Failed(%s): destination connection is nil", address)
+		fmt.Fprint(client, "HTTP/1.1 500 destination connection is nil\r\n\r\n")
+	}
+	return nil, true
 }
 
 func shouldReconnect(err error, client *ssh.Client) bool {
@@ -444,8 +473,10 @@ func shouldReconnect(err error, client *ssh.Client) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "unexpected packet in response") ||
-		strings.Contains(msg, "context deadline exceeded") ||
-		strings.Contains(msg, "max packet length exceeded")
+		strings.Contains(msg, "max packet length exceeded") ||
+		strings.Contains(msg, "ssh:") ||
+		strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "broken pipe")
 }
 
 func isIgnorableProxyErr(err error) bool {
@@ -626,7 +657,7 @@ func (ip sockIP) toAddr() string {
 	return fmt.Sprintf("%d.%d.%d.%d:%d", ip.A, ip.B, ip.C, ip.D, ip.PORT)
 }
 
-func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.Client, cn1 net.Conn) {
+func (t *Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.Client, cn1 net.Conn) {
 	defer wg.Done()
 
 	// The inbound connection is established. Make sure we close it eventually.
@@ -644,7 +675,7 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 
 	cn2, err = client.Dial("tcp", t.serverAddress)
 	if err != nil {
-		log.Printf("(%v) dial error: %v", t, err)
+		log.Printf("dial error: %v", err)
 		return
 	}
 
@@ -653,8 +684,8 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 		cn2.Close()
 	})
 
-	log.Printf("(%v) connection established", t)
-	defer log.Printf("(%v) connection closed", t)
+	log.Printf("connection established")
+	defer log.Printf("connection closed")
 
 	// Copy bytes from one connection to the other until one side closes.
 	var once sync.Once
@@ -664,7 +695,7 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 		defer wg2.Done()
 		defer cancel()
 		if _, err := io.Copy(cn1, cn2); err != nil {
-			once.Do(func() { log.Printf("(%v) connection error: %v", t, err) })
+			once.Do(func() { log.Printf("connection error: %v", err) })
 		}
 		once.Do(func() {}) // Suppress future errors
 	})
@@ -672,14 +703,14 @@ func (t Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh.
 		defer wg2.Done()
 		defer cancel()
 		if _, err := io.Copy(cn2, cn1); err != nil {
-			once.Do(func() { log.Printf("(%v) connection error: %v", t, err) })
+			once.Do(func() { log.Printf("connection error: %v", err) })
 		}
 		once.Do(func() {}) // Suppress future errors
 	})
 	wg2.Wait()
 }
 
-func (t Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync.WaitGroup) {
+func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync.WaitGroup) {
 	defer wg.Done()
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
