@@ -13,25 +13,41 @@ var (
 // InitializeUpdater 初始化全局更新器
 func InitializeUpdater() {
 	appConfig := cfg.NewAppConfig()
-	
+	owner := appConfig.AutoUpdateOwner.GetValue()
+	if owner == "" {
+		owner = "idefav"
+	}
+	repo := appConfig.AutoUpdateRepo.GetValue()
+	if repo == "" {
+		repo = "ssh-tunnel"
+	}
+	currentVersion := appConfig.AutoUpdateCurrentVersion.GetValue()
+	if currentVersion == "" {
+		currentVersion = "v0.0.0"
+	}
+	checkIntervalSec := appConfig.AutoUpdateCheckInterval.GetValue()
+	if checkIntervalSec <= 0 {
+		checkIntervalSec = 3600
+	}
+
 	config := &UpdaterConfig{
 		Enabled:        appConfig.AutoUpdateEnabled.GetValue(),
-		Owner:          appConfig.AutoUpdateOwner.GetValue(),
-		Repo:           appConfig.AutoUpdateRepo.GetValue(),
-		CurrentVersion: appConfig.AutoUpdateCurrentVersion.GetValue(),
-		CheckInterval:  time.Duration(appConfig.AutoUpdateCheckInterval.GetValue()) * time.Second,
+		Owner:          owner,
+		Repo:           repo,
+		CurrentVersion: currentVersion,
+		CheckInterval:  time.Duration(checkIntervalSec) * time.Second,
 		AutoDownload:   false, // 默认不自动下载
 		AutoInstall:    false, // 默认不自动安装
 	}
-	
+
 	globalUpdater = NewUpdater(config)
-	
+
 	// 设置更新回调
 	globalUpdater.SetUpdateCallback(func(release *Release) {
 		log.Printf("发现新版本 %s: %s", release.TagName, release.Name)
 		// 这里可以添加更多的处理逻辑，比如发送通知等
 	})
-	
+
 	// 如果启用了自动更新，启动检查
 	if config.Enabled {
 		globalUpdater.Start()
@@ -49,19 +65,19 @@ func UpdateConfig() {
 	if globalUpdater == nil {
 		return
 	}
-	
+
 	appConfig := cfg.NewAppConfig()
-	
+
 	// 停止当前的更新器
 	globalUpdater.Stop()
-	
+
 	// 更新配置
 	globalUpdater.config.Enabled = appConfig.AutoUpdateEnabled.GetValue()
 	globalUpdater.config.Owner = appConfig.AutoUpdateOwner.GetValue()
 	globalUpdater.config.Repo = appConfig.AutoUpdateRepo.GetValue()
 	globalUpdater.config.CurrentVersion = appConfig.AutoUpdateCurrentVersion.GetValue()
 	globalUpdater.config.CheckInterval = time.Duration(appConfig.AutoUpdateCheckInterval.GetValue()) * time.Second
-	
+
 	// 如果启用了自动更新，重新启动检查
 	if globalUpdater.config.Enabled {
 		globalUpdater.Start()

@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"context"
 	"crypto/tls"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,6 +24,7 @@ import (
 	tunnel2 "ssh-tunnel/tunnel"
 	"ssh-tunnel/updater"
 	"ssh-tunnel/views"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -211,71 +215,89 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 
 	// 手动提取配置值，而不是序列化整个ConfigItem结构
 	data := map[string]interface{}{
-		"ServerIp":                 appConfig.ServerIp.GetValue(),
-		"ServerSshPort":            appConfig.ServerSshPort.GetValue(),
-		"LoginUser":                appConfig.LoginUser.GetValue(),
-		"SshPrivateKeyPath":        appConfig.SshPrivateKeyPath.GetValue(),
-		"LocalAddress":             appConfig.LocalAddress.GetValue(),
-		"HttpLocalAddress":         appConfig.HttpLocalAddress.GetValue(),
-		"EnableHttp":               appConfig.EnableHttp.GetValue(),
-		"EnableSocks5":             appConfig.EnableSocks5.GetValue(),
-		"EnableHttpOverSSH":        appConfig.EnableHttpOverSSH.GetValue(),
-		"HttpBasicAuthEnable":      appConfig.HttpBasicAuthEnable.GetValue(),
-		"HttpBasicUserName":        appConfig.HttpBasicUserName.GetValue(),
-		"HttpBasicPassword":        appConfig.HttpBasicPassword.GetValue(),
-		"EnableHttpDomainFilter":   appConfig.EnableHttpDomainFilter.GetValue(),
-		"HttpDomainFilterFilePath": appConfig.HttpDomainFilterFilePath.GetValue(),
-		"EnableAdmin":              appConfig.EnableAdmin.GetValue(),
-		"AdminAddress":             appConfig.AdminAddress.GetValue(),
-		"RetryIntervalSec":         appConfig.RetryIntervalSec.GetValue(),
-		"LogFilePath":              appConfig.LogFilePath.GetValue(),
-		"HomeDir":                  appConfig.HomeDir.GetValue(),
+		"ServerIp":                   appConfig.ServerIp.GetValue(),
+		"ServerSshPort":              appConfig.ServerSshPort.GetValue(),
+		"LoginUser":                  appConfig.LoginUser.GetValue(),
+		"SshPrivateKeyPath":          appConfig.SshPrivateKeyPath.GetValue(),
+		"LocalAddress":               appConfig.LocalAddress.GetValue(),
+		"HttpLocalAddress":           appConfig.HttpLocalAddress.GetValue(),
+		"EnableHttp":                 appConfig.EnableHttp.GetValue(),
+		"EnableSocks5":               appConfig.EnableSocks5.GetValue(),
+		"EnableHttpOverSSH":          appConfig.EnableHttpOverSSH.GetValue(),
+		"HttpBasicAuthEnable":        appConfig.HttpBasicAuthEnable.GetValue(),
+		"HttpBasicUserName":          appConfig.HttpBasicUserName.GetValue(),
+		"HttpBasicPassword":          appConfig.HttpBasicPassword.GetValue(),
+		"EnableHttpDomainFilter":     appConfig.EnableHttpDomainFilter.GetValue(),
+		"HttpDomainFilterFilePath":   appConfig.HttpDomainFilterFilePath.GetValue(),
+		"EnableAdmin":                appConfig.EnableAdmin.GetValue(),
+		"AdminAddress":               appConfig.AdminAddress.GetValue(),
+		"RetryIntervalSec":           appConfig.RetryIntervalSec.GetValue(),
+		"SSHDialTimeoutSec":          appConfig.SSHDialTimeoutSec.GetValue(),
+		"SSHDestDialTimeoutSec":      appConfig.SSHDestDialTimeoutSec.GetValue(),
+		"SSHKeepAliveIntervalSec":    appConfig.SSHKeepAliveIntervalSec.GetValue(),
+		"SSHKeepAliveCountMax":       appConfig.SSHKeepAliveCountMax.GetValue(),
+		"SSHReconnectMaxRetries":     appConfig.SSHReconnectMaxRetries.GetValue(),
+		"SSHReconnectMaxIntervalSec": appConfig.SSHReconnectMaxIntervalSec.GetValue(),
+		"LogFilePath":                appConfig.LogFilePath.GetValue(),
+		"HomeDir":                    appConfig.HomeDir.GetValue(),
 	}
 
 	// 定义配置项元数据（包含实际配置键）
 	configMeta := map[string]ConfigMetadata{
-		"ServerIp":                 {Type: "string", Description: "SSH服务器IP地址", Category: "服务器配置", Required: true, ActualKey: appConfig.ServerIp.Key},
-		"ServerSshPort":            {Type: "int", Description: "SSH服务器端口", Category: "服务器配置", Required: true, ActualKey: appConfig.ServerSshPort.Key},
-		"LoginUser":                {Type: "string", Description: "SSH登录用户名", Category: "服务器配置", Required: true, ActualKey: appConfig.LoginUser.Key},
-		"SshPrivateKeyPath":        {Type: "string", Description: "SSH私钥文件路径", Category: "SSH配置", Required: true, ActualKey: appConfig.SshPrivateKeyPath.Key},
-		"LocalAddress":             {Type: "string", Description: "本地SOCKS5代理监听地址", Category: "代理配置", Required: true, ActualKey: appConfig.LocalAddress.Key},
-		"HttpLocalAddress":         {Type: "string", Description: "本地HTTP代理监听地址", Category: "代理配置", Required: false, ActualKey: appConfig.HttpLocalAddress.Key},
-		"EnableHttp":               {Type: "bool", Description: "启用HTTP代理", Category: "代理配置", Required: false, ActualKey: appConfig.EnableHttp.Key},
-		"EnableSocks5":             {Type: "bool", Description: "启用SOCKS5代理", Category: "代理配置", Required: false, ActualKey: appConfig.EnableSocks5.Key},
-		"EnableHttpOverSSH":        {Type: "bool", Description: "启用HTTP Over SSH", Category: "代理配置", Required: false, ActualKey: appConfig.EnableHttpOverSSH.Key},
-		"HttpBasicAuthEnable":      {Type: "bool", Description: "启用HTTP Basic认证", Category: "认证配置", Required: false, ActualKey: appConfig.HttpBasicAuthEnable.Key},
-		"HttpBasicUserName":        {Type: "string", Description: "HTTP Basic认证用户名", Category: "认证配置", Required: false, ActualKey: appConfig.HttpBasicUserName.Key},
-		"HttpBasicPassword":        {Type: "string", Description: "HTTP Basic认证密码", Category: "认证配置", Required: false, ActualKey: appConfig.HttpBasicPassword.Key},
-		"EnableHttpDomainFilter":   {Type: "bool", Description: "启用域名过滤", Category: "过滤配置", Required: false, ActualKey: appConfig.EnableHttpDomainFilter.Key},
-		"HttpDomainFilterFilePath": {Type: "string", Description: "域名过滤文件路径", Category: "过滤配置", Required: false, ActualKey: appConfig.HttpDomainFilterFilePath.Key},
-		"EnableAdmin":              {Type: "bool", Description: "启用管理界面", Category: "管理配置", Required: false, ActualKey: appConfig.EnableAdmin.Key},
-		"AdminAddress":             {Type: "string", Description: "管理界面监听地址", Category: "管理配置", Required: false, ActualKey: appConfig.AdminAddress.Key},
-		"RetryIntervalSec":         {Type: "int", Description: "连接重试间隔(秒)", Category: "高级配置", Required: false, ActualKey: appConfig.RetryIntervalSec.Key},
-		"LogFilePath":              {Type: "string", Description: "日志文件路径", Category: "高级配置", Required: false, ActualKey: appConfig.LogFilePath.Key},
-		"HomeDir":                  {Type: "string", Description: "应用主目录", Category: "高级配置", Required: false, ActualKey: appConfig.HomeDir.Key},
+		"ServerIp":                   {Type: "string", Description: "SSH服务器IP地址", Category: "服务器配置", Required: true, ActualKey: appConfig.ServerIp.Key},
+		"ServerSshPort":              {Type: "int", Description: "SSH服务器端口", Category: "服务器配置", Required: true, ActualKey: appConfig.ServerSshPort.Key},
+		"LoginUser":                  {Type: "string", Description: "SSH登录用户名", Category: "服务器配置", Required: true, ActualKey: appConfig.LoginUser.Key},
+		"SshPrivateKeyPath":          {Type: "string", Description: "SSH私钥文件路径", Category: "SSH配置", Required: true, ActualKey: appConfig.SshPrivateKeyPath.Key},
+		"LocalAddress":               {Type: "string", Description: "本地SOCKS5代理监听地址", Category: "代理配置", Required: true, ActualKey: appConfig.LocalAddress.Key},
+		"HttpLocalAddress":           {Type: "string", Description: "本地HTTP代理监听地址", Category: "代理配置", Required: false, ActualKey: appConfig.HttpLocalAddress.Key},
+		"EnableHttp":                 {Type: "bool", Description: "启用HTTP代理", Category: "代理配置", Required: false, ActualKey: appConfig.EnableHttp.Key},
+		"EnableSocks5":               {Type: "bool", Description: "启用SOCKS5代理", Category: "代理配置", Required: false, ActualKey: appConfig.EnableSocks5.Key},
+		"EnableHttpOverSSH":          {Type: "bool", Description: "启用HTTP Over SSH", Category: "代理配置", Required: false, ActualKey: appConfig.EnableHttpOverSSH.Key},
+		"HttpBasicAuthEnable":        {Type: "bool", Description: "启用HTTP Basic认证", Category: "认证配置", Required: false, ActualKey: appConfig.HttpBasicAuthEnable.Key},
+		"HttpBasicUserName":          {Type: "string", Description: "HTTP Basic认证用户名", Category: "认证配置", Required: false, ActualKey: appConfig.HttpBasicUserName.Key},
+		"HttpBasicPassword":          {Type: "string", Description: "HTTP Basic认证密码", Category: "认证配置", Required: false, ActualKey: appConfig.HttpBasicPassword.Key},
+		"EnableHttpDomainFilter":     {Type: "bool", Description: "启用域名过滤", Category: "过滤配置", Required: false, ActualKey: appConfig.EnableHttpDomainFilter.Key},
+		"HttpDomainFilterFilePath":   {Type: "string", Description: "域名过滤文件路径", Category: "过滤配置", Required: false, ActualKey: appConfig.HttpDomainFilterFilePath.Key},
+		"EnableAdmin":                {Type: "bool", Description: "启用管理界面", Category: "管理配置", Required: false, ActualKey: appConfig.EnableAdmin.Key},
+		"AdminAddress":               {Type: "string", Description: "管理界面监听地址", Category: "管理配置", Required: false, ActualKey: appConfig.AdminAddress.Key},
+		"RetryIntervalSec":           {Type: "int", Description: "连接重试间隔(秒)", Category: "高级配置", Required: false, ActualKey: appConfig.RetryIntervalSec.Key},
+		"SSHDialTimeoutSec":          {Type: "int", Description: "SSH握手超时(秒)", Category: "高级配置", Required: false, ActualKey: appConfig.SSHDialTimeoutSec.Key},
+		"SSHDestDialTimeoutSec":      {Type: "int", Description: "SSH目标连接超时(秒)", Category: "高级配置", Required: false, ActualKey: appConfig.SSHDestDialTimeoutSec.Key},
+		"SSHKeepAliveIntervalSec":    {Type: "int", Description: "SSH保活间隔(秒)", Category: "高级配置", Required: false, ActualKey: appConfig.SSHKeepAliveIntervalSec.Key},
+		"SSHKeepAliveCountMax":       {Type: "int", Description: "SSH保活最大连续失败次数", Category: "高级配置", Required: false, ActualKey: appConfig.SSHKeepAliveCountMax.Key},
+		"SSHReconnectMaxRetries":     {Type: "int", Description: "SSH重连最大重试次数", Category: "高级配置", Required: false, ActualKey: appConfig.SSHReconnectMaxRetries.Key},
+		"SSHReconnectMaxIntervalSec": {Type: "int", Description: "SSH重连最大退避间隔(秒)", Category: "高级配置", Required: false, ActualKey: appConfig.SSHReconnectMaxIntervalSec.Key},
+		"LogFilePath":                {Type: "string", Description: "日志文件路径", Category: "高级配置", Required: false, ActualKey: appConfig.LogFilePath.Key},
+		"HomeDir":                    {Type: "string", Description: "应用主目录", Category: "高级配置", Required: false, ActualKey: appConfig.HomeDir.Key},
 	}
 
 	// 创建配置键映射（前端属性名 -> 实际配置键）
 	configKeys := map[string]string{
-		"ServerIp":                 appConfig.ServerIp.Key,
-		"ServerSshPort":            appConfig.ServerSshPort.Key,
-		"LoginUser":                appConfig.LoginUser.Key,
-		"SshPrivateKeyPath":        appConfig.SshPrivateKeyPath.Key,
-		"LocalAddress":             appConfig.LocalAddress.Key,
-		"HttpLocalAddress":         appConfig.HttpLocalAddress.Key,
-		"EnableHttp":               appConfig.EnableHttp.Key,
-		"EnableSocks5":             appConfig.EnableSocks5.Key,
-		"EnableHttpOverSSH":        appConfig.EnableHttpOverSSH.Key,
-		"HttpBasicAuthEnable":      appConfig.HttpBasicAuthEnable.Key,
-		"HttpBasicUserName":        appConfig.HttpBasicUserName.Key,
-		"HttpBasicPassword":        appConfig.HttpBasicPassword.Key,
-		"EnableHttpDomainFilter":   appConfig.EnableHttpDomainFilter.Key,
-		"HttpDomainFilterFilePath": appConfig.HttpDomainFilterFilePath.Key,
-		"EnableAdmin":              appConfig.EnableAdmin.Key,
-		"AdminAddress":             appConfig.AdminAddress.Key,
-		"RetryIntervalSec":         appConfig.RetryIntervalSec.Key,
-		"LogFilePath":              appConfig.LogFilePath.Key,
-		"HomeDir":                  appConfig.HomeDir.Key,
+		"ServerIp":                   appConfig.ServerIp.Key,
+		"ServerSshPort":              appConfig.ServerSshPort.Key,
+		"LoginUser":                  appConfig.LoginUser.Key,
+		"SshPrivateKeyPath":          appConfig.SshPrivateKeyPath.Key,
+		"LocalAddress":               appConfig.LocalAddress.Key,
+		"HttpLocalAddress":           appConfig.HttpLocalAddress.Key,
+		"EnableHttp":                 appConfig.EnableHttp.Key,
+		"EnableSocks5":               appConfig.EnableSocks5.Key,
+		"EnableHttpOverSSH":          appConfig.EnableHttpOverSSH.Key,
+		"HttpBasicAuthEnable":        appConfig.HttpBasicAuthEnable.Key,
+		"HttpBasicUserName":          appConfig.HttpBasicUserName.Key,
+		"HttpBasicPassword":          appConfig.HttpBasicPassword.Key,
+		"EnableHttpDomainFilter":     appConfig.EnableHttpDomainFilter.Key,
+		"HttpDomainFilterFilePath":   appConfig.HttpDomainFilterFilePath.Key,
+		"EnableAdmin":                appConfig.EnableAdmin.Key,
+		"AdminAddress":               appConfig.AdminAddress.Key,
+		"RetryIntervalSec":           appConfig.RetryIntervalSec.Key,
+		"SSHDialTimeoutSec":          appConfig.SSHDialTimeoutSec.Key,
+		"SSHDestDialTimeoutSec":      appConfig.SSHDestDialTimeoutSec.Key,
+		"SSHKeepAliveIntervalSec":    appConfig.SSHKeepAliveIntervalSec.Key,
+		"SSHKeepAliveCountMax":       appConfig.SSHKeepAliveCountMax.Key,
+		"SSHReconnectMaxRetries":     appConfig.SSHReconnectMaxRetries.Key,
+		"SSHReconnectMaxIntervalSec": appConfig.SSHReconnectMaxIntervalSec.Key,
+		"LogFilePath":                appConfig.LogFilePath.Key,
+		"HomeDir":                    appConfig.HomeDir.Key,
 	}
 
 	app_config := AppConfig{
@@ -364,7 +386,7 @@ func ShowVersionView(w http.ResponseWriter, r *http.Request) {
 						Name:          release.Name,
 						Body:          release.Body,
 						Prerelease:    release.Prerelease,
-						PublishedAt:   release.PublishedAt,
+						PublishedAt:   formatReleasePublishedAt(release.PublishedAt),
 						IsNewer:       isNewerVersion(release.TagName, currentVersion),
 						MatchingAsset: findMatchingAsset(release.Assets),
 					}
@@ -490,11 +512,17 @@ func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 生成下载ID
 	downloadID := fmt.Sprintf("download_%d", time.Now().Unix())
+	// 预先创建下载记录，避免前端首次轮询时出现“下载不存在”
+	downloadManager.CreateDownload(downloadID, fileName, 0)
 
 	// 启动后台下载
 	filePath := filepath.Join(downloadDir, fileName)
 	safe.GO(func() {
 		if err := downloadFileWithProgress(downloadURL, filePath, downloadID); err != nil {
+			if isDownloadCanceledError(err) {
+				downloadManager.SetStatus(downloadID, "cancelled")
+				return
+			}
 			downloadManager.SetError(downloadID, err.Error())
 		}
 	})
@@ -503,6 +531,36 @@ func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
 		"success":    true,
 		"downloadId": downloadID,
 		"message":    "下载已开始",
+	})
+}
+
+func CancelDownloadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
+		return
+	}
+
+	downloadID := r.FormValue("id")
+	if strings.TrimSpace(downloadID) == "" {
+		writeJSONResponse(w, map[string]interface{}{
+			"success": false,
+			"error":   "缺少下载ID",
+		})
+		return
+	}
+
+	cancelled, message := downloadManager.CancelDownload(downloadID)
+	if !cancelled {
+		writeJSONResponse(w, map[string]interface{}{
+			"success": false,
+			"error":   message,
+		})
+		return
+	}
+
+	writeJSONResponse(w, map[string]interface{}{
+		"success": true,
+		"message": message,
 	})
 }
 
@@ -674,6 +732,8 @@ type DownloadProgress struct {
 	Status         string
 	Error          string
 	StartTime      time.Time
+	ctx            context.Context
+	cancel         context.CancelFunc
 	mutex          sync.RWMutex
 }
 
@@ -689,6 +749,25 @@ var downloadManager = &DownloadManager{
 func (dm *DownloadManager) CreateDownload(id, fileName string, totalSize int64) *DownloadProgress {
 	dm.mutex.Lock()
 	defer dm.mutex.Unlock()
+	if existing, ok := dm.downloads[id]; ok && existing != nil {
+		existing.mutex.Lock()
+		if fileName != "" {
+			existing.FileName = fileName
+		}
+		if totalSize > 0 {
+			existing.TotalSize = totalSize
+		}
+		if existing.Status == "" {
+			existing.Status = "downloading"
+		}
+		if existing.ctx == nil || existing.cancel == nil {
+			existing.ctx, existing.cancel = context.WithCancel(context.Background())
+		}
+		existing.mutex.Unlock()
+		return existing
+	}
+
+	taskCtx, cancel := context.WithCancel(context.Background())
 
 	progress := &DownloadProgress{
 		ID:        id,
@@ -696,6 +775,8 @@ func (dm *DownloadManager) CreateDownload(id, fileName string, totalSize int64) 
 		TotalSize: totalSize,
 		Status:    "downloading",
 		StartTime: time.Now(),
+		ctx:       taskCtx,
+		cancel:    cancel,
 	}
 
 	dm.downloads[id] = progress
@@ -746,6 +827,37 @@ func (dm *DownloadManager) SetError(id, error string) {
 		progress.Error = error
 		progress.mutex.Unlock()
 	}
+}
+
+func (dm *DownloadManager) CancelDownload(id string) (bool, string) {
+	dm.mutex.RLock()
+	progress := dm.downloads[id]
+	dm.mutex.RUnlock()
+
+	if progress == nil {
+		return false, "下载不存在"
+	}
+
+	progress.mutex.Lock()
+	defer progress.mutex.Unlock()
+
+	if progress.Status == "completed" {
+		return false, "下载已完成，无法取消"
+	}
+	if progress.Status == "error" {
+		return false, "下载已失败，无法取消"
+	}
+	if progress.Status == "cancelled" {
+		return false, "下载已取消"
+	}
+
+	progress.Status = "cancelled"
+	progress.Error = "用户取消下载"
+	if progress.cancel != nil {
+		progress.cancel()
+	}
+
+	return true, "已取消本次下载"
 }
 
 func GetDownloadProgressHandler(w http.ResponseWriter, r *http.Request) {
@@ -822,8 +934,42 @@ func getCurrentFileInfo() (FileInfo, error) {
 }
 
 func isNewerVersion(newVersion, currentVersion string) bool {
-	// 简单的版本比较逻辑
-	return strings.TrimPrefix(newVersion, "v") > strings.TrimPrefix(currentVersion, "v")
+	parse := func(version string) [3]int {
+		version = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(version, "v"), "V"))
+		parts := strings.Split(version, ".")
+		result := [3]int{0, 0, 0}
+		for i := 0; i < len(parts) && i < 3; i++ {
+			segment := strings.TrimSpace(parts[i])
+			if segment == "" {
+				continue
+			}
+			end := 0
+			for end < len(segment) && segment[end] >= '0' && segment[end] <= '9' {
+				end++
+			}
+			if end == 0 {
+				continue
+			}
+			value, err := strconv.Atoi(segment[:end])
+			if err == nil {
+				result[i] = value
+			}
+		}
+		return result
+	}
+
+	newParts := parse(newVersion)
+	currentParts := parse(currentVersion)
+	for i := 0; i < 3; i++ {
+		if newParts[i] > currentParts[i] {
+			return true
+		}
+		if newParts[i] < currentParts[i] {
+			return false
+		}
+	}
+
+	return false
 }
 
 func formatFileSize(bytes int64) string {
@@ -839,12 +985,38 @@ func formatFileSize(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
+func formatReleasePublishedAt(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "-"
+	}
+
+	t, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339Nano, trimmed)
+		if err != nil {
+			return trimmed
+		}
+	}
+
+	return t.Local().Format("2006-01-02 15:04")
+}
+
 func downloadFile(downloadURL, filepath string) error {
 	return downloadFileWithProgress(downloadURL, filepath, "")
 }
 
 func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 	appConfig := cfg.NewAppConfig()
+
+	var progress *DownloadProgress
+	if progressID != "" {
+		fileName := filepath[strings.LastIndex(filepath, "/")+1:]
+		if strings.Contains(filepath, "\\") {
+			fileName = filepath[strings.LastIndex(filepath, "\\")+1:]
+		}
+		progress = downloadManager.CreateDownload(progressID, fileName, 0)
+	}
 
 	// 创建 HTTP 客户端
 	client := &http.Client{
@@ -873,13 +1045,24 @@ func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 		client.Transport = transport
 	}
 
-	req, err := http.NewRequest("GET", downloadURL, nil)
+	requestCtx := context.Background()
+	if progress != nil && progress.ctx != nil {
+		requestCtx = progress.ctx
+	}
+
+	req, err := http.NewRequestWithContext(requestCtx, "GET", downloadURL, nil)
 	if err != nil {
 		return err
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
+		if isDownloadCanceledError(err) {
+			if progress != nil {
+				downloadManager.SetStatus(progressID, "cancelled")
+			}
+			return nil
+		}
 		return err
 	}
 	defer resp.Body.Close()
@@ -893,19 +1076,22 @@ func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	cleanupPartialFile := false
+	defer func() {
+		_ = out.Close()
+		if cleanupPartialFile {
+			if removeErr := os.Remove(filepath); removeErr != nil && !os.IsNotExist(removeErr) {
+				log.Printf("删除已取消下载的临时文件失败: %v, file=%s", removeErr, filepath)
+			}
+		}
+	}()
 
 	// 获取文件大小
 	totalSize := resp.ContentLength
 
-	// 如果提供了进度ID，创建进度跟踪
-	var progress *DownloadProgress
-	if progressID != "" {
-		fileName := filepath[strings.LastIndex(filepath, "/")+1:]
-		if strings.Contains(filepath, "\\") {
-			fileName = filepath[strings.LastIndex(filepath, "\\")+1:]
-		}
-		progress = downloadManager.CreateDownload(progressID, fileName, totalSize)
+	// 如果提供了进度ID，刷新进度总大小
+	if progress != nil {
+		progress = downloadManager.CreateDownload(progressID, progress.FileName, totalSize)
 	}
 
 	// 创建进度读取器
@@ -924,6 +1110,13 @@ func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 	// 复制文件内容
 	_, err = io.Copy(out, reader)
 	if err != nil {
+		if isDownloadCanceledError(err) {
+			if progress != nil {
+				downloadManager.SetStatus(progressID, "cancelled")
+			}
+			cleanupPartialFile = true
+			return nil
+		}
 		if progress != nil {
 			downloadManager.SetError(progressID, err.Error())
 		}
@@ -936,6 +1129,19 @@ func downloadFileWithProgress(downloadURL, filepath, progressID string) error {
 	}
 
 	return nil
+}
+
+func isDownloadCanceledError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "context canceled") ||
+		strings.Contains(errText, "operation was canceled") ||
+		strings.Contains(errText, "request canceled")
 }
 
 // 进度读取器

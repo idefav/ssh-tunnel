@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,33 +23,33 @@ const (
 )
 
 type Release struct {
-	TagName     string `json:"tag_name"`
-	Name        string `json:"name"`
-	Body        string `json:"body"`
-	Prerelease  bool   `json:"prerelease"`
-	Draft       bool   `json:"draft"`
-	PublishedAt string `json:"published_at"`
+	TagName     string  `json:"tag_name"`
+	Name        string  `json:"name"`
+	Body        string  `json:"body"`
+	Prerelease  bool    `json:"prerelease"`
+	Draft       bool    `json:"draft"`
+	PublishedAt string  `json:"published_at"`
 	Assets      []Asset `json:"assets"`
 }
 
 type Asset struct {
-	Name               string `json:"name"`
-	DownloadURL        string `json:"browser_download_url"`
-	Size               int64  `json:"size"`
-	ContentType        string `json:"content_type"`
-	DownloadCount      int    `json:"download_count"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	Name          string `json:"name"`
+	DownloadURL   string `json:"browser_download_url"`
+	Size          int64  `json:"size"`
+	ContentType   string `json:"content_type"`
+	DownloadCount int    `json:"download_count"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 type UpdaterConfig struct {
-	Enabled         bool
-	Owner           string
-	Repo            string
-	CurrentVersion  string
-	CheckInterval   time.Duration
-	AutoDownload    bool
-	AutoInstall     bool
+	Enabled        bool
+	Owner          string
+	Repo           string
+	CurrentVersion string
+	CheckInterval  time.Duration
+	AutoDownload   bool
+	AutoInstall    bool
 }
 
 type Updater struct {
@@ -128,7 +129,7 @@ func (u *Updater) CheckForUpdates() (*Release, bool) {
 	}
 
 	latestRelease := releases[0]
-	
+
 	// 跳过预发布版本和草稿版本
 	for _, release := range releases {
 		if !release.Prerelease && !release.Draft {
@@ -147,12 +148,12 @@ func (u *Updater) CheckForUpdates() (*Release, bool) {
 // GetReleases 获取所有发布版本
 func (u *Updater) GetReleases() ([]Release, error) {
 	url := fmt.Sprintf(GITHUB_API_URL, u.config.Owner, u.config.Repo)
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	req.Header.Set("User-Agent", USER_AGENT)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
@@ -183,7 +184,7 @@ func (u *Updater) DownloadRelease(release *Release, targetDir string) (string, e
 	}
 
 	filename := filepath.Join(targetDir, asset.Name)
-	
+
 	// 下载文件
 	if err := u.downloadFile(asset.DownloadURL, filename); err != nil {
 		return "", fmt.Errorf("下载失败: %v", err)
@@ -241,9 +242,9 @@ func (u *Updater) IsEnabled() bool {
 func (u *Updater) SetEnabled(enabled bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	
+
 	u.config.Enabled = enabled
-	
+
 	if enabled && !u.isRunning {
 		go u.Start()
 	} else if !enabled && u.isRunning {
@@ -253,26 +254,56 @@ func (u *Updater) SetEnabled(enabled bool) {
 
 // isNewerVersion 比较版本号，判断是否为更新版本
 func (u *Updater) isNewerVersion(newVersion, currentVersion string) bool {
-	// 移除版本号前缀 v
-	newVersion = strings.TrimPrefix(newVersion, "v")
-	currentVersion = strings.TrimPrefix(currentVersion, "v")
-	
-	// 简单的版本比较，可以根据需要改进
-	return newVersion != currentVersion && newVersion > currentVersion
+	parse := func(version string) [3]int {
+		version = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(version, "v"), "V"))
+		parts := strings.Split(version, ".")
+		result := [3]int{0, 0, 0}
+		for i := 0; i < len(parts) && i < 3; i++ {
+			segment := strings.TrimSpace(parts[i])
+			if segment == "" {
+				continue
+			}
+			end := 0
+			for end < len(segment) && segment[end] >= '0' && segment[end] <= '9' {
+				end++
+			}
+			if end == 0 {
+				continue
+			}
+			value, err := strconv.Atoi(segment[:end])
+			if err == nil {
+				result[i] = value
+			}
+		}
+		return result
+	}
+
+	newParts := parse(newVersion)
+	currentParts := parse(currentVersion)
+	for i := 0; i < 3; i++ {
+		if newParts[i] > currentParts[i] {
+			return true
+		}
+		if newParts[i] < currentParts[i] {
+			return false
+		}
+	}
+
+	return false
 }
 
 // findAssetForCurrentPlatform 根据当前平台查找合适的资源文件
 func (u *Updater) findAssetForCurrentPlatform(assets []Asset) *Asset {
 	osName := runtime.GOOS
 	archName := runtime.GOARCH
-	
+
 	// 构建平台标识符
 	platformIdentifiers := []string{
 		fmt.Sprintf("%s-%s", osName, archName),
 		fmt.Sprintf("%s_%s", osName, archName),
 		osName,
 	}
-	
+
 	// 查找匹配的资源文件
 	for _, asset := range assets {
 		assetNameLower := strings.ToLower(asset.Name)
@@ -282,7 +313,7 @@ func (u *Updater) findAssetForCurrentPlatform(assets []Asset) *Asset {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -292,7 +323,7 @@ func (u *Updater) downloadFile(url, filepath string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	req.Header.Set("User-Agent", USER_AGENT)
 
 	client := &http.Client{Timeout: 5 * time.Minute}

@@ -1,10 +1,11 @@
 package router
 
 import (
-	"github.com/gorilla/mux"
 	"net/http"
 	"ssh-tunnel/tunnel"
 	"ssh-tunnel/views/handler"
+
+	"github.com/gorilla/mux"
 )
 
 func RegisterRoutes(r *mux.Router, tunnel *tunnel.Tunnel) {
@@ -31,6 +32,7 @@ func RegisterRoutes(r *mux.Router, tunnel *tunnel.Tunnel) {
 	apiRouter := r.PathPrefix("/api").Subrouter()
 	apiRouter.HandleFunc("/version/check", handler.CheckForUpdatesHandler)
 	apiRouter.HandleFunc("/version/download", handler.DownloadReleaseHandler)
+	apiRouter.HandleFunc("/version/download/cancel", handler.CancelDownloadHandler)
 	apiRouter.HandleFunc("/version/update", handler.UpdateToVersionHandler)
 	apiRouter.HandleFunc("/version/settings", handler.SaveUpdateSettingsHandler)
 	apiRouter.HandleFunc("/version/progress", handler.GetDownloadProgressHandler)

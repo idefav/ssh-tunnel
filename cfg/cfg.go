@@ -65,60 +65,72 @@ func NewAppConfig() *AppConfig {
 				defaultHomeDir = "."
 			}
 			appConfigInstance = &AppConfig{
-				HomeDir:                  NewConfigItem(HOME_DIR_KEY, "", path.Join(defaultHomeDir, APP_NAME_HIDE), "配置文件存储目录", ""),
-				ServerIp:                 NewConfigItem(SERVER_IP_KEY, "s", "", "服务器IP地址", ""),
-				ServerSshPort:            NewConfigItem(SERVER_SSH_PORT_KEY, "p", 22, "SSH服务器端口", 22),
-				SshPrivateKeyPath:        NewConfigItem(SSH_PRIVATE_KEY_PATH_KEY, "", path.Join(defaultHomeDir, ".ssh/id_rsa"), "SSH私钥文件路径", ""),
-				LoginUser:                NewConfigItem(LOGIN_USER_KEY, "u", "root", "SSH登录用户名", ""),
-				LocalAddress:             NewConfigItem(LOCAL_ADDRESS_KEY, "l", "0.0.0.0:1081", "本地地址", ""),
-				HttpLocalAddress:         NewConfigItem(HTTP_LOCAL_ADDRESS_KEY, "", "0.0.0.0:1082", "HTTP本地地址", ""),
-				HttpBasicAuthEnable:      NewConfigItem(HTTP_BASIC_AUTH_ENABLE_KEY, "", false, "是否启用HTTP基本认证", false),
-				HttpBasicUserName:        NewConfigItem(HTTP_BASIC_USER_NAME_KEY, "", "", "HTTP基本认证用户名", ""),
-				HttpBasicPassword:        NewConfigItem(HTTP_BASIC_PASSWORD_KEY, "", "", "HTTP基本认证密码", ""),
-				EnableHttp:               NewConfigItem(ENABLE_HTTP_KEY, "", false, "开启Http代理", false),
-				EnableSocks5:             NewConfigItem(ENABLE_SOCKS5_KEY, "", true, "开启Socks5代理", false),
-				EnableHttpOverSSH:        NewConfigItem(ENABLE_HTTP_OVER_SSH_KEY, "", false, "开启HTTP Over SSH", false),
-				EnableHttpDomainFilter:   NewConfigItem(ENABLE_HTTP_DOMAIN_FILTER_KEY, "", false, "启用HTTP域名过滤", false),
-				HttpDomainFilterFilePath: NewConfigItem(HTTP_DOMAIN_FILTER_FILE_PATH_KEY, "", path.Join(defaultHomeDir, APP_NAME_HIDE, "domain.txt"), "HTTP域名过滤文件路径", ""),
-				EnableAdmin:              NewConfigItem(ENABLE_ADMIN_KEY, "", true, "开启管理页面", true),
-				AdminAddress:             NewConfigItem(ADMIN_ADDRESS_KEY, "", ":1083", "管理页面监听地址", ""),
-				RetryIntervalSec:         NewConfigItem(RETRY_INTERVAL_SEC_KEY, "", 3, "重试间隔时间(秒)", 3),
-				LogFilePath:              NewConfigItem(LOG_FILE_PATH_KEY, "", path.Join(defaultHomeDir, APP_NAME_HIDE, "console.log"), "日志文件路径", ""),
+				HomeDir:                    NewConfigItem(HOME_DIR_KEY, "", path.Join(defaultHomeDir, APP_NAME_HIDE), "配置文件存储目录", ""),
+				ServerIp:                   NewConfigItem(SERVER_IP_KEY, "s", "", "服务器IP地址", ""),
+				ServerSshPort:              NewConfigItem(SERVER_SSH_PORT_KEY, "p", 22, "SSH服务器端口", 22),
+				SshPrivateKeyPath:          NewConfigItem(SSH_PRIVATE_KEY_PATH_KEY, "", path.Join(defaultHomeDir, ".ssh/id_rsa"), "SSH私钥文件路径", ""),
+				LoginUser:                  NewConfigItem(LOGIN_USER_KEY, "u", "root", "SSH登录用户名", ""),
+				LocalAddress:               NewConfigItem(LOCAL_ADDRESS_KEY, "l", "0.0.0.0:1081", "本地地址", ""),
+				HttpLocalAddress:           NewConfigItem(HTTP_LOCAL_ADDRESS_KEY, "", "0.0.0.0:1082", "HTTP本地地址", ""),
+				HttpBasicAuthEnable:        NewConfigItem(HTTP_BASIC_AUTH_ENABLE_KEY, "", false, "是否启用HTTP基本认证", false),
+				HttpBasicUserName:          NewConfigItem(HTTP_BASIC_USER_NAME_KEY, "", "", "HTTP基本认证用户名", ""),
+				HttpBasicPassword:          NewConfigItem(HTTP_BASIC_PASSWORD_KEY, "", "", "HTTP基本认证密码", ""),
+				EnableHttp:                 NewConfigItem(ENABLE_HTTP_KEY, "", false, "开启Http代理", false),
+				EnableSocks5:               NewConfigItem(ENABLE_SOCKS5_KEY, "", true, "开启Socks5代理", false),
+				EnableHttpOverSSH:          NewConfigItem(ENABLE_HTTP_OVER_SSH_KEY, "", false, "开启HTTP Over SSH", false),
+				EnableHttpDomainFilter:     NewConfigItem(ENABLE_HTTP_DOMAIN_FILTER_KEY, "", false, "启用HTTP域名过滤", false),
+				HttpDomainFilterFilePath:   NewConfigItem(HTTP_DOMAIN_FILTER_FILE_PATH_KEY, "", path.Join(defaultHomeDir, APP_NAME_HIDE, "domain.txt"), "HTTP域名过滤文件路径", ""),
+				EnableAdmin:                NewConfigItem(ENABLE_ADMIN_KEY, "", true, "开启管理页面", true),
+				AdminAddress:               NewConfigItem(ADMIN_ADDRESS_KEY, "", ":1083", "管理页面监听地址", ""),
+				RetryIntervalSec:           NewConfigItem(RETRY_INTERVAL_SEC_KEY, "", 3, "重试间隔时间(秒)", 3),
+				SSHDialTimeoutSec:          NewConfigItem(SSH_DIAL_TIMEOUT_SEC_KEY, "", 5, "SSH握手超时(秒)", 5),
+				SSHDestDialTimeoutSec:      NewConfigItem(SSH_DEST_DIAL_TIMEOUT_SEC_KEY, "", 3, "SSH目标连接超时(秒)", 3),
+				SSHKeepAliveIntervalSec:    NewConfigItem(SSH_KEEPALIVE_INTERVAL_SEC_KEY, "", 2, "SSH保活间隔(秒)", 2),
+				SSHKeepAliveCountMax:       NewConfigItem(SSH_KEEPALIVE_COUNT_MAX_KEY, "", 2, "SSH保活最大连续失败次数", 2),
+				SSHReconnectMaxRetries:     NewConfigItem(SSH_RECONNECT_MAX_RETRIES_KEY, "", 20, "SSH重连最大重试次数", 20),
+				SSHReconnectMaxIntervalSec: NewConfigItem(SSH_RECONNECT_MAX_INTERVAL_SEC_KEY, "", 5, "SSH重连最大退避间隔(秒)", 5),
+				LogFilePath:                NewConfigItem(LOG_FILE_PATH_KEY, "", path.Join(defaultHomeDir, APP_NAME_HIDE, "console.log"), "日志文件路径", ""),
 
 				// 自动更新配置
-				AutoUpdateEnabled:        NewConfigItem(AUTO_UPDATE_ENABLED_KEY, "", false, "是否启用自动更新", false),
+				AutoUpdateEnabled:        NewConfigItem(AUTO_UPDATE_ENABLED_KEY, "", true, "是否启用自动更新", true),
 				AutoUpdateOwner:          NewConfigItem(AUTO_UPDATE_OWNER_KEY, "", "idefav", "GitHub仓库所有者", ""),
 				AutoUpdateRepo:           NewConfigItem(AUTO_UPDATE_REPO_KEY, "", "ssh-tunnel", "GitHub仓库名称", ""),
-				AutoUpdateCurrentVersion: NewConfigItem(AUTO_UPDATE_CURRENT_VERSION_KEY, "", "v1.0.0", "当前版本号", ""),
+				AutoUpdateCurrentVersion: NewConfigItem(AUTO_UPDATE_CURRENT_VERSION_KEY, "", "v0.0.0", "当前版本号", ""),
 				AutoUpdateCheckInterval:  NewConfigItem(AUTO_UPDATE_CHECK_INTERVAL_KEY, "", 3600, "检查更新间隔(秒)", 3600),
 			}
 		} else {
 			appConfigInstance = &AppConfig{
-				HomeDir:                  NewConfigItem(HOME_DIR_KEY, "", path.Join(u.HomeDir, APP_NAME_HIDE), "配置文件存储目录", ""),
-				ServerIp:                 NewConfigItem(SERVER_IP_KEY, "s", "", "服务器IP地址", ""),
-				ServerSshPort:            NewConfigItem(SERVER_SSH_PORT_KEY, "p", 22, "SSH服务器端口", 22),
-				SshPrivateKeyPath:        NewConfigItem(SSH_PRIVATE_KEY_PATH_KEY, "", path.Join(u.HomeDir, ".ssh/id_rsa"), "SSH私钥文件路径", ""),
-				LoginUser:                NewConfigItem(LOGIN_USER_KEY, "u", "root", "SSH登录用户名", ""),
-				LocalAddress:             NewConfigItem(LOCAL_ADDRESS_KEY, "l", "0.0.0.0:1081", "本地地址", ""),
-				HttpLocalAddress:         NewConfigItem(HTTP_LOCAL_ADDRESS_KEY, "", "0.0.0.0:1082", "HTTP本地地址", ""),
-				HttpBasicAuthEnable:      NewConfigItem(HTTP_BASIC_AUTH_ENABLE_KEY, "", false, "是否启用HTTP基本认证", false),
-				HttpBasicUserName:        NewConfigItem(HTTP_BASIC_USER_NAME_KEY, "", "", "HTTP基本认证用户名", ""),
-				HttpBasicPassword:        NewConfigItem(HTTP_BASIC_PASSWORD_KEY, "", "", "HTTP基本认证密码", ""),
-				EnableHttp:               NewConfigItem(ENABLE_HTTP_KEY, "", false, "开启Http代理", false),
-				EnableSocks5:             NewConfigItem(ENABLE_SOCKS5_KEY, "", true, "开启Socks5代理", false),
-				EnableHttpOverSSH:        NewConfigItem(ENABLE_HTTP_OVER_SSH_KEY, "", false, "开启HTTP Over SSH", false),
-				EnableHttpDomainFilter:   NewConfigItem(ENABLE_HTTP_DOMAIN_FILTER_KEY, "", false, "启用HTTP域名过滤", false),
-				HttpDomainFilterFilePath: NewConfigItem(HTTP_DOMAIN_FILTER_FILE_PATH_KEY, "", path.Join(u.HomeDir, APP_NAME_HIDE, "domain.txt"), "HTTP域名过滤文件路径", ""),
-				EnableAdmin:              NewConfigItem(ENABLE_ADMIN_KEY, "", true, "开启管理页面", true),
-				AdminAddress:             NewConfigItem(ADMIN_ADDRESS_KEY, "", ":1083", "管理页面监听地址", ""),
-				RetryIntervalSec:         NewConfigItem(RETRY_INTERVAL_SEC_KEY, "", 3, "重试间隔时间(秒)", 3),
-				LogFilePath:              NewConfigItem(LOG_FILE_PATH_KEY, "", path.Join(u.HomeDir, APP_NAME_HIDE, "console.log"), "日志文件路径", ""),
+				HomeDir:                    NewConfigItem(HOME_DIR_KEY, "", path.Join(u.HomeDir, APP_NAME_HIDE), "配置文件存储目录", ""),
+				ServerIp:                   NewConfigItem(SERVER_IP_KEY, "s", "", "服务器IP地址", ""),
+				ServerSshPort:              NewConfigItem(SERVER_SSH_PORT_KEY, "p", 22, "SSH服务器端口", 22),
+				SshPrivateKeyPath:          NewConfigItem(SSH_PRIVATE_KEY_PATH_KEY, "", path.Join(u.HomeDir, ".ssh/id_rsa"), "SSH私钥文件路径", ""),
+				LoginUser:                  NewConfigItem(LOGIN_USER_KEY, "u", "root", "SSH登录用户名", ""),
+				LocalAddress:               NewConfigItem(LOCAL_ADDRESS_KEY, "l", "0.0.0.0:1081", "本地地址", ""),
+				HttpLocalAddress:           NewConfigItem(HTTP_LOCAL_ADDRESS_KEY, "", "0.0.0.0:1082", "HTTP本地地址", ""),
+				HttpBasicAuthEnable:        NewConfigItem(HTTP_BASIC_AUTH_ENABLE_KEY, "", false, "是否启用HTTP基本认证", false),
+				HttpBasicUserName:          NewConfigItem(HTTP_BASIC_USER_NAME_KEY, "", "", "HTTP基本认证用户名", ""),
+				HttpBasicPassword:          NewConfigItem(HTTP_BASIC_PASSWORD_KEY, "", "", "HTTP基本认证密码", ""),
+				EnableHttp:                 NewConfigItem(ENABLE_HTTP_KEY, "", false, "开启Http代理", false),
+				EnableSocks5:               NewConfigItem(ENABLE_SOCKS5_KEY, "", true, "开启Socks5代理", false),
+				EnableHttpOverSSH:          NewConfigItem(ENABLE_HTTP_OVER_SSH_KEY, "", false, "开启HTTP Over SSH", false),
+				EnableHttpDomainFilter:     NewConfigItem(ENABLE_HTTP_DOMAIN_FILTER_KEY, "", false, "启用HTTP域名过滤", false),
+				HttpDomainFilterFilePath:   NewConfigItem(HTTP_DOMAIN_FILTER_FILE_PATH_KEY, "", path.Join(u.HomeDir, APP_NAME_HIDE, "domain.txt"), "HTTP域名过滤文件路径", ""),
+				EnableAdmin:                NewConfigItem(ENABLE_ADMIN_KEY, "", true, "开启管理页面", true),
+				AdminAddress:               NewConfigItem(ADMIN_ADDRESS_KEY, "", ":1083", "管理页面监听地址", ""),
+				RetryIntervalSec:           NewConfigItem(RETRY_INTERVAL_SEC_KEY, "", 3, "重试间隔时间(秒)", 3),
+				SSHDialTimeoutSec:          NewConfigItem(SSH_DIAL_TIMEOUT_SEC_KEY, "", 5, "SSH握手超时(秒)", 5),
+				SSHDestDialTimeoutSec:      NewConfigItem(SSH_DEST_DIAL_TIMEOUT_SEC_KEY, "", 3, "SSH目标连接超时(秒)", 3),
+				SSHKeepAliveIntervalSec:    NewConfigItem(SSH_KEEPALIVE_INTERVAL_SEC_KEY, "", 2, "SSH保活间隔(秒)", 2),
+				SSHKeepAliveCountMax:       NewConfigItem(SSH_KEEPALIVE_COUNT_MAX_KEY, "", 2, "SSH保活最大连续失败次数", 2),
+				SSHReconnectMaxRetries:     NewConfigItem(SSH_RECONNECT_MAX_RETRIES_KEY, "", 20, "SSH重连最大重试次数", 20),
+				SSHReconnectMaxIntervalSec: NewConfigItem(SSH_RECONNECT_MAX_INTERVAL_SEC_KEY, "", 5, "SSH重连最大退避间隔(秒)", 5),
+				LogFilePath:                NewConfigItem(LOG_FILE_PATH_KEY, "", path.Join(u.HomeDir, APP_NAME_HIDE, "console.log"), "日志文件路径", ""),
 
 				// 自动更新配置
-				AutoUpdateEnabled:        NewConfigItem(AUTO_UPDATE_ENABLED_KEY, "", false, "是否启用自动更新", false),
+				AutoUpdateEnabled:        NewConfigItem(AUTO_UPDATE_ENABLED_KEY, "", true, "是否启用自动更新", true),
 				AutoUpdateOwner:          NewConfigItem(AUTO_UPDATE_OWNER_KEY, "", "idefav", "GitHub仓库所有者", ""),
 				AutoUpdateRepo:           NewConfigItem(AUTO_UPDATE_REPO_KEY, "", "ssh-tunnel", "GitHub仓库名称", ""),
-				AutoUpdateCurrentVersion: NewConfigItem(AUTO_UPDATE_CURRENT_VERSION_KEY, "", "v1.0.0", "当前版本号", ""),
+				AutoUpdateCurrentVersion: NewConfigItem(AUTO_UPDATE_CURRENT_VERSION_KEY, "", "v0.0.0", "当前版本号", ""),
 				AutoUpdateCheckInterval:  NewConfigItem(AUTO_UPDATE_CHECK_INTERVAL_KEY, "", 3600, "检查更新间隔(秒)", 3600),
 
 				// 下载代理配置
@@ -164,6 +176,12 @@ func (appConfig *AppConfig) Update() {
 	appConfigInstance.EnableAdmin.SetValue(config.GetBool(appConfigInstance.EnableAdmin.Key))
 	appConfigInstance.AdminAddress.SetValue(config.GetString(appConfigInstance.AdminAddress.Key))
 	appConfigInstance.RetryIntervalSec.SetValue(config.GetInt(appConfigInstance.RetryIntervalSec.Key))
+	appConfigInstance.SSHDialTimeoutSec.SetValue(config.GetInt(appConfigInstance.SSHDialTimeoutSec.Key))
+	appConfigInstance.SSHDestDialTimeoutSec.SetValue(config.GetInt(appConfigInstance.SSHDestDialTimeoutSec.Key))
+	appConfigInstance.SSHKeepAliveIntervalSec.SetValue(config.GetInt(appConfigInstance.SSHKeepAliveIntervalSec.Key))
+	appConfigInstance.SSHKeepAliveCountMax.SetValue(config.GetInt(appConfigInstance.SSHKeepAliveCountMax.Key))
+	appConfigInstance.SSHReconnectMaxRetries.SetValue(config.GetInt(appConfigInstance.SSHReconnectMaxRetries.Key))
+	appConfigInstance.SSHReconnectMaxIntervalSec.SetValue(config.GetInt(appConfigInstance.SSHReconnectMaxIntervalSec.Key))
 	appConfigInstance.LogFilePath.SetValue(config.GetString(appConfigInstance.LogFilePath.Key))
 
 	// 更新自动更新配置
@@ -205,8 +223,14 @@ const (
 	ENABLE_ADMIN_KEY  = "admin.enable"
 	ADMIN_ADDRESS_KEY = "admin.address"
 
-	RETRY_INTERVAL_SEC_KEY = "retry.interval.sec"
-	LOG_FILE_PATH_KEY      = "log.file.path"
+	RETRY_INTERVAL_SEC_KEY             = "retry.interval.sec"
+	SSH_DIAL_TIMEOUT_SEC_KEY           = "ssh.dial.timeout.sec"
+	SSH_DEST_DIAL_TIMEOUT_SEC_KEY      = "ssh.dest.dial.timeout.sec"
+	SSH_KEEPALIVE_INTERVAL_SEC_KEY     = "ssh.keepalive.interval.sec"
+	SSH_KEEPALIVE_COUNT_MAX_KEY        = "ssh.keepalive.count.max"
+	SSH_RECONNECT_MAX_RETRIES_KEY      = "ssh.reconnect.max.retries"
+	SSH_RECONNECT_MAX_INTERVAL_SEC_KEY = "ssh.reconnect.max.interval.sec"
+	LOG_FILE_PATH_KEY                  = "log.file.path"
 
 	// 自动更新相关配置
 	AUTO_UPDATE_ENABLED_KEY         = "auto-update.enabled"
@@ -269,25 +293,31 @@ func NewConfigItem[T any](key string, shorthand string, defaultValue T, descript
 }
 
 type AppConfig struct {
-	HomeDir                  ConfigItem[string]
-	ServerIp                 ConfigItem[string]
-	ServerSshPort            ConfigItem[int]
-	SshPrivateKeyPath        ConfigItem[string]
-	LoginUser                ConfigItem[string]
-	LocalAddress             ConfigItem[string]
-	HttpLocalAddress         ConfigItem[string]
-	HttpBasicAuthEnable      ConfigItem[bool]
-	HttpBasicUserName        ConfigItem[string]
-	HttpBasicPassword        ConfigItem[string]
-	EnableHttp               ConfigItem[bool]
-	EnableSocks5             ConfigItem[bool]
-	EnableHttpOverSSH        ConfigItem[bool]
-	EnableHttpDomainFilter   ConfigItem[bool]
-	HttpDomainFilterFilePath ConfigItem[string]
-	EnableAdmin              ConfigItem[bool]
-	AdminAddress             ConfigItem[string]
-	RetryIntervalSec         ConfigItem[int]
-	LogFilePath              ConfigItem[string]
+	HomeDir                    ConfigItem[string]
+	ServerIp                   ConfigItem[string]
+	ServerSshPort              ConfigItem[int]
+	SshPrivateKeyPath          ConfigItem[string]
+	LoginUser                  ConfigItem[string]
+	LocalAddress               ConfigItem[string]
+	HttpLocalAddress           ConfigItem[string]
+	HttpBasicAuthEnable        ConfigItem[bool]
+	HttpBasicUserName          ConfigItem[string]
+	HttpBasicPassword          ConfigItem[string]
+	EnableHttp                 ConfigItem[bool]
+	EnableSocks5               ConfigItem[bool]
+	EnableHttpOverSSH          ConfigItem[bool]
+	EnableHttpDomainFilter     ConfigItem[bool]
+	HttpDomainFilterFilePath   ConfigItem[string]
+	EnableAdmin                ConfigItem[bool]
+	AdminAddress               ConfigItem[string]
+	RetryIntervalSec           ConfigItem[int]
+	SSHDialTimeoutSec          ConfigItem[int]
+	SSHDestDialTimeoutSec      ConfigItem[int]
+	SSHKeepAliveIntervalSec    ConfigItem[int]
+	SSHKeepAliveCountMax       ConfigItem[int]
+	SSHReconnectMaxRetries     ConfigItem[int]
+	SSHReconnectMaxIntervalSec ConfigItem[int]
+	LogFilePath                ConfigItem[string]
 
 	// 自动更新配置
 	AutoUpdateEnabled        ConfigItem[bool]
