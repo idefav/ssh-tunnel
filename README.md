@@ -54,6 +54,18 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
         私钥地址(短命令) (default "C:\\Users\\idefav/.ssh/id_rsa")
   -retry.interval.sec int
         重试间隔时间(秒) (default 3)
+  -ssh.dial.timeout.sec int
+        SSH握手超时(秒) (default 5)
+  -ssh.dest.dial.timeout.sec int
+        SSH目标连接超时(秒) (default 3)
+  -ssh.keepalive.interval.sec int
+        SSH保活间隔(秒) (default 2)
+  -ssh.keepalive.count.max int
+        SSH保活最大连续失败次数 (default 2)
+  -ssh.reconnect.max.retries int
+        SSH重连最大重试次数 (default 20)
+  -ssh.reconnect.max.interval.sec int
+        SSH重连最大退避间隔(秒) (default 5)
   -s string
         服务器IP地址(短命令)
   -server.ip string
@@ -83,6 +95,7 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 - 🧩 **多 Profile 管理** - 支持维护多套 SSH 配置并在管理页动态切换 🆕
 - 🗂️ **Profile 文件持久化** - 保存 Profile 时同步写入 `profiles.json`（格式化JSON）🆕
 - 📁 **进程信息** - 显示程序执行路径和工作目录，便于故障排查
+- 📶 **SSH链路指标** - SSH状态页支持延迟测试、实时上下行速率和累计流量展示 🆕
 - 🔄 **服务控制** - 支持重启服务以应用新配置
 - 📋 **域名缓存** - 查看和管理域名匹配缓存
 - 🌐 **域名管理** - 响应式域名列表界面，充分利用浏览器空间 🆕
@@ -98,10 +111,31 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 - 🔄 **自动更新检查** - 定时从GitHub Release检测新版本
 - 🔒 **SHA256校验** - 确保下载文件的完整性和安全性
 - 📋 **版本列表** - 显示所有可用版本和发布说明
+- 📄 **分页展示** - 可用版本列表支持分页浏览
+- 🎯 **指定版本更新** - 支持在版本列表中选中指定版本执行更新
 - ⚙️ **更新设置** - 可自定义检查间隔和仓库信息
 - 📱 **响应式界面** - 现代化的版本管理Web界面
 
 访问版本管理页面: `http://localhost:1083/view/version`
+
+## SSH快速重连参数（建议）
+
+当出现大量 `Get Dest Connection Failed(...): context deadline exceeded` 时，建议启用以下参数以获得 1-5 秒恢复：
+
+```properties
+retry.interval.sec=1
+ssh.dial.timeout.sec=5
+ssh.dest.dial.timeout.sec=3
+ssh.keepalive.interval.sec=2
+ssh.keepalive.count.max=2
+ssh.reconnect.max.retries=20
+ssh.reconnect.max.interval.sec=5
+```
+
+说明：
+- `ssh.dest.dial.timeout.sec` 控制每次通过 SSH 建立目标连接的超时。
+- `ssh.keepalive.*` 控制失效检测速度，值越小恢复越快但探测更频繁。
+- `ssh.reconnect.max.interval.sec` 控制指数退避上限，避免失效后长时间等待重试。
 
 ## MacOS boot auto-start settings
 
@@ -187,7 +221,7 @@ admin.address=:1083
 auto-update.enabled=true
 auto-update.owner=idefav
 auto-update.repo=ssh-tunnel
-auto-update.current-version=v1.0.0
+auto-update.current-version=v0.0.0
 auto-update.check-interval=3600
 ```
 

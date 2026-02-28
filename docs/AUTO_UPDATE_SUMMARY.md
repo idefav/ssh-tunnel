@@ -48,10 +48,10 @@
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `auto-update.enabled` | `false` | 是否启用自动更新检查 |
+| `auto-update.enabled` | `true` | 是否启用自动更新检查 |
 | `auto-update.owner` | `idefav` | GitHub仓库所有者 |
 | `auto-update.repo` | `ssh-tunnel` | GitHub仓库名称 |
-| `auto-update.current-version` | `v1.0.0` | 当前版本号 |
+| `auto-update.current-version` | `v0.0.0` | 当前版本号 |
 | `auto-update.check-interval` | `3600` | 检查间隔（秒） |
 
 ## API接口

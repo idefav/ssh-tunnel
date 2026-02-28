@@ -89,7 +89,7 @@ auto-update.owner=idefav
 auto-update.repo=ssh-tunnel
 
 # 当前版本（自动检测）
-auto-update.current-version=v1.0.0
+auto-update.current-version=v0.0.0
 
 # 检查间隔（秒，默认1小时）
 auto-update.check-interval=3600

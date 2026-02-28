@@ -39,14 +39,166 @@
                             <th class="text-secondary">登录用户</th>
                             <td>{{.User}}</td>
                         </tr>
+                        <tr>
+                            <th class="text-secondary">当前延迟</th>
+                            <td id="sshLatency">--</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">实时上传速度</th>
+                            <td id="sshUploadSpeed">0 B/s</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">实时下载速度</th>
+                            <td id="sshDownloadSpeed">0 B/s</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">累计流量</th>
+                            <td id="sshTrafficTotal">↑ 0 B / ↓ 0 B</td>
+                        </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-            <div class="d-flex justify-content-center mt-3">
+            <div class="d-flex justify-content-center mt-3 gap-2">
+                <button id="testSshQuality" type="button" class="btn btn-outline-primary">
+                    <i class="bi bi-speedometer2 me-1"></i>测试延迟和速度
+                </button>
                 <button id="reconnectSsh" type="button" class="btn btn-primary">
                     <i class="bi bi-plug me-1"></i>重新连接 SSH
                 </button>
+            </div>
+
+            <hr class="my-4">
+            <div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">最近60秒代理速度趋势</h6>
+                    <div class="d-flex align-items-center gap-2">
+                        <small id="refreshStatusText" class="text-muted">每秒刷新</small>
+                        <button id="toggleRefresh" type="button" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-pause-fill me-1"></i>暂停
+                        </button>
+                    </div>
+                </div>
+                <div class="mb-2 d-flex gap-3">
+                    <span class="small text-primary">● 上传</span>
+                    <span class="small text-success">● 下载</span>
+                </div>
+                <canvas id="sshSpeedChart" style="width: 100%; height: 220px;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 实时请求列表 -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0" style="font-size: 1rem; font-weight: 600;">
+                <i class="bi bi-activity me-1 text-primary"></i>实时代理请求
+                <span id="activeRequestCount" class="badge bg-primary ms-2" style="font-size: 0.7rem;">0</span>
+            </h5>
+            <div class="toolbar">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="autoScrollCheck" checked>
+                    <label class="form-check-label small" for="autoScrollCheck">自动滚动</label>
+                </div>
+                <span class="text-muted" style="font-size: 0.75rem;">|</span>
+                <small id="requestRefreshStatus" style="font-size: 0.75rem;">每秒刷新</small>
+                <button id="toggleRequestRefresh" type="button" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-pause-fill me-1"></i>暂停
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-scroll-container" id="requestTableWrapper">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="sticky-top" style="z-index: 1;">
+                        <tr>
+                            <th style="width: 80px;">时间</th>
+                            <th>域名</th>
+                            <th style="width: 65px;">端口</th>
+                            <th style="width: 75px;">协议</th>
+                            <th style="width: 85px;">状态</th>
+                            <th style="width: 50px; text-align: center;">SSH</th>
+                            <th style="width: 80px; text-align: right;">耗时</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestTableBody">
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">等待请求数据...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Speed Test Modal -->
+    <div class="modal fade" id="speedTestModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-speedometer2 me-2"></i>SSH 外网带宽测试</h5>
+                </div>
+                <div class="modal-body">
+                    <!-- Progress -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small id="stMessage" class="text-muted">正在初始化...</small>
+                            <small id="stElapsed" class="text-muted">0 / 60 秒</small>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div id="stProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <!-- Stats Cards -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <div class="card bg-light border-0">
+                                <div class="card-body text-center py-2">
+                                    <div class="text-muted small">平均延迟</div>
+                                    <div id="stAvgLatency" class="fs-4 fw-bold text-primary">--</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light border-0">
+                                <div class="card-body text-center py-2">
+                                    <div class="text-muted small">最低 / 最高延迟</div>
+                                    <div id="stMinMaxLatency" class="fs-4 fw-bold text-secondary">-- / --</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light border-0">
+                                <div class="card-body text-center py-2">
+                                    <div class="text-muted small">下载带宽</div>
+                                    <div id="stDownloadSpeed" class="fs-4 fw-bold text-success">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Latency Chart -->
+                    <div>
+                        <h6 class="mb-2">延迟趋势 <small class="text-muted fw-normal">(ms)</small></h6>
+                        <canvas id="stLatencyChart" style="width: 100%; height: 150px;"></canvas>
+                    </div>
+                    <!-- Download Info -->
+                    <div class="mt-2 text-center">
+                        <small class="text-muted">累计下载: <span id="stDownloadTotal">0 B</span></small>
+                        <span class="mx-2 text-muted">|</span>
+                        <small class="text-muted">文件大小: <span id="stFileSize">--</span></small>
+                    </div>
+                    <div id="stDownloadURLRow" class="mt-1 text-center" style="display:none;">
+                        <small class="text-muted text-truncate d-inline-block" style="max-width:90%;" title="" id="stDownloadURL"></small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="stStopBtn" type="button" class="btn btn-danger">
+                        <i class="bi bi-stop-fill me-1"></i>停止测试
+                    </button>
+                    <button id="stCloseBtn" type="button" class="btn btn-secondary" data-bs-dismiss="modal" style="display: none;">
+                        关闭
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -65,11 +217,430 @@
         document.addEventListener("DOMContentLoaded", function() {
             const reconnectBtn = document.getElementById("reconnectSsh");
             const refreshBtn = document.getElementById("refresh");
+            const testBtn = document.getElementById("testSshQuality");
             const toast = document.getElementById("toast");
             const toastMessage = document.getElementById("toastmessage");
+            const latencyEl = document.getElementById("sshLatency");
+            const uploadSpeedEl = document.getElementById("sshUploadSpeed");
+            const downloadSpeedEl = document.getElementById("sshDownloadSpeed");
+            const trafficTotalEl = document.getElementById("sshTrafficTotal");
+            const chartCanvas = document.getElementById("sshSpeedChart");
+            const toggleRefreshBtn = document.getElementById("toggleRefresh");
+            const refreshStatusText = document.getElementById("refreshStatusText");
+            const uploadHistory = [];
+            const downloadHistory = [];
+            const maxPoints = 60;
+            let refreshPaused = false;
+            let refreshTimer = null;
 
+            // Speed test modal elements
+            const stModal = new bootstrap.Modal(document.getElementById("speedTestModal"));
+            const stMessage = document.getElementById("stMessage");
+            const stElapsed = document.getElementById("stElapsed");
+            const stProgressBar = document.getElementById("stProgressBar");
+            const stAvgLatency = document.getElementById("stAvgLatency");
+            const stMinMaxLatency = document.getElementById("stMinMaxLatency");
+            const stDownloadSpeed = document.getElementById("stDownloadSpeed");
+            const stDownloadTotal = document.getElementById("stDownloadTotal");
+            const stStopBtn = document.getElementById("stStopBtn");
+            const stCloseBtn = document.getElementById("stCloseBtn");
+            const stLatencyCanvas = document.getElementById("stLatencyChart");
+            let stPollTimer = null;
+
+            function formatBytes(bytes) {
+                if (!bytes || bytes <= 0) return "0 B";
+                const units = ["B", "KB", "MB", "GB"];
+                let value = bytes;
+                let unitIdx = 0;
+                while (value >= 1024 && unitIdx < units.length - 1) {
+                    value /= 1024;
+                    unitIdx++;
+                }
+                if (unitIdx === 0) {
+                    return Math.round(value) + " " + units[unitIdx];
+                }
+                return value.toFixed(2) + " " + units[unitIdx];
+            }
+
+            function showToast(message, success) {
+                toastMessage.textContent = message;
+                toast.classList.remove("bg-success", "bg-danger", "text-white");
+                toast.classList.add(success ? "bg-success" : "bg-danger", "text-white");
+                const bsToast = new bootstrap.Toast(toast);
+                bsToast.show();
+            }
+
+            // ======================== Realtime Proxy Metrics ========================
+            function pushHistory(uploadBps, downloadBps) {
+                uploadHistory.push(uploadBps || 0);
+                downloadHistory.push(downloadBps || 0);
+                if (uploadHistory.length > maxPoints) uploadHistory.shift();
+                if (downloadHistory.length > maxPoints) downloadHistory.shift();
+            }
+
+            function drawSpeedChart() {
+                if (!chartCanvas) return;
+                const rect = chartCanvas.getBoundingClientRect();
+                const width = Math.max(300, Math.floor(rect.width));
+                const height = 220;
+                chartCanvas.width = width;
+                chartCanvas.height = height;
+
+                const ctx = chartCanvas.getContext("2d");
+                ctx.clearRect(0, 0, width, height);
+
+                const padding = { left: 40, right: 14, top: 12, bottom: 24 };
+                const chartWidth = width - padding.left - padding.right;
+                const chartHeight = height - padding.top - padding.bottom;
+
+                const allValues = uploadHistory.concat(downloadHistory);
+                const maxValue = Math.max(1, ...allValues);
+                const yMax = maxValue * 1.2;
+
+                ctx.strokeStyle = "#dee2e6";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(padding.left, padding.top);
+                ctx.lineTo(padding.left, padding.top + chartHeight);
+                ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
+                ctx.stroke();
+
+                ctx.fillStyle = "#6c757d";
+                ctx.font = "12px sans-serif";
+                ctx.fillText("0", 8, padding.top + chartHeight + 4);
+                ctx.fillText(formatBytes(Math.round(yMax)) + "/s", 4, padding.top + 10);
+
+                const stepX = uploadHistory.length > 1 ? chartWidth / (uploadHistory.length - 1) : chartWidth;
+                const getY = (value) => padding.top + chartHeight - (value / yMax) * chartHeight;
+
+                const rootStyle = getComputedStyle(document.documentElement);
+                const uploadColor = rootStyle.getPropertyValue("--bs-primary").trim() || "#0d6efd";
+                const downloadColor = rootStyle.getPropertyValue("--bs-success").trim() || "#198754";
+
+                function drawLine(values, color) {
+                    if (!values.length) return;
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    values.forEach((value, index) => {
+                        const x = padding.left + index * stepX;
+                        const y = getY(value);
+                        if (index === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    });
+                    ctx.stroke();
+                }
+
+                drawLine(uploadHistory, uploadColor);
+                drawLine(downloadHistory, downloadColor);
+            }
+
+            function updateMetricsUI(data) {
+                uploadSpeedEl.textContent = data.uploadSpeed || "0 B/s";
+                downloadSpeedEl.textContent = data.downloadSpeed || "0 B/s";
+                const upTotal = formatBytes(data.uploadBytesTotal || 0);
+                const downTotal = formatBytes(data.downloadBytesTotal || 0);
+                trafficTotalEl.textContent = "\u2191 " + upTotal + " / \u2193 " + downTotal;
+                pushHistory(data.uploadBps || 0, data.downloadBps || 0);
+                drawSpeedChart();
+            }
+
+            function fetchRealtimeMetrics() {
+                $.get("/admin/ssh/metrics")
+                    .done(function(data) {
+                        if (!data || data.success === false) return;
+                        updateMetricsUI(data);
+                    });
+            }
+
+            // ======================== Speed Test Modal ========================
+            function drawLatencyChart(samples) {
+                if (!stLatencyCanvas) return;
+                const rect = stLatencyCanvas.getBoundingClientRect();
+                const width = Math.max(200, Math.floor(rect.width));
+                const height = 150;
+                stLatencyCanvas.width = width;
+                stLatencyCanvas.height = height;
+
+                const ctx = stLatencyCanvas.getContext("2d");
+                ctx.clearRect(0, 0, width, height);
+
+                if (!samples || samples.length === 0) {
+                    ctx.fillStyle = "#adb5bd";
+                    ctx.font = "14px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.fillText("等待延迟数据...", width / 2, height / 2);
+                    return;
+                }
+
+                const padding = { left: 50, right: 14, top: 10, bottom: 20 };
+                const cw = width - padding.left - padding.right;
+                const ch = height - padding.top - padding.bottom;
+
+                const maxVal = Math.max(1, ...samples) * 1.2;
+
+                // Axes
+                ctx.strokeStyle = "#dee2e6";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(padding.left, padding.top);
+                ctx.lineTo(padding.left, padding.top + ch);
+                ctx.lineTo(padding.left + cw, padding.top + ch);
+                ctx.stroke();
+
+                // Y labels
+                ctx.fillStyle = "#6c757d";
+                ctx.font = "11px sans-serif";
+                ctx.textAlign = "right";
+                ctx.fillText("0 ms", padding.left - 4, padding.top + ch + 4);
+                ctx.fillText(Math.round(maxVal) + " ms", padding.left - 4, padding.top + 10);
+
+                // Line
+                const stepX = samples.length > 1 ? cw / (samples.length - 1) : cw;
+                const getY = (v) => padding.top + ch - (v / maxVal) * ch;
+
+                ctx.strokeStyle = "#0d6efd";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                samples.forEach((v, i) => {
+                    const x = padding.left + i * stepX;
+                    const y = getY(v);
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+
+                // Dots
+                ctx.fillStyle = "#0d6efd";
+                samples.forEach((v, i) => {
+                    const x = padding.left + i * stepX;
+                    const y = getY(v);
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+
+            const stFileSize = document.getElementById("stFileSize");
+            const stDownloadURLRow = document.getElementById("stDownloadURLRow");
+            const stDownloadURLEl = document.getElementById("stDownloadURL");
+
+            function resetSpeedTestUI() {
+                stMessage.textContent = "正在初始化...";
+                stElapsed.textContent = "0 / 60 秒";
+                stProgressBar.style.width = "0%";
+                stProgressBar.classList.add("progress-bar-striped", "progress-bar-animated");
+                stAvgLatency.textContent = "--";
+                stMinMaxLatency.textContent = "-- / --";
+                stDownloadSpeed.textContent = "--";
+                stDownloadTotal.textContent = "0 B";
+                stFileSize.textContent = "--";
+                stDownloadURLRow.style.display = "none";
+                stDownloadURLEl.textContent = "";
+                stStopBtn.style.display = "";
+                stCloseBtn.style.display = "none";
+                drawLatencyChart([]);
+            }
+
+            function updateSpeedTestUI(data) {
+                const elapsed = Math.floor(data.elapsedSec || 0);
+                const total = data.totalSec || 60;
+                const pct = Math.min(100, (data.elapsedSec / total) * 100);
+
+                stMessage.textContent = data.message || "";
+                stElapsed.textContent = elapsed + " / " + total + " 秒";
+                stProgressBar.style.width = pct.toFixed(1) + "%";
+
+                if (data.avgLatencyMs > 0) {
+                    stAvgLatency.textContent = data.avgLatencyMs.toFixed(1) + " ms";
+                }
+                if (data.latencySamples && data.latencySamples.length > 0) {
+                    stMinMaxLatency.textContent = data.minLatencyMs + " / " + data.maxLatencyMs + " ms";
+                }
+                if (data.downloadBps > 0) {
+                    stDownloadSpeed.textContent = data.downloadSpeed || formatBytes(data.downloadBps) + "/s";
+                }
+                stDownloadTotal.textContent = formatBytes(data.downloadBytes || 0);
+
+                if (data.fileSize > 0) {
+                    stFileSize.textContent = formatBytes(data.fileSize);
+                }
+                if (data.downloadUrl) {
+                    stDownloadURLRow.style.display = "";
+                    stDownloadURLEl.textContent = "下载: " + data.downloadUrl;
+                    stDownloadURLEl.title = data.downloadUrl;
+                }
+
+                drawLatencyChart(data.latencySamples || []);
+
+                if (!data.running) {
+                    stProgressBar.classList.remove("progress-bar-striped", "progress-bar-animated");
+                    stProgressBar.style.width = "100%";
+                    stStopBtn.style.display = "none";
+                    stCloseBtn.style.display = "";
+                    clearInterval(stPollTimer);
+                    stPollTimer = null;
+                }
+            }
+
+            function pollSpeedTestStatus() {
+                $.get("/admin/ssh/speedtest/status")
+                    .done(function(data) {
+                        if (!data || data.success === false) return;
+                        updateSpeedTestUI(data);
+                    });
+            }
+
+            function startSpeedTest() {
+                resetSpeedTestUI();
+                stModal.show();
+
+                $.post("/admin/ssh/speedtest/start")
+                    .done(function(data) {
+                        if (!data || data.success === false) {
+                            stMessage.textContent = (data && data.message) || "启动失败";
+                            stStopBtn.style.display = "none";
+                            stCloseBtn.style.display = "";
+                            return;
+                        }
+                        // Poll every 1 second
+                        stPollTimer = setInterval(pollSpeedTestStatus, 1000);
+                    })
+                    .fail(function() {
+                        stMessage.textContent = "启动速度测试失败";
+                        stStopBtn.style.display = "none";
+                        stCloseBtn.style.display = "";
+                    });
+            }
+
+            function stopSpeedTest() {
+                stStopBtn.disabled = true;
+                stStopBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>停止中...';
+                $.post("/admin/ssh/speedtest/stop")
+                    .always(function() {
+                        stStopBtn.disabled = false;
+                        stStopBtn.innerHTML = '<i class="bi bi-stop-fill me-1"></i>停止测试';
+                    });
+            }
+
+            // ======================== Realtime Request List ========================
+            const requestTableBody = document.getElementById("requestTableBody");
+            const requestTableWrapper = document.getElementById("requestTableWrapper");
+            const activeRequestCount = document.getElementById("activeRequestCount");
+            const autoScrollCheck = document.getElementById("autoScrollCheck");
+            const toggleRequestRefreshBtn = document.getElementById("toggleRequestRefresh");
+            const requestRefreshStatus = document.getElementById("requestRefreshStatus");
+            let requestRefreshPaused = false;
+            let requestRefreshTimer = null;
+
+            function protocolBadge(proto) {
+                const map = {
+                    "HTTPS":  "background:#dcfce7;color:#16a34a;",
+                    "HTTP":   "background:#dbeafe;color:#2563eb;",
+                    "SOCKS5": "background:#fef3c7;color:#d97706;"
+                };
+                const style = map[proto] || "background:#f1f5f9;color:#64748b;";
+                return '<span class="badge" style="' + style + 'font-weight:500;">' + proto + '</span>';
+            }
+
+            function statusBadge(status) {
+                const styles = {
+                    "connecting": "background:#fef3c7;color:#b45309;",
+                    "active":    "background:#dbeafe;color:#1d4ed8;",
+                    "completed": "background:#dcfce7;color:#16a34a;",
+                    "failed":    "background:#fee2e2;color:#dc2626;"
+                };
+                const icons = {
+                    "connecting": "bi-hourglass-split",
+                    "active":    "bi-arrow-left-right",
+                    "completed": "bi-check-lg",
+                    "failed":    "bi-x-lg"
+                };
+                const labels = {
+                    "connecting": "连接中",
+                    "active":    "传输中",
+                    "completed": "完成",
+                    "failed":    "失败"
+                };
+                const s = styles[status] || "background:#f1f5f9;color:#64748b;";
+                const icon = icons[status] || "";
+                const label = labels[status] || status;
+                return '<span class="badge" style="' + s + 'font-weight:500;"><i class="bi ' + icon + ' me-1"></i>' + label + '</span>';
+            }
+
+            function renderRequestTable(requests) {
+                if (!requests || requests.length === 0) {
+                    requestTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">暂无请求记录</td></tr>';
+                    return;
+                }
+                let html = "";
+                for (const r of requests) {
+                    const rowClass = r.status === "failed" ? "table-danger" : (r.status === "active" || r.status === "connecting" ? "table-light" : "");
+                    const sshIcon = r.viaSSH ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-dash text-muted"></i>';
+                    const errorTip = r.error ? ' title="' + r.error.replace(/"/g, '&quot;') + '"' : '';
+                    html += '<tr class="' + rowClass + '"' + errorTip + '>';
+                    html += '<td class="text-nowrap" style="color:#64748b;">' + r.startTime + '</td>';
+                    html += '<td class="text-truncate" style="max-width: 280px;font-weight:500;" title="' + r.host + '">' + r.host + '</td>';
+                    html += '<td style="color:#64748b;">' + r.port + '</td>';
+                    html += '<td>' + protocolBadge(r.protocol) + '</td>';
+                    html += '<td>' + statusBadge(r.status) + '</td>';
+                    html += '<td class="text-center">' + sshIcon + '</td>';
+                    html += '<td class="text-end" style="color:#64748b;font-variant-numeric:tabular-nums;">' + (r.duration || '--') + '</td>';
+                    html += '</tr>';
+                }
+                requestTableBody.innerHTML = html;
+            }
+
+            function fetchRequests() {
+                $.get("/admin/ssh/requests")
+                    .done(function(data) {
+                        if (!data || data.success === false) return;
+                        activeRequestCount.textContent = data.activeCount || 0;
+                        renderRequestTable(data.requests || []);
+                        if (autoScrollCheck.checked) {
+                            requestTableWrapper.scrollTop = 0;
+                        }
+                    });
+            }
+
+            toggleRequestRefreshBtn.addEventListener("click", function() {
+                requestRefreshPaused = !requestRefreshPaused;
+                if (requestRefreshPaused) {
+                    clearInterval(requestRefreshTimer);
+                    requestRefreshTimer = null;
+                    toggleRequestRefreshBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>恢复';
+                    toggleRequestRefreshBtn.classList.remove("btn-outline-secondary");
+                    toggleRequestRefreshBtn.classList.add("btn-outline-success");
+                    requestRefreshStatus.textContent = "已暂停";
+                } else {
+                    fetchRequests();
+                    requestRefreshTimer = setInterval(fetchRequests, 1000);
+                    toggleRequestRefreshBtn.innerHTML = '<i class="bi bi-pause-fill me-1"></i>暂停';
+                    toggleRequestRefreshBtn.classList.remove("btn-outline-success");
+                    toggleRequestRefreshBtn.classList.add("btn-outline-secondary");
+                    requestRefreshStatus.textContent = "每秒刷新";
+                }
+            });
+
+            // ======================== Event Bindings ========================
             refreshBtn.addEventListener("click", function() {
                 window.location.reload(true);
+            });
+
+            testBtn.addEventListener("click", function() {
+                startSpeedTest();
+            });
+
+            stStopBtn.addEventListener("click", function() {
+                stopSpeedTest();
+            });
+
+            // cleanup when modal is hidden
+            document.getElementById("speedTestModal").addEventListener("hidden.bs.modal", function() {
+                if (stPollTimer) {
+                    clearInterval(stPollTimer);
+                    stPollTimer = null;
+                }
             });
 
             reconnectBtn.addEventListener("click", function() {
@@ -78,24 +649,42 @@
 
                 $.post("/admin/ssh/reconnect")
                     .done(function(data) {
-                        toastMessage.textContent = "SSH 连接成功刷新";
-                        toast.classList.add("bg-success", "text-white");
-                        const bsToast = new bootstrap.Toast(toast);
-                        bsToast.show();
-
+                        showToast("SSH 连接成功刷新", true);
                         setTimeout(() => window.location.reload(true), 1500);
                     })
                     .fail(function(err) {
-                        toastMessage.textContent = "连接失败";
-                        toast.classList.add("bg-danger", "text-white");
-                        const bsToast = new bootstrap.Toast(toast);
-                        bsToast.show();
+                        showToast("连接失败", false);
                     })
                     .always(function() {
                         reconnectBtn.disabled = false;
                         reconnectBtn.innerHTML = '<i class="bi bi-plug me-1"></i>重新连接 SSH';
                     });
             });
+
+            toggleRefreshBtn.addEventListener("click", function() {
+                refreshPaused = !refreshPaused;
+                if (refreshPaused) {
+                    clearInterval(refreshTimer);
+                    refreshTimer = null;
+                    toggleRefreshBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>恢复';
+                    toggleRefreshBtn.classList.remove("btn-outline-secondary");
+                    toggleRefreshBtn.classList.add("btn-outline-success");
+                    refreshStatusText.textContent = "已暂停";
+                } else {
+                    fetchRealtimeMetrics();
+                    refreshTimer = setInterval(fetchRealtimeMetrics, 1000);
+                    toggleRefreshBtn.innerHTML = '<i class="bi bi-pause-fill me-1"></i>暂停';
+                    toggleRefreshBtn.classList.remove("btn-outline-success");
+                    toggleRefreshBtn.classList.add("btn-outline-secondary");
+                    refreshStatusText.textContent = "每秒刷新";
+                }
+            });
+
+            fetchRealtimeMetrics();
+            refreshTimer = setInterval(fetchRealtimeMetrics, 1000);
+            fetchRequests();
+            requestRefreshTimer = setInterval(fetchRequests, 1000);
+            window.addEventListener("resize", drawSpeedChart);
         });
     </script>
 {{end}}

@@ -34,7 +34,6 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 	if config.EnableSocks5.GetValue() {
 		DefaultSshTunnel.enableSocks5 = config.EnableSocks5.GetValue()
 		DefaultSshTunnel.localAddress = config.LocalAddress.GetValue()
-		DefaultSshTunnel.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
 	}
 
 	if config.EnableHttp.GetValue() {
@@ -89,28 +88,42 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 			safe.GO(func() {
 				<-connCtx.Done()
 			})
-			for DefaultSshTunnel.client == nil {
+			for {
+				if connCtx.Err() != nil {
+					return
+				}
+
+				if DefaultSshTunnel.currentSSHClient() != nil {
+					time.Sleep(200 * time.Millisecond)
+					continue
+				}
+
 				var once sync.Once
-				cl, err := ssh.Dial("tcp", DefaultSshTunnel.serverAddress, &ssh.ClientConfig{
-					User:            DefaultSshTunnel.user,
-					Auth:            DefaultSshTunnel.auth,
-					HostKeyCallback: DefaultSshTunnel.hostKeys,
-					Timeout:         5 * time.Second,
-				})
+				cl, err := DefaultSshTunnel.dialSSH()
 				if err != nil {
 					once.Do(func() {
 						log.Printf("SSH dial error: %v", err)
 					})
+					retryInterval := DefaultSshTunnel.retryInterval
+					if retryInterval <= 0 {
+						retryInterval = time.Second
+					}
+					select {
+					case <-connCtx.Done():
+						return
+					case <-time.After(retryInterval):
+					}
 					continue
 				}
-				//wg.Add(1)
-				DefaultSshTunnel.client = cl
+
+				DefaultSshTunnel.setSSHClient(cl)
 				log.Println("Connected to ssh server")
-				// keep alive
+
 				DefaultSshTunnel.keepAliveMonitor(ctx, &once, wg)
-				DefaultSshTunnel.client = nil
+				DefaultSshTunnel.invalidateSSHClient("initial loop keepalive monitor stopped")
 				log.Printf("SSH Connection Closed!")
-				if context.Canceled != nil {
+
+				if ctx.Err() != nil {
 					return
 				}
 			}
@@ -138,8 +151,20 @@ func (t *Tunnel) RefreshRuntimeConfigFromAppConfig() error {
 	t.serverAddress = config.ServerIp.GetValue() + ":" + strconv.Itoa(config.ServerSshPort.GetValue())
 	t.localAddress = config.LocalAddress.GetValue()
 	t.user = config.LoginUser.GetValue()
-	t.keepAlive = KeepAliveConfig{Interval: 30, CountMax: 3}
+	keepAliveInterval := config.SSHKeepAliveIntervalSec.GetValue()
+	if keepAliveInterval <= 0 {
+		keepAliveInterval = 2
+	}
+	keepAliveCountMax := config.SSHKeepAliveCountMax.GetValue()
+	if keepAliveCountMax <= 0 {
+		keepAliveCountMax = 2
+	}
+	t.keepAlive = KeepAliveConfig{Interval: uint(keepAliveInterval), CountMax: uint(keepAliveCountMax)}
 	t.retryInterval = time.Duration(config.RetryIntervalSec.GetValue()) * time.Second
+	t.sshDialTimeout = time.Duration(config.SSHDialTimeoutSec.GetValue()) * time.Second
+	t.sshDestTimeout = time.Duration(config.SSHDestDialTimeoutSec.GetValue()) * time.Second
+	t.reconnectMaxRetries = config.SSHReconnectMaxRetries.GetValue()
+	t.reconnectMaxInterval = time.Duration(config.SSHReconnectMaxIntervalSec.GetValue()) * time.Second
 	t.hostKeys = ssh.InsecureIgnoreHostKey()
 
 	if t.enableSocks5 || t.enableHttpOverSSH {

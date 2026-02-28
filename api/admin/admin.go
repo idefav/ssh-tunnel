@@ -87,25 +87,31 @@ func updateProfileSwitchStatusIfMatch(switchID string, updater func(*profileSwit
 func getConfigKeyMapping() map[string]string {
 	appConfig := tunnel.DefaultSshTunnel.AppConfig()
 	return map[string]string{
-		"ServerIp":                 appConfig.ServerIp.Key,
-		"ServerSshPort":            appConfig.ServerSshPort.Key,
-		"LoginUser":                appConfig.LoginUser.Key,
-		"SshPrivateKeyPath":        appConfig.SshPrivateKeyPath.Key,
-		"LocalAddress":             appConfig.LocalAddress.Key,
-		"HttpLocalAddress":         appConfig.HttpLocalAddress.Key,
-		"EnableHttp":               appConfig.EnableHttp.Key,
-		"EnableSocks5":             appConfig.EnableSocks5.Key,
-		"EnableHttpOverSSH":        appConfig.EnableHttpOverSSH.Key,
-		"HttpBasicAuthEnable":      appConfig.HttpBasicAuthEnable.Key,
-		"HttpBasicUserName":        appConfig.HttpBasicUserName.Key,
-		"HttpBasicPassword":        appConfig.HttpBasicPassword.Key,
-		"EnableHttpDomainFilter":   appConfig.EnableHttpDomainFilter.Key,
-		"HttpDomainFilterFilePath": appConfig.HttpDomainFilterFilePath.Key,
-		"EnableAdmin":              appConfig.EnableAdmin.Key,
-		"AdminAddress":             appConfig.AdminAddress.Key,
-		"RetryIntervalSec":         appConfig.RetryIntervalSec.Key,
-		"LogFilePath":              appConfig.LogFilePath.Key,
-		"HomeDir":                  appConfig.HomeDir.Key,
+		"ServerIp":                   appConfig.ServerIp.Key,
+		"ServerSshPort":              appConfig.ServerSshPort.Key,
+		"LoginUser":                  appConfig.LoginUser.Key,
+		"SshPrivateKeyPath":          appConfig.SshPrivateKeyPath.Key,
+		"LocalAddress":               appConfig.LocalAddress.Key,
+		"HttpLocalAddress":           appConfig.HttpLocalAddress.Key,
+		"EnableHttp":                 appConfig.EnableHttp.Key,
+		"EnableSocks5":               appConfig.EnableSocks5.Key,
+		"EnableHttpOverSSH":          appConfig.EnableHttpOverSSH.Key,
+		"HttpBasicAuthEnable":        appConfig.HttpBasicAuthEnable.Key,
+		"HttpBasicUserName":          appConfig.HttpBasicUserName.Key,
+		"HttpBasicPassword":          appConfig.HttpBasicPassword.Key,
+		"EnableHttpDomainFilter":     appConfig.EnableHttpDomainFilter.Key,
+		"HttpDomainFilterFilePath":   appConfig.HttpDomainFilterFilePath.Key,
+		"EnableAdmin":                appConfig.EnableAdmin.Key,
+		"AdminAddress":               appConfig.AdminAddress.Key,
+		"RetryIntervalSec":           appConfig.RetryIntervalSec.Key,
+		"SSHDialTimeoutSec":          appConfig.SSHDialTimeoutSec.Key,
+		"SSHDestDialTimeoutSec":      appConfig.SSHDestDialTimeoutSec.Key,
+		"SSHKeepAliveIntervalSec":    appConfig.SSHKeepAliveIntervalSec.Key,
+		"SSHKeepAliveCountMax":       appConfig.SSHKeepAliveCountMax.Key,
+		"SSHReconnectMaxRetries":     appConfig.SSHReconnectMaxRetries.Key,
+		"SSHReconnectMaxIntervalSec": appConfig.SSHReconnectMaxIntervalSec.Key,
+		"LogFilePath":                appConfig.LogFilePath.Key,
+		"HomeDir":                    appConfig.HomeDir.Key,
 	}
 }
 
@@ -621,6 +627,178 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			writer.Write(mbytes)
 		})
 
+		adminRouter.HandleFunc("/admin/ssh/metrics", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodGet {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			metrics := tunnel.SnapshotProxyMetrics()
+			response := map[string]interface{}{
+				"success":            true,
+				"uploadBytesTotal":   metrics.UploadBytesTotal,
+				"downloadBytesTotal": metrics.DownloadBytesTotal,
+				"uploadBps":          metrics.UploadBps,
+				"downloadBps":        metrics.DownloadBps,
+				"uploadSpeed":        formatNetworkSpeed(metrics.UploadBps),
+				"downloadSpeed":      formatNetworkSpeed(metrics.DownloadBps),
+			}
+			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/test", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			latencyMs, err := tunnel.MeasureSSHLatency()
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("SSH延迟测试失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			metrics := tunnel.SnapshotProxyMetrics()
+			response := map[string]interface{}{
+				"success":            true,
+				"latencyMs":          latencyMs,
+				"uploadBytesTotal":   metrics.UploadBytesTotal,
+				"downloadBytesTotal": metrics.DownloadBytesTotal,
+				"uploadBps":          metrics.UploadBps,
+				"downloadBps":        metrics.DownloadBps,
+				"uploadSpeed":        formatNetworkSpeed(metrics.UploadBps),
+				"downloadSpeed":      formatNetworkSpeed(metrics.DownloadBps),
+			}
+			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
+		// ========== 速度测试 (弹窗式 60 秒) ==========
+		adminRouter.HandleFunc("/admin/ssh/speedtest/start", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			err := tunnel.StartSpeedTest(60)
+			if err != nil {
+				respondWithError(writer, err.Error(), http.StatusConflict)
+				return
+			}
+
+			response := map[string]interface{}{"success": true, "message": "速度测试已启动"}
+			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/speedtest/status", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodGet {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			status := tunnel.GetSpeedTestStatus()
+			response := map[string]interface{}{
+				"success":        true,
+				"running":        status.Running,
+				"elapsedSec":     status.ElapsedSec,
+				"totalSec":       status.TotalSec,
+				"latencySamples": status.LatencySamples,
+				"avgLatencyMs":   status.AvgLatencyMs,
+				"minLatencyMs":   status.MinLatencyMs,
+				"maxLatencyMs":   status.MaxLatencyMs,
+				"downloadBytes":  status.DownloadBytes,
+				"downloadBps":    status.DownloadBps,
+				"downloadSpeed":  formatNetworkSpeed(status.DownloadBps),
+				"downloadUrl":    status.DownloadURL,
+				"fileSize":       status.FileSize,
+				"message":        status.Message,
+			}
+			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/speedtest/stop", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			tunnel.StopSpeedTest()
+			response := map[string]interface{}{"success": true, "message": "速度测试已停止"}
+			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/requests", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodGet {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			tracker := tunnel.GetRequestTracker()
+			snapshot := tracker.Snapshot()
+			// 最多返回 50 条
+			if len(snapshot) > 50 {
+				snapshot = snapshot[:50]
+			}
+
+			type requestItem struct {
+				ID        uint64 `json:"id"`
+				Host      string `json:"host"`
+				Port      string `json:"port"`
+				Protocol  string `json:"protocol"`
+				Status    string `json:"status"`
+				StartTime string `json:"startTime"`
+				Duration  string `json:"duration"`
+				Error     string `json:"error,omitempty"`
+				ViaSSH    bool   `json:"viaSSH"`
+			}
+
+			formatDuration := func(d time.Duration) string {
+				if d < time.Second {
+					return fmt.Sprintf("%dms", d.Milliseconds())
+				}
+				return fmt.Sprintf("%.1fs", d.Seconds())
+			}
+
+			items := make([]requestItem, 0, len(snapshot))
+			for _, r := range snapshot {
+				dur := ""
+				if !r.EndTime.IsZero() {
+					dur = formatDuration(r.EndTime.Sub(r.StartTime))
+				} else if r.Status == "connecting" || r.Status == "active" {
+					dur = formatDuration(time.Since(r.StartTime))
+				}
+				items = append(items, requestItem{
+					ID:        r.ID,
+					Host:      r.Host,
+					Port:      r.Port,
+					Protocol:  r.Protocol,
+					Status:    string(r.Status),
+					StartTime: r.StartTime.Format("15:04:05"),
+					Duration:  dur,
+					Error:     r.Error,
+					ViaSSH:    r.ViaSSH,
+				})
+			}
+
+			response := map[string]interface{}{
+				"success":     true,
+				"requests":    items,
+				"activeCount": tracker.ActiveCount(),
+			}
+			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
 		adminRouter.HandleFunc("/admin/monitor", func(writer http.ResponseWriter, request *http.Request) {
 			m := make(map[string]interface{})
 			m["matchedDomain"] = tunnel.DomainMatchCache()
@@ -855,6 +1033,12 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				{"key": "admin.enable", "type": "bool", "description": "启用管理界面", "category": "管理"},
 				{"key": "admin.addr", "type": "string", "description": "管理界面监听地址", "category": "管理"},
 				{"key": "retry.interval.sec", "type": "int", "description": "重试间隔(秒)", "category": "高级"},
+				{"key": "ssh.dial.timeout.sec", "type": "int", "description": "SSH握手超时(秒)", "category": "高级"},
+				{"key": "ssh.dest.dial.timeout.sec", "type": "int", "description": "SSH目标连接超时(秒)", "category": "高级"},
+				{"key": "ssh.keepalive.interval.sec", "type": "int", "description": "SSH保活间隔(秒)", "category": "高级"},
+				{"key": "ssh.keepalive.count.max", "type": "int", "description": "SSH保活最大连续失败次数", "category": "高级"},
+				{"key": "ssh.reconnect.max.retries", "type": "int", "description": "SSH重连最大重试次数", "category": "高级"},
+				{"key": "ssh.reconnect.max.interval.sec", "type": "int", "description": "SSH重连最大退避间隔(秒)", "category": "高级"},
 			}
 
 			// 为每个配置项添加当前值
@@ -1189,6 +1373,25 @@ func isSystemdAvailable() bool {
 	cmd := exec.Command("systemctl", "--version")
 	err := cmd.Run()
 	return err == nil
+}
+
+func formatNetworkSpeed(bytesPerSecond float64) string {
+	if bytesPerSecond <= 0 {
+		return "0 B/s"
+	}
+
+	units := []string{"B/s", "KB/s", "MB/s", "GB/s"}
+	value := bytesPerSecond
+	unitIdx := 0
+	for value >= 1024 && unitIdx < len(units)-1 {
+		value /= 1024
+		unitIdx++
+	}
+
+	if unitIdx == 0 {
+		return fmt.Sprintf("%.0f %s", value, units[unitIdx])
+	}
+	return fmt.Sprintf("%.2f %s", value, units[unitIdx])
 }
 
 // 使用systemd重启服务

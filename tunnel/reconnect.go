@@ -31,12 +31,18 @@ func (t *Tunnel) ReconnectSSH(ctx context.Context) {
 	}
 	log.Println(err2)
 
-	// 重连的最大尝试次数
-	maxRetries := 10
+	maxRetries := t.reconnectMaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 20
+	}
 	// 初始重试间隔（秒）
 	baseRetryInterval := t.retryInterval
 	if baseRetryInterval == 0 {
 		baseRetryInterval = 1 * time.Second
+	}
+	maxRetryInterval := t.reconnectMaxInterval
+	if maxRetryInterval <= 0 {
+		maxRetryInterval = 5 * time.Second
 	}
 
 	// 指数退避策略的重试
@@ -49,8 +55,8 @@ func (t *Tunnel) ReconnectSSH(ctx context.Context) {
 
 		// 计算当前重试的等待时间（使用指数退避策略）
 		retryInterval := baseRetryInterval * time.Duration(1<<uint(i))
-		if retryInterval > 1*time.Minute {
-			retryInterval = 1 * time.Minute // 最大等待5分钟
+		if retryInterval > maxRetryInterval {
+			retryInterval = maxRetryInterval
 		}
 
 		log.Printf("等待 %v 秒后尝试重连 (尝试 %d/%d)", retryInterval.Seconds(), i+1, maxRetries)
@@ -63,7 +69,7 @@ func (t *Tunnel) ReconnectSSH(ctx context.Context) {
 
 		cl, err := t.dialSSH()
 		if err != nil {
-			log.Printf("SSH连接尝试失败，继续重试")
+			log.Printf("SSH连接尝试失败: %v，继续重试", err)
 			continue
 		}
 
@@ -126,9 +132,7 @@ func (t *Tunnel) startKeepAlive(ctx context.Context) {
 		wg.Add(1)
 		t.keepAliveMonitor(ctx, &once, &wg)
 
-		t.reconnectMutex.Lock()
-		t.client = nil
-		t.reconnectMutex.Unlock()
+		t.invalidateSSHClient("keepalive monitor stopped")
 
 		log.Printf("SSH连接已关闭，准备重新连接")
 		safe.GO(func() {
@@ -139,12 +143,16 @@ func (t *Tunnel) startKeepAlive(ctx context.Context) {
 
 func (t *Tunnel) dialSSH() (*ssh.Client, error) {
 	// 尝试建立新的SSH连接
+	timeout := t.sshDialTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
 
 	cl, err := ssh.Dial("tcp", t.serverAddress, &ssh.ClientConfig{
 		User:            t.user,
 		Auth:            t.auth,
 		HostKeyCallback: t.hostKeys,
-		Timeout:         10 * time.Second, // 增加超时时间以适应不稳定网络
+		Timeout:         timeout,
 	})
 
 	if err != nil {

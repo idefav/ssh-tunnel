@@ -85,16 +85,15 @@ func runOnce() error {
 	vConfig.SetDefault(config.EnableAdmin.GetKey(), config.EnableAdmin.GetDefaultValue())
 	vConfig.SetDefault(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue())
 	vConfig.SetDefault(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHDialTimeoutSec.GetKey(), config.SSHDialTimeoutSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHDestDialTimeoutSec.GetKey(), config.SSHDestDialTimeoutSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHKeepAliveIntervalSec.GetKey(), config.SSHKeepAliveIntervalSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHKeepAliveCountMax.GetKey(), config.SSHKeepAliveCountMax.GetDefaultValue())
+	vConfig.SetDefault(config.SSHReconnectMaxRetries.GetKey(), config.SSHReconnectMaxRetries.GetDefaultValue())
+	vConfig.SetDefault(config.SSHReconnectMaxIntervalSec.GetKey(), config.SSHReconnectMaxIntervalSec.GetDefaultValue())
 	vConfig.SetDefault(config.LogFilePath.GetKey(), config.LogFilePath.GetDefaultValue())
 
 	// 自动更新默认值
-	vConfig.SetDefault(config.AutoUpdateEnabled.GetKey(), config.AutoUpdateEnabled.GetDefaultValue())
-	vConfig.SetDefault(config.AutoUpdateOwner.GetKey(), config.AutoUpdateOwner.GetDefaultValue())
-	vConfig.SetDefault(config.AutoUpdateRepo.GetKey(), config.AutoUpdateRepo.GetDefaultValue())
-	vConfig.SetDefault(config.AutoUpdateCurrentVersion.GetKey(), config.AutoUpdateCurrentVersion.GetDefaultValue())
-	vConfig.SetDefault(config.AutoUpdateCheckInterval.GetKey(), config.AutoUpdateCheckInterval.GetDefaultValue())
-
-	// 自动更新配置默认值
 	vConfig.SetDefault(config.AutoUpdateEnabled.GetKey(), config.AutoUpdateEnabled.GetDefaultValue())
 	vConfig.SetDefault(config.AutoUpdateOwner.GetKey(), config.AutoUpdateOwner.GetDefaultValue())
 	vConfig.SetDefault(config.AutoUpdateRepo.GetKey(), config.AutoUpdateRepo.GetDefaultValue())
@@ -164,6 +163,12 @@ func runOnce() error {
 	pflag.Bool(config.EnableAdmin.GetKey(), config.EnableAdmin.GetDefaultValue(), config.EnableAdmin.GetDescription())
 	pflag.String(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue(), config.AdminAddress.GetDescription())
 	pflag.Int(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue(), config.RetryIntervalSec.GetDescription())
+	pflag.Int(config.SSHDialTimeoutSec.GetKey(), config.SSHDialTimeoutSec.GetDefaultValue(), config.SSHDialTimeoutSec.GetDescription())
+	pflag.Int(config.SSHDestDialTimeoutSec.GetKey(), config.SSHDestDialTimeoutSec.GetDefaultValue(), config.SSHDestDialTimeoutSec.GetDescription())
+	pflag.Int(config.SSHKeepAliveIntervalSec.GetKey(), config.SSHKeepAliveIntervalSec.GetDefaultValue(), config.SSHKeepAliveIntervalSec.GetDescription())
+	pflag.Int(config.SSHKeepAliveCountMax.GetKey(), config.SSHKeepAliveCountMax.GetDefaultValue(), config.SSHKeepAliveCountMax.GetDescription())
+	pflag.Int(config.SSHReconnectMaxRetries.GetKey(), config.SSHReconnectMaxRetries.GetDefaultValue(), config.SSHReconnectMaxRetries.GetDescription())
+	pflag.Int(config.SSHReconnectMaxIntervalSec.GetKey(), config.SSHReconnectMaxIntervalSec.GetDefaultValue(), config.SSHReconnectMaxIntervalSec.GetDescription())
 
 	pflag.Parse()
 

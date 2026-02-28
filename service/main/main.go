@@ -14,6 +14,7 @@ import (
 	"ssh-tunnel/safe"
 	"ssh-tunnel/service/os_config"
 	"ssh-tunnel/tunnel"
+	"ssh-tunnel/updater"
 	"strings"
 	"sync"
 	"time"
@@ -202,7 +203,18 @@ func innerStart() {
 	vConfig.SetDefault(config.EnableAdmin.GetKey(), config.EnableAdmin.GetDefaultValue())
 	vConfig.SetDefault(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue())
 	vConfig.SetDefault(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHDialTimeoutSec.GetKey(), config.SSHDialTimeoutSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHDestDialTimeoutSec.GetKey(), config.SSHDestDialTimeoutSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHKeepAliveIntervalSec.GetKey(), config.SSHKeepAliveIntervalSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHKeepAliveCountMax.GetKey(), config.SSHKeepAliveCountMax.GetDefaultValue())
+	vConfig.SetDefault(config.SSHReconnectMaxRetries.GetKey(), config.SSHReconnectMaxRetries.GetDefaultValue())
+	vConfig.SetDefault(config.SSHReconnectMaxIntervalSec.GetKey(), config.SSHReconnectMaxIntervalSec.GetDefaultValue())
 	vConfig.SetDefault(config.LogFilePath.GetKey(), config.LogFilePath.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateEnabled.GetKey(), config.AutoUpdateEnabled.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateOwner.GetKey(), config.AutoUpdateOwner.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateRepo.GetKey(), config.AutoUpdateRepo.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateCurrentVersion.GetKey(), config.AutoUpdateCurrentVersion.GetDefaultValue())
+	vConfig.SetDefault(config.AutoUpdateCheckInterval.GetKey(), config.AutoUpdateCheckInterval.GetDefaultValue())
 
 	// 环境变量配置
 	vConfig.SetEnvPrefix("SSH_TUNNEL")       // 设置环境变量前缀
@@ -268,6 +280,7 @@ func innerStart() {
 	log.Println("configPath: ", configPath)
 
 	var wg sync.WaitGroup
+	updater.InitializeUpdater()
 	err = tunnel.Load(config, &wg)
 	if err != nil {
 		log.Printf("Failed to load tunnel configuration: %v", err)
