@@ -24,7 +24,9 @@ import (
 )
 
 var (
-	NetworkError = errors.New("network error")
+	NetworkError         = errors.New("network error")
+	SSHReconnectRequired = errors.New("ssh reconnect required")
+	SSHDialError         = errors.New("ssh dial error")
 )
 
 type KeepAliveConfig struct {
@@ -65,6 +67,8 @@ type Tunnel struct {
 	reconnectMaxInterval time.Duration
 	needReBind           bool
 	client               *ssh.Client
+	sshConnectedOnce     bool
+	reconnectCount       uint64
 	tunnelCtx            context.Context
 	reconnectMutex       sync.Mutex // 添加重连锁，确保同一时间只有一个重连过程
 	reconnecting         bool
@@ -92,6 +96,11 @@ type ProxyMetrics struct {
 	DownloadBps        float64 `json:"downloadBps"`
 }
 
+type SSHConnectionStats struct {
+	ConnectionCount int    `json:"connectionCount"`
+	ReconnectCount  uint64 `json:"reconnectCount"`
+}
+
 func (t *Tunnel) currentSSHClient() *ssh.Client {
 	t.reconnectMutex.Lock()
 	defer t.reconnectMutex.Unlock()
@@ -112,6 +121,26 @@ func (t *Tunnel) invalidateSSHClient(reason string) {
 	}
 }
 
+func (t *Tunnel) invalidateSSHClientIfMatch(expected *ssh.Client, reason string) bool {
+	if expected == nil {
+		return false
+	}
+
+	t.reconnectMutex.Lock()
+	if t.client != expected {
+		t.reconnectMutex.Unlock()
+		return false
+	}
+	t.client = nil
+	t.reconnectMutex.Unlock()
+
+	_ = expected.Close()
+	if reason != "" {
+		log.Printf("SSH client invalidated: %s", reason)
+	}
+	return true
+}
+
 func (t *Tunnel) GetSSHClient() *ssh.Client {
 	t.reconnectMutex.Lock()
 	client := t.client
@@ -121,8 +150,14 @@ func (t *Tunnel) GetSSHClient() *ssh.Client {
 		return client
 	}
 
-	t.ReconnectSSH(t.reconnectContext(nil))
+	t.ReconnectSSHWithSource(t.reconnectContext(nil), "get-ssh-client")
 
+	t.reconnectMutex.Lock()
+	defer t.reconnectMutex.Unlock()
+	return t.client
+}
+
+func (t *Tunnel) PeekSSHClient() *ssh.Client {
 	t.reconnectMutex.Lock()
 	defer t.reconnectMutex.Unlock()
 	return t.client
@@ -260,6 +295,27 @@ func (t *Tunnel) SnapshotProxyMetrics() ProxyMetrics {
 	}
 }
 
+func (t *Tunnel) SnapshotSSHConnectionStats() SSHConnectionStats {
+	t.reconnectMutex.Lock()
+	defer t.reconnectMutex.Unlock()
+
+	count := 0
+	if t.client != nil {
+		count = 1
+	}
+
+	return SSHConnectionStats{
+		ConnectionCount: count,
+		ReconnectCount:  t.reconnectCount,
+	}
+}
+
+func (t *Tunnel) ResetReconnectCount() {
+	t.reconnectMutex.Lock()
+	t.reconnectCount = 0
+	t.reconnectMutex.Unlock()
+}
+
 func (t *Tunnel) MeasureSSHLatency() (int64, error) {
 	client := t.GetSSHClient()
 	if client == nil {
@@ -315,11 +371,11 @@ func (t *Tunnel) socks5ProxyStart(ctx context.Context) {
 		}
 		safe.GO(func() {
 			resolveErr := t.socks5Proxy(ctx, conn)
-			if resolveErr != nil && errors.Is(resolveErr, NetworkError) {
+			if resolveErr != nil && errors.Is(resolveErr, SSHReconnectRequired) {
 				t.needReBind = true
 				t.invalidateSSHClient("socks5 network error")
 				safe.GO(func() {
-					t.ReconnectSSH(ctx)
+					t.ReconnectSSHWithSource(ctx, "socks5-proxy")
 				})
 			}
 		})
@@ -383,7 +439,7 @@ func (t *Tunnel) getDestConn(host string) (net.Conn, error) {
 func (t *Tunnel) createSSHConn(host string) (net.Conn, error) {
 	client := t.GetSSHClient()
 	if client == nil {
-		return nil, errors.New("SSH client is not initialized")
+		return nil, SSHReconnectRequired
 	}
 	timeout := t.sshDestTimeout
 	if timeout <= 0 {
@@ -393,7 +449,15 @@ func (t *Tunnel) createSSHConn(host string) (net.Conn, error) {
 	timeoutCtx, cancel := context.WithTimeout(background, timeout)
 	defer cancel()
 
-	return client.DialContext(timeoutCtx, "tcp", host)
+	conn, err := client.DialContext(timeoutCtx, "tcp", host)
+	if err != nil {
+		if isSSHReconnectError(err) {
+			return nil, fmt.Errorf("%w: %v", SSHDialError, err)
+		}
+		return nil, err
+	}
+
+	return conn, nil
 }
 
 func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -603,8 +667,8 @@ func (t *Tunnel) getConn(ctx context.Context, client net.Conn, address string) (
 	if shouldReconnect(err, t.currentSSHClient()) {
 		t.invalidateSSHClient(err.Error())
 
-		t.ReconnectSSH(t.reconnectContext(ctx))
-		if t.GetSSHClient() == nil {
+		t.ReconnectSSHWithSource(t.reconnectContext(ctx), "http-proxy-request")
+		if t.PeekSSHClient() == nil {
 			log.Printf("Get Dest Connection Failed(%s): ssh reconnect failed", address)
 			fmt.Fprint(client, "HTTP/1.1 500 ssh reconnect failed\r\n\r\n")
 			return nil, true
@@ -642,20 +706,27 @@ func shouldReconnect(err error, client *ssh.Client) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, NetworkError) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, SSHReconnectRequired) || errors.Is(err, SSHDialError) {
 		return true
 	}
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	return isSSHReconnectError(err)
+}
+
+func isSSHReconnectError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) {
 		return true
 	}
-	msg := err.Error()
+	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "unexpected packet in response") ||
 		strings.Contains(msg, "max packet length exceeded") ||
-		strings.Contains(msg, "ssh:") ||
-		strings.Contains(msg, "context deadline exceeded") ||
-		strings.Contains(msg, "i/o timeout") ||
-		strings.Contains(msg, "connection reset by peer") ||
-		strings.Contains(msg, "broken pipe")
+		strings.Contains(msg, "ssh: handshake failed") ||
+		strings.Contains(msg, "ssh: disconnect") ||
+		strings.Contains(msg, "ssh: connection closed") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "use of closed network connection")
 }
 
 func isIgnorableProxyErr(err error) bool {
@@ -792,7 +863,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 	if sshClient == nil {
 		_ = writeSocks5Reply(conn, 0x01, nil)
 		tracker.MarkFailed(req, "SSH client not connected")
-		return NetworkError
+		return SSHReconnectRequired
 	}
 
 	timeout := t.sshDestTimeout
@@ -807,7 +878,10 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 		log.Println(err)
 		_ = writeSocks5Reply(conn, mapSocks5ReplyCode(err), nil)
 		tracker.MarkFailed(req, err.Error())
-		return NetworkError
+		if isSSHReconnectError(err) {
+			return SSHReconnectRequired
+		}
+		return err
 	}
 
 	if err := writeSocks5Reply(conn, 0x00, server.LocalAddr()); err != nil {
@@ -1049,8 +1123,7 @@ func (t *Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh
 	wg2.Wait()
 }
 
-func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, client *ssh.Client) {
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	safe.GO(func() {
@@ -1059,14 +1132,11 @@ func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync
 	if t.keepAlive.Interval == 0 || t.keepAlive.CountMax == 0 {
 		return
 	}
-	client := t.currentSSHClient()
 	if client == nil {
 		return
 	}
 	wait := make(chan error, 1)
-	wg.Add(1)
 	safe.GO(func() {
-		defer wg.Done()
 		wait <- client.Wait()
 	})
 	var aliveCount int32
@@ -1081,20 +1151,22 @@ func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync
 		case <-ctx.Done():
 			return
 		case err := <-wait:
+			if t.currentSSHClient() != client {
+				return
+			}
 			if err != nil && err != io.EOF {
 				once.Do(func() { log.Printf("(%v) SSH error: %v", t, err) })
 			}
-			t.invalidateSSHClient("wait returned")
+			t.invalidateSSHClientIfMatch(client, "wait returned")
 			return
 		case <-ticker.C:
-			activeClient := t.currentSSHClient()
-			if activeClient == nil {
+			if t.currentSSHClient() != client {
 				return
 			}
 
 			probeDone := make(chan error, 1)
 			safe.GO(func() {
-				_, _, probeErr := activeClient.SendRequest("keepalive@openssh.com", true, nil)
+				_, _, probeErr := client.SendRequest("keepalive@openssh.com", true, nil)
 				probeDone <- probeErr
 			})
 
@@ -1116,7 +1188,7 @@ func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, wg *sync
 
 			if n := atomic.AddInt32(&aliveCount, 1); n > int32(t.keepAlive.CountMax) {
 				once.Do(func() { log.Printf("(%v) SSH keep-alive termination", t) })
-				t.invalidateSSHClient("keepalive failures exceeded")
+				t.invalidateSSHClientIfMatch(client, "keepalive failures exceeded")
 				return
 			}
 		}

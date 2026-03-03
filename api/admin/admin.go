@@ -134,7 +134,7 @@ func monitorProfileSwitchResult(switchID string, timeout time.Duration, tun *tun
 	deadline := time.Now().Add(timeout)
 
 	for {
-		if tun.GetSSHClient() != nil {
+		if tun.PeekSSHClient() != nil {
 			updateProfileSwitchStatusIfMatch(switchID, func(status *profileSwitchStatus) {
 				status.Status = SwitchStatusCompleted
 				status.Message = "SSH重连成功"
@@ -466,7 +466,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 			tunnel.DisconnectSSHClient()
 			safe.GO(func() {
-				tunnel.ReconnectSSH(connCtx)
+				tunnel.ReconnectSSHWithSource(connCtx, "profile-switch")
 			})
 			safe.GO(func() {
 				monitorProfileSwitchResult(switchID, 30*time.Second, tunnel)
@@ -556,7 +556,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 		})
 
 		adminRouter.HandleFunc("/admin/ssh/state", func(writer http.ResponseWriter, request *http.Request) {
-			client := tunnel.GetSSHClient()
+			client := tunnel.PeekSSHClient()
 			if client == nil {
 				writer.WriteHeader(500)
 				writer.Write([]byte("SSH client is not connected"))
@@ -604,8 +604,8 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			}
 
 			tunnel.DisconnectSSHClient()
-			tunnel.ReconnectSSH(connCtx)
-			client := tunnel.GetSSHClient()
+			tunnel.ReconnectSSHWithSource(connCtx, "admin-manual")
+			client := tunnel.PeekSSHClient()
 			if client == nil {
 				respondWithError(writer, "SSH client is not connected", http.StatusInternalServerError)
 				return
@@ -627,6 +627,25 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			writer.Write(mbytes)
 		})
 
+		adminRouter.HandleFunc("/admin/ssh/reconnect-count/reset", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			tunnel.ResetReconnectCount()
+			sshStats := tunnel.SnapshotSSHConnectionStats()
+			response := map[string]interface{}{
+				"success":         true,
+				"message":         "重连次数已清零",
+				"connectionCount": sshStats.ConnectionCount,
+				"reconnectCount":  sshStats.ReconnectCount,
+			}
+			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
 		adminRouter.HandleFunc("/admin/ssh/metrics", func(writer http.ResponseWriter, request *http.Request) {
 			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 			if request.Method != http.MethodGet {
@@ -635,6 +654,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			}
 
 			metrics := tunnel.SnapshotProxyMetrics()
+			sshStats := tunnel.SnapshotSSHConnectionStats()
 			response := map[string]interface{}{
 				"success":            true,
 				"uploadBytesTotal":   metrics.UploadBytesTotal,
@@ -643,6 +663,8 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				"downloadBps":        metrics.DownloadBps,
 				"uploadSpeed":        formatNetworkSpeed(metrics.UploadBps),
 				"downloadSpeed":      formatNetworkSpeed(metrics.DownloadBps),
+				"connectionCount":    sshStats.ConnectionCount,
+				"reconnectCount":     sshStats.ReconnectCount,
 			}
 			mbytes, _ := json.Marshal(response)
 			writer.Write(mbytes)

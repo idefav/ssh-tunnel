@@ -96,6 +96,8 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 - 🗂️ **Profile 文件持久化** - 保存 Profile 时同步写入 `profiles.json`（格式化JSON）🆕
 - 📁 **进程信息** - 显示程序执行路径和工作目录，便于故障排查
 - 📶 **SSH链路指标** - SSH状态页支持延迟测试、实时上下行速率和累计流量展示 🆕
+- 🔢 **连接统计** - SSH状态页新增当前SSH连接数与累计重连次数展示 🆕
+- ♻️ **计数清零** - SSH状态页支持一键清零重连次数，便于分阶段观测 🆕
 - 🔄 **服务控制** - 支持重启服务以应用新配置
 - 📋 **域名缓存** - 查看和管理域名匹配缓存
 - 🌐 **域名管理** - 响应式域名列表界面，充分利用浏览器空间 🆕
@@ -136,6 +138,17 @@ ssh.reconnect.max.interval.sec=5
 - `ssh.dest.dial.timeout.sec` 控制每次通过 SSH 建立目标连接的超时。
 - `ssh.keepalive.*` 控制失效检测速度，值越小恢复越快但探测更频繁。
 - `ssh.reconnect.max.interval.sec` 控制指数退避上限，避免失效后长时间等待重试。
+
+## SSH连接稳定性修复（2026-03-03）
+
+本次稳定性修复包含以下行为调整：
+
+- 修复 `keepAliveMonitor` 的并发计数问题，避免 `sync: negative WaitGroup counter`。
+- 单请求失败（目标连接超时/拒绝等）默认不再触发全局 SSH 重连。
+- 仅在识别为 SSH 链路级错误时触发重连（例如连接已关闭、通道异常包、broken pipe）。
+- 强制同一时刻仅保留一个活跃 SSH 连接；重连成功后会及时释放旧连接。
+
+详细说明见：`docs/features/ssh-stability-fix-2026-03.md`
 
 ## MacOS boot auto-start settings
 

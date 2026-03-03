@@ -7,6 +7,7 @@
 ### 📁 features/
 功能说明文档
 - `process-info-feature.md` - 进程信息显示功能详细说明 🆕
+- `ssh-stability-fix-2026-03.md` - SSH连接稳定性修复说明（保活/重连）🆕
 - `restart-service-feature.md` - 服务重启功能详细说明
 - `log-clear-feature.md` - 日志清理功能详细说明
 - `back-to-top-optimization.md` - 置顶按钮样式优化说明 🆕

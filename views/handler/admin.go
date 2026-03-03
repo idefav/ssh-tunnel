@@ -39,11 +39,13 @@ type Data struct {
 }
 
 type SSHClientState struct {
-	Version    string
-	LocalAddr  net.Addr
-	RemoteAddr net.Addr
-	SessionID  string
-	User       string
+	Version         string
+	LocalAddr       net.Addr
+	RemoteAddr      net.Addr
+	SessionID       string
+	User            string
+	ConnectionCount int
+	ReconnectCount  uint64
 }
 
 func ListStaticFiles(w http.ResponseWriter, r *http.Request) {
@@ -163,15 +165,18 @@ func ShowSSHClientStateView(response http.ResponseWriter, request *http.Request)
 	remoteAddr := client.RemoteAddr()
 	id := client.SessionID()
 	user := client.User()
+	stats := tunnel.SnapshotSSHConnectionStats()
 
 	marshal, _ := json.Marshal(id)
 
 	var data = SSHClientState{
-		Version:    string(version),
-		LocalAddr:  addr,
-		RemoteAddr: remoteAddr,
-		SessionID:  string(marshal),
-		User:       user,
+		Version:         string(version),
+		LocalAddr:       addr,
+		RemoteAddr:      remoteAddr,
+		SessionID:       string(marshal),
+		User:            user,
+		ConnectionCount: stats.ConnectionCount,
+		ReconnectCount:  stats.ReconnectCount,
 	}
 
 	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml",
