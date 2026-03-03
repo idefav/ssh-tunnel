@@ -12,73 +12,34 @@ import (
 
 // reconnectSSH 实现SSH连接的重连逻辑
 func (t *Tunnel) ReconnectSSH(ctx context.Context) {
+	t.ReconnectSSHWithSource(ctx, "default")
+}
+
+func (t *Tunnel) ReconnectSSHWithSource(ctx context.Context, source string) {
+	if source == "" {
+		source = "unknown"
+	}
+
 	reconnectCtx := t.reconnectContext(ctx)
 	if reconnectCtx.Err() != nil {
+		log.Printf("跳过SSH重连，context已结束(source=%s)", source)
 		return
 	}
 
 	if !t.beginReconnect(reconnectCtx) {
+		log.Printf("跳过SSH重连，已有连接或重连中(source=%s)", source)
 		return
 	}
 	defer t.endReconnect()
 
-	log.Printf("正在尝试重新连接SSH服务器: %s", t.serverAddress)
+	log.Printf("正在尝试重新连接SSH服务器: %s (source=%s)", t.serverAddress, source)
 	cl, err2 := t.dialSSH()
 	if err2 == nil {
-		t.setSSHClient(cl)
-		t.startKeepAlive(reconnectCtx)
+		t.setSSHClient(cl, source)
+		t.startKeepAlive(reconnectCtx, cl)
 		return
 	}
-	log.Println(err2)
-
-	maxRetries := t.reconnectMaxRetries
-	if maxRetries <= 0 {
-		maxRetries = 20
-	}
-	// 初始重试间隔（秒）
-	baseRetryInterval := t.retryInterval
-	if baseRetryInterval == 0 {
-		baseRetryInterval = 1 * time.Second
-	}
-	maxRetryInterval := t.reconnectMaxInterval
-	if maxRetryInterval <= 0 {
-		maxRetryInterval = 5 * time.Second
-	}
-
-	// 指数退避策略的重试
-	for i := 0; i < maxRetries; i++ {
-		// 检查上下文是否已取消
-		if reconnectCtx.Err() != nil {
-			log.Println("重连操作被取消")
-			return
-		}
-
-		// 计算当前重试的等待时间（使用指数退避策略）
-		retryInterval := baseRetryInterval * time.Duration(1<<uint(i))
-		if retryInterval > maxRetryInterval {
-			retryInterval = maxRetryInterval
-		}
-
-		log.Printf("等待 %v 秒后尝试重连 (尝试 %d/%d)", retryInterval.Seconds(), i+1, maxRetries)
-		select {
-		case <-reconnectCtx.Done():
-			return
-		case <-time.After(retryInterval):
-			// 继续尝试重连
-		}
-
-		cl, err := t.dialSSH()
-		if err != nil {
-			log.Printf("SSH连接尝试失败: %v，继续重试", err)
-			continue
-		}
-
-		t.setSSHClient(cl)
-		t.startKeepAlive(reconnectCtx)
-		return
-	}
-
-	log.Printf("达到最大重试次数 (%d)，将在服务需要时重新尝试", maxRetries)
+	log.Printf("SSH单次重连失败(source=%s): %v", source, err2)
 }
 
 func (t *Tunnel) beginReconnect(ctx context.Context) bool {
@@ -119,24 +80,58 @@ func (t *Tunnel) endReconnect() {
 	t.reconnectMutex.Unlock()
 }
 
-func (t *Tunnel) setSSHClient(cl *ssh.Client) {
+func (t *Tunnel) setSSHClient(cl *ssh.Client, source string) {
 	t.reconnectMutex.Lock()
+	oldClient := t.client
 	t.client = cl
+	currentCount := t.reconnectCount
+	isFirstConnect := false
+	if cl != nil {
+		if t.sshConnectedOnce {
+			t.reconnectCount++
+			currentCount = t.reconnectCount
+		} else {
+			t.sshConnectedOnce = true
+			isFirstConnect = true
+			currentCount = t.reconnectCount
+		}
+	}
 	t.reconnectMutex.Unlock()
+
+	if cl != nil {
+		localAddr := "<nil>"
+		remoteAddr := "<nil>"
+		if cl.LocalAddr() != nil {
+			localAddr = cl.LocalAddr().String()
+		}
+		if cl.RemoteAddr() != nil {
+			remoteAddr = cl.RemoteAddr().String()
+		}
+		if isFirstConnect {
+			log.Printf("SSH首次连接成功(source=%s, reconnectCount=%d, local=%s, remote=%s)", source, currentCount, localAddr, remoteAddr)
+		} else {
+			log.Printf("SSH重连成功(source=%s, reconnectCount=%d, local=%s, remote=%s)", source, currentCount, localAddr, remoteAddr)
+		}
+	}
+
+	if oldClient != nil && oldClient != cl {
+		_ = oldClient.Close()
+		log.Printf("旧SSH连接已释放(source=%s)", source)
+	}
 }
 
-func (t *Tunnel) startKeepAlive(ctx context.Context) {
+func (t *Tunnel) startKeepAlive(ctx context.Context, client *ssh.Client) {
 	safe.GO(func() {
 		var once sync.Once
-		var wg sync.WaitGroup
-		wg.Add(1)
-		t.keepAliveMonitor(ctx, &once, &wg)
+		t.keepAliveMonitor(ctx, &once, client)
 
-		t.invalidateSSHClient("keepalive monitor stopped")
+		if !t.invalidateSSHClientIfMatch(client, "keepalive monitor stopped") {
+			return
+		}
 
 		log.Printf("SSH连接已关闭，准备重新连接")
 		safe.GO(func() {
-			t.ReconnectSSH(ctx)
+			t.ReconnectSSHWithSource(ctx, "keepalive-monitor")
 		})
 	})
 }
@@ -156,7 +151,7 @@ func (t *Tunnel) dialSSH() (*ssh.Client, error) {
 	})
 
 	if err != nil {
-		log.Printf("SSH重连失败: %v，将继续重试", err)
+		log.Printf("SSH连接失败: %v", err)
 		return nil, err
 	}
 

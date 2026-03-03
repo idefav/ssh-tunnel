@@ -98,33 +98,16 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 					continue
 				}
 
-				var once sync.Once
-				cl, err := DefaultSshTunnel.dialSSH()
-				if err != nil {
-					once.Do(func() {
-						log.Printf("SSH dial error: %v", err)
-					})
-					retryInterval := DefaultSshTunnel.retryInterval
-					if retryInterval <= 0 {
-						retryInterval = time.Second
-					}
-					select {
-					case <-connCtx.Done():
-						return
-					case <-time.After(retryInterval):
-					}
-					continue
+				DefaultSshTunnel.ReconnectSSHWithSource(connCtx, "bootstrap-loop")
+
+				retryInterval := DefaultSshTunnel.retryInterval
+				if retryInterval <= 0 {
+					retryInterval = time.Second
 				}
-
-				DefaultSshTunnel.setSSHClient(cl)
-				log.Println("Connected to ssh server")
-
-				DefaultSshTunnel.keepAliveMonitor(ctx, &once, wg)
-				DefaultSshTunnel.invalidateSSHClient("initial loop keepalive monitor stopped")
-				log.Printf("SSH Connection Closed!")
-
-				if ctx.Err() != nil {
+				select {
+				case <-connCtx.Done():
 					return
+				case <-time.After(retryInterval):
 				}
 			}
 

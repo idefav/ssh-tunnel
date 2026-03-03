@@ -25,6 +25,14 @@
                             <th class="text-secondary">远程地址</th>
                             <td>{{.RemoteAddr}}</td>
                         </tr>
+                        <tr>
+                            <th class="text-secondary">当前SSH连接数</th>
+                            <td id="sshConnectionCount">{{.ConnectionCount}}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">累计重连次数</th>
+                            <td id="sshReconnectCount">{{.ReconnectCount}}</td>
+                        </tr>
                         </tbody>
                     </table>
                 </div>
@@ -65,6 +73,9 @@
                 </button>
                 <button id="reconnectSsh" type="button" class="btn btn-primary">
                     <i class="bi bi-plug me-1"></i>重新连接 SSH
+                </button>
+                <button id="resetReconnectCount" type="button" class="btn btn-outline-warning">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>重连计数清零
                 </button>
             </div>
 
@@ -216,6 +227,7 @@
     <script>
         document.addEventListener("DOMContentLoaded", function() {
             const reconnectBtn = document.getElementById("reconnectSsh");
+            const resetReconnectCountBtn = document.getElementById("resetReconnectCount");
             const refreshBtn = document.getElementById("refresh");
             const testBtn = document.getElementById("testSshQuality");
             const toast = document.getElementById("toast");
@@ -224,6 +236,8 @@
             const uploadSpeedEl = document.getElementById("sshUploadSpeed");
             const downloadSpeedEl = document.getElementById("sshDownloadSpeed");
             const trafficTotalEl = document.getElementById("sshTrafficTotal");
+            const connectionCountEl = document.getElementById("sshConnectionCount");
+            const reconnectCountEl = document.getElementById("sshReconnectCount");
             const chartCanvas = document.getElementById("sshSpeedChart");
             const toggleRefreshBtn = document.getElementById("toggleRefresh");
             const refreshStatusText = document.getElementById("refreshStatusText");
@@ -341,6 +355,12 @@
                 const upTotal = formatBytes(data.uploadBytesTotal || 0);
                 const downTotal = formatBytes(data.downloadBytesTotal || 0);
                 trafficTotalEl.textContent = "\u2191 " + upTotal + " / \u2193 " + downTotal;
+                if (connectionCountEl) {
+                    connectionCountEl.textContent = (data.connectionCount ?? 0).toString();
+                }
+                if (reconnectCountEl) {
+                    reconnectCountEl.textContent = (data.reconnectCount ?? 0).toString();
+                }
                 pushHistory(data.uploadBps || 0, data.downloadBps || 0);
                 drawSpeedChart();
             }
@@ -658,6 +678,33 @@
                     .always(function() {
                         reconnectBtn.disabled = false;
                         reconnectBtn.innerHTML = '<i class="bi bi-plug me-1"></i>重新连接 SSH';
+                    });
+            });
+
+            resetReconnectCountBtn.addEventListener("click", function() {
+                resetReconnectCountBtn.disabled = true;
+                resetReconnectCountBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>清零中...';
+
+                $.post("/admin/ssh/reconnect-count/reset")
+                    .done(function(data) {
+                        if (!data || data.success === false) {
+                            showToast((data && data.message) || "清零失败", false);
+                            return;
+                        }
+                        if (connectionCountEl) {
+                            connectionCountEl.textContent = (data.connectionCount ?? 0).toString();
+                        }
+                        if (reconnectCountEl) {
+                            reconnectCountEl.textContent = (data.reconnectCount ?? 0).toString();
+                        }
+                        showToast("重连计数已清零", true);
+                    })
+                    .fail(function() {
+                        showToast("清零失败", false);
+                    })
+                    .always(function() {
+                        resetReconnectCountBtn.disabled = false;
+                        resetReconnectCountBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>重连计数清零';
                     });
             });
 

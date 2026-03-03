@@ -14,6 +14,7 @@
 | 进程信息显示 | [docs/features/process-info-feature.md](features/process-info-feature.md) | 进程信息显示功能详细说明 |
 | 服务重启 | [docs/features/restart-service-feature.md](features/restart-service-feature.md) | 服务重启功能详细说明 |
 | 多 Profile 动态切换 | [docs/features/multi-profile-switch-design.md](features/multi-profile-switch-design.md) | 多 SSH Profile 动态切换技术方案 |
+| SSH稳定性修复 | [docs/features/ssh-stability-fix-2026-03.md](features/ssh-stability-fix-2026-03.md) | 保活与重连逻辑修复说明 |
 
 ### 🔧 部署文档
 | 文档 | 路径 | 描述 |
@@ -74,7 +75,7 @@
 
 ## 📋 文档维护
 
-- 📅 最后更新: 2025年6月21日
+- 📅 最后更新: 2026年3月3日
 - 👥 维护者: SSH隧道项目团队
 - 📧 反馈: 如有文档问题请提交Issue
 
