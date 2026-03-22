@@ -227,7 +227,7 @@ ClientAliveCountMax 3</code></pre>
 github.com
 *.stackoverflow.com</code></pre>
                                     <li>启动SSH-Tunnel并启用域名过滤：</li>
-                                    <pre class="bg-dark text-light p-2 rounded"><code>./ssh-tunnel -s your_server -http.enable -http.filter.domain.enable -http.filter.domain.file-path /path/to/domain.txt</code></pre>
+                                    <pre class="bg-dark text-light p-2 rounded"><code>./ssh-tunnel -s your_server -http.enable -http.domain-filter.enable -http.domain-filter.file-path /path/to/domain.txt</code></pre>
                                 </ol>
 
                                 <h5>域名过滤的用途：</h5>
@@ -334,10 +334,10 @@ github.com
                                 <ol>
                                     <li>为每个实例指定不同的端口：</li>
                                     <pre class="bg-dark text-light p-2 rounded"><code># 实例1
-./ssh-tunnel -s server1 -l 0.0.0.0:1081 -http.local.addr 0.0.0.0:1082 -admin.addr :1083
+./ssh-tunnel -s server1 -l 127.0.0.1:1081 -http.local.address 127.0.0.1:1082 -admin.address 127.0.0.1:1083
 
 # 实例2
-./ssh-tunnel -s server2 -l 0.0.0.0:2081 -http.local.addr 0.0.0.0:2082 -admin.addr :2083</code></pre>
+./ssh-tunnel -s server2 -l 127.0.0.1:2081 -http.local.address 127.0.0.1:2082 -admin.address 127.0.0.1:2083</code></pre>
 
                                     <li>如果配置为系统服务，为每个实例创建不同的服务配置文件</li>
                                 </ol>
@@ -347,20 +347,20 @@ github.com
                                 <ol>
                                     <li>在不同目录中安装不同的服务实例：</li>
                                     <pre class="bg-dark text-light p-2 rounded"><code># 在C:\ssh-tunnel1目录安装第一个服务
-C:\ssh-tunnel1\ssh-tunnel-winsvc.exe install
+C:\ssh-tunnel1\ssh-tunnel-svc.exe install --config=C:\ssh-tunnel1\.ssh-tunnel\config.properties
 
 # 在C:\ssh-tunnel2目录安装第二个服务
-C:\ssh-tunnel2\ssh-tunnel-winsvc.exe install --name "SSHTunnelService2"</code></pre>
+C:\ssh-tunnel2\ssh-tunnel-svc.exe install --name "SSHTunnelService2" --config=C:\ssh-tunnel2\.ssh-tunnel\config.properties</code></pre>
                                     <li>为每个实例创建不同的配置文件（.ssh-tunnel/config.properties）</li>
                                 </ol>
 
                                 <h5>针对MacOS LaunchAgents：</h5>
                                 <p>对于MacOS，创建多个不同名称的plist文件：</p>
                                 <pre class="bg-dark text-light p-2 rounded"><code># 第一个实例
-/Library/LaunchAgents/com.idefav.macos.ssh-tunnel1.plist
+/Library/LaunchDaemons/com.idefav.ssh-tunnel1.plist
 
 # 第二个实例
-/Library/LaunchAgents/com.idefav.macos.ssh-tunnel2.plist</code></pre>
+/Library/LaunchDaemons/com.idefav.ssh-tunnel2.plist</code></pre>
 
                                 <div class="alert alert-warning mt-3">
                                     <i class="bi bi-exclamation-triangle-fill me-2"></i>

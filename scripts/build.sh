@@ -33,3 +33,24 @@ GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o bin/ssh-tunnel-svc-darw
 # linux service
 GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o bin/ssh-tunnel-svc-linux-amd64 ./service/main
 GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o bin/ssh-tunnel-svc-linux-arm64 ./service/main
+
+rm -f bin/SHA256SUMS
+(
+  cd bin
+  sha256sum \
+    ssh-tunnel-windows-amd64.exe \
+    ssh-tunnel-windows-386.exe \
+    ssh-tunnel-windows-arm64.exe \
+    ssh-tunnel-darwin-amd64 \
+    ssh-tunnel-darwin-arm64 \
+    ssh-tunnel-linux-amd64 \
+    ssh-tunnel-linux-arm64 \
+    ssh-tunnel-svc-windows-386.exe \
+    ssh-tunnel-svc-windows-amd64.exe \
+    ssh-tunnel-svc-windows-arm64.exe \
+    ssh-tunnel-svc-darwin-amd64 \
+    ssh-tunnel-svc-darwin-arm64 \
+    ssh-tunnel-svc-linux-amd64 \
+    ssh-tunnel-svc-linux-arm64 \
+    > SHA256SUMS
+)

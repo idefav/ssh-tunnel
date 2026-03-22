@@ -72,7 +72,7 @@ Build completed!
   ssh-tunnel-darwin-amd64 - 11.67 MB
   ssh-tunnel-linux-amd64 - 11.44 MB  
   ssh-tunnel-windows-amd64.exe - 11.84 MB
-  Checksums saved to: SHA256SUMS.txt
+  Checksums saved to: SHA256SUMS
 ```
 
 ### 功能测试

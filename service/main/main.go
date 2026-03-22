@@ -25,13 +25,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-const DEFAULT_HOME = "C:\\ssh-tunnel"
-
 func main() {
 	srvConfig := &service.Config{
-		Name:        "SSHTunnelService",
-		DisplayName: "SSHTunnelService",
-		Description: "SSHTunnelService",
+		Name:        constants.ServiceNameForGOOS(runtime.GOOS),
+		DisplayName: constants.ServiceDisplayNameForGOOS(runtime.GOOS),
+		Description: constants.ServiceDisplayNameForGOOS(runtime.GOOS),
 	}
 
 	if runtime.GOOS == "darwin" {
@@ -161,7 +159,7 @@ func innerStart() {
 			homeDir = os.Getenv("HOME")
 		}
 		if homeDir == "" {
-			homeDir = DEFAULT_HOME
+			homeDir = constants.WindowsInstallRoot
 		}
 		log.Printf("Failed to get current user (%v), fallback home: %s", err, homeDir)
 		u = &user.User{HomeDir: homeDir}

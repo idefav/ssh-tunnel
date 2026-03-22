@@ -6,14 +6,14 @@ login.username=root
 ssh.private_key_path=~/.ssh/id_rsa
 
 # 本地代理配置
-local.address=0.0.0.0:1081
-http.local.address=0.0.0.0:1082
+local.address=127.0.0.1:1081
+http.local.address=127.0.0.1:1082
 socks5.enable=true
 http.enable=false
 
 # 管理面板配置
 admin.enable=true
-admin.address=:1083
+admin.address=127.0.0.1:1083
 
 # HTTP基本认证
 http.basic.enable=false

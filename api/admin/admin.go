@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"runtime"
 	"ssh-tunnel/cfg"
+	"ssh-tunnel/constants"
 	"ssh-tunnel/router"
 	"ssh-tunnel/safe"
 	"ssh-tunnel/tunnel"
@@ -1095,31 +1096,38 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				return
 			}
 
-			// 定义配置项元数据
+			appConfig := cfg.NewAppConfig()
 			configMetadata := []map[string]interface{}{
-				{"key": "server.ip", "type": "string", "description": "服务器IP地址", "category": "服务器"},
-				{"key": "server.ssh.port", "type": "int", "description": "SSH端口", "category": "服务器"},
-				{"key": "user", "type": "string", "description": "登录用户名", "category": "服务器"},
-				{"key": "ssh.path.private_key", "type": "string", "description": "私钥文件路径", "category": "SSH"},
-				{"key": "local.addr", "type": "string", "description": "本地SOCKS5监听地址", "category": "代理"},
-				{"key": "http.local.addr", "type": "string", "description": "本地HTTP监听地址", "category": "代理"},
-				{"key": "http.enable", "type": "bool", "description": "启用HTTP代理", "category": "代理"},
-				{"key": "socks5.enable", "type": "bool", "description": "启用SOCKS5代理", "category": "代理"},
-				{"key": "http.basic.enable", "type": "bool", "description": "启用HTTP Basic认证", "category": "认证"},
-				{"key": "http.basic.username", "type": "string", "description": "HTTP Basic用户名", "category": "认证"},
-				{"key": "http.basic.password", "type": "string", "description": "HTTP Basic密码", "category": "认证"},
-				{"key": "http.over.ssh.enable", "type": "bool", "description": "启用HTTP Over SSH", "category": "代理"},
-				{"key": "http.filter.domain.enable", "type": "bool", "description": "启用域名过滤", "category": "过滤"},
-				{"key": "http.filter.domain.file-path", "type": "string", "description": "域名过滤文件路径", "category": "过滤"},
-				{"key": "admin.enable", "type": "bool", "description": "启用管理界面", "category": "管理"},
-				{"key": "admin.addr", "type": "string", "description": "管理界面监听地址", "category": "管理"},
-				{"key": "retry.interval.sec", "type": "int", "description": "重试间隔(秒)", "category": "高级"},
-				{"key": "ssh.dial.timeout.sec", "type": "int", "description": "SSH握手超时(秒)", "category": "高级"},
-				{"key": "ssh.dest.dial.timeout.sec", "type": "int", "description": "SSH目标连接超时(秒)", "category": "高级"},
-				{"key": "ssh.keepalive.interval.sec", "type": "int", "description": "SSH保活间隔(秒)", "category": "高级"},
-				{"key": "ssh.keepalive.count.max", "type": "int", "description": "SSH保活最大连续失败次数", "category": "高级"},
-				{"key": "ssh.reconnect.max.retries", "type": "int", "description": "SSH重连最大重试次数", "category": "高级"},
-				{"key": "ssh.reconnect.max.interval.sec", "type": "int", "description": "SSH重连最大退避间隔(秒)", "category": "高级"},
+				{"key": appConfig.ServerIp.Key, "type": "string", "description": "服务器IP地址", "category": "服务器"},
+				{"key": appConfig.ServerSshPort.Key, "type": "int", "description": "SSH端口", "category": "服务器"},
+				{"key": appConfig.LoginUser.Key, "type": "string", "description": "登录用户名", "category": "服务器"},
+				{"key": appConfig.SshPrivateKeyPath.Key, "type": "string", "description": "私钥文件路径", "category": "SSH"},
+				{"key": appConfig.LocalAddress.Key, "type": "string", "description": "本地SOCKS5监听地址", "category": "代理"},
+				{"key": appConfig.HttpLocalAddress.Key, "type": "string", "description": "本地HTTP监听地址", "category": "代理"},
+				{"key": appConfig.EnableHttp.Key, "type": "bool", "description": "启用HTTP代理", "category": "代理"},
+				{"key": appConfig.EnableSocks5.Key, "type": "bool", "description": "启用SOCKS5代理", "category": "代理"},
+				{"key": appConfig.HttpBasicAuthEnable.Key, "type": "bool", "description": "启用HTTP Basic认证", "category": "认证"},
+				{"key": appConfig.HttpBasicUserName.Key, "type": "string", "description": "HTTP Basic用户名", "category": "认证"},
+				{"key": appConfig.HttpBasicPassword.Key, "type": "string", "description": "HTTP Basic密码", "category": "认证"},
+				{"key": appConfig.EnableHttpOverSSH.Key, "type": "bool", "description": "启用HTTP Over SSH", "category": "代理"},
+				{"key": appConfig.EnableHttpDomainFilter.Key, "type": "bool", "description": "启用域名过滤", "category": "过滤"},
+				{"key": appConfig.HttpDomainFilterFilePath.Key, "type": "string", "description": "域名过滤文件路径", "category": "过滤"},
+				{"key": appConfig.EnableAdmin.Key, "type": "bool", "description": "启用管理界面", "category": "管理"},
+				{"key": appConfig.AdminAddress.Key, "type": "string", "description": "管理界面监听地址", "category": "管理"},
+				{"key": appConfig.RetryIntervalSec.Key, "type": "int", "description": "重试间隔(秒)", "category": "高级"},
+				{"key": appConfig.SSHDialTimeoutSec.Key, "type": "int", "description": "SSH握手超时(秒)", "category": "高级"},
+				{"key": appConfig.SSHDestDialTimeoutSec.Key, "type": "int", "description": "SSH目标连接超时(秒)", "category": "高级"},
+				{"key": appConfig.SSHKeepAliveIntervalSec.Key, "type": "int", "description": "SSH保活间隔(秒)", "category": "高级"},
+				{"key": appConfig.SSHKeepAliveCountMax.Key, "type": "int", "description": "SSH保活最大连续失败次数", "category": "高级"},
+				{"key": appConfig.SSHReconnectMaxRetries.Key, "type": "int", "description": "SSH重连最大重试次数", "category": "高级"},
+				{"key": appConfig.SSHReconnectMaxIntervalSec.Key, "type": "int", "description": "SSH重连最大退避间隔(秒)", "category": "高级"},
+				{"key": appConfig.LogFilePath.Key, "type": "string", "description": "日志文件路径", "category": "高级"},
+				{"key": appConfig.HomeDir.Key, "type": "string", "description": "运行状态目录", "category": "高级"},
+				{"key": appConfig.AutoUpdateEnabled.Key, "type": "bool", "description": "启用自动更新检查", "category": "更新"},
+				{"key": appConfig.AutoUpdateOwner.Key, "type": "string", "description": "GitHub 仓库所有者", "category": "更新"},
+				{"key": appConfig.AutoUpdateRepo.Key, "type": "string", "description": "GitHub 仓库名称", "category": "更新"},
+				{"key": appConfig.AutoUpdateCurrentVersion.Key, "type": "string", "description": "当前版本", "category": "更新"},
+				{"key": appConfig.AutoUpdateCheckInterval.Key, "type": "int", "description": "自动更新检查间隔(秒)", "category": "更新"},
 			}
 
 			// 为每个配置项添加当前值
@@ -1366,11 +1374,11 @@ func restartWindowsService() {
 	log.Println("正在重启Windows服务...")
 
 	// 停止服务
-	stopCmd := exec.Command("sc", "stop", "SSHTunnelService")
+	stopCmd := exec.Command("sc", "stop", constants.ServiceNameWindows)
 	if err := stopCmd.Run(); err != nil {
 		log.Printf("停止服务失败: %v", err)
 		// 尝试使用net命令
-		stopCmd = exec.Command("net", "stop", "SSHTunnelService")
+		stopCmd = exec.Command("net", "stop", constants.ServiceNameWindows)
 		if err := stopCmd.Run(); err != nil {
 			log.Printf("使用net命令停止服务也失败: %v", err)
 		}
@@ -1380,11 +1388,11 @@ func restartWindowsService() {
 	time.Sleep(3 * time.Second)
 
 	// 启动服务
-	startCmd := exec.Command("sc", "start", "SSHTunnelService")
+	startCmd := exec.Command("sc", "start", constants.ServiceNameWindows)
 	if err := startCmd.Run(); err != nil {
 		log.Printf("启动服务失败: %v", err)
 		// 尝试使用net命令
-		startCmd = exec.Command("net", "start", "SSHTunnelService")
+		startCmd = exec.Command("net", "start", constants.ServiceNameWindows)
 		if err := startCmd.Run(); err != nil {
 			log.Printf("使用net命令启动服务也失败: %v", err)
 		} else {
@@ -1400,7 +1408,7 @@ func restartMacOSService() {
 	log.Println("正在重启macOS服务...")
 
 	// macOS使用launchctl管理服务
-	serviceName := "com.idefav.ssh-tunnel"
+	serviceName := constants.ServiceNameDarwin
 
 	// 尝试停止服务
 	stopCmd := exec.Command("launchctl", "stop", serviceName)
@@ -1408,7 +1416,7 @@ func restartMacOSService() {
 		log.Printf("停止macOS服务失败: %v", err)
 
 		// 尝试卸载并重新加载
-		unloadCmd := exec.Command("launchctl", "unload", "/Library/LaunchDaemons/"+serviceName+".plist")
+		unloadCmd := exec.Command("launchctl", "unload", constants.DarwinLaunchdPlist)
 		if err := unloadCmd.Run(); err != nil {
 			log.Printf("卸载服务失败: %v", err)
 		}
@@ -1423,7 +1431,7 @@ func restartMacOSService() {
 		log.Printf("启动macOS服务失败: %v", err)
 
 		// 尝试重新加载服务
-		loadCmd := exec.Command("launchctl", "load", "/Library/LaunchDaemons/"+serviceName+".plist")
+		loadCmd := exec.Command("launchctl", "load", constants.DarwinLaunchdPlist)
 		if err := loadCmd.Run(); err != nil {
 			log.Printf("重新加载服务失败: %v", err)
 		} else {
@@ -1438,7 +1446,7 @@ func restartMacOSService() {
 func restartLinuxService() {
 	log.Println("正在重启Linux服务...")
 
-	serviceName := "ssh-tunnel"
+	serviceName := constants.ServiceNameLinux
 
 	// 优先尝试systemctl（systemd）
 	if isSystemdAvailable() {
@@ -1554,41 +1562,60 @@ func cleanupDuplicateConfigs() error {
 		return fmt.Errorf("配置实例未初始化")
 	}
 
+	appConfig := cfg.NewAppConfig()
+
 	// 定义正确的配置键列表
 	validKeys := []string{
-		"home.dir",
-		"server.ip",
-		"server.ssh.port",
-		"ssh.private.key.path",
-		"login.username",
-		"local.address",
-		"http.local.address",
-		"http.enable",
-		"socks5.enable",
-		"http.over.ssh.enable",
-		"http.domain.filter.enable",
-		"http.domain.filter.file.path",
-		"admin.enable",
-		"admin.address",
-		"http.basic.enable",
-		"http.basic.username",
-		"http.basic.password",
-		"retry.interval.sec",
-		"log.file.path",
+		appConfig.HomeDir.Key,
+		appConfig.ServerIp.Key,
+		appConfig.ServerSshPort.Key,
+		appConfig.SshPrivateKeyPath.Key,
+		appConfig.LoginUser.Key,
+		appConfig.LocalAddress.Key,
+		appConfig.HttpLocalAddress.Key,
+		appConfig.EnableHttp.Key,
+		appConfig.EnableSocks5.Key,
+		appConfig.EnableHttpOverSSH.Key,
+		appConfig.EnableHttpDomainFilter.Key,
+		appConfig.HttpDomainFilterFilePath.Key,
+		appConfig.EnableAdmin.Key,
+		appConfig.AdminAddress.Key,
+		appConfig.HttpBasicAuthEnable.Key,
+		appConfig.HttpBasicUserName.Key,
+		appConfig.HttpBasicPassword.Key,
+		appConfig.RetryIntervalSec.Key,
+		appConfig.SSHDialTimeoutSec.Key,
+		appConfig.SSHDestDialTimeoutSec.Key,
+		appConfig.SSHKeepAliveIntervalSec.Key,
+		appConfig.SSHKeepAliveCountMax.Key,
+		appConfig.SSHReconnectMaxRetries.Key,
+		appConfig.SSHReconnectMaxIntervalSec.Key,
+		appConfig.LogFilePath.Key,
+		appConfig.AutoUpdateEnabled.Key,
+		appConfig.AutoUpdateOwner.Key,
+		appConfig.AutoUpdateRepo.Key,
+		appConfig.AutoUpdateCurrentVersion.Key,
+		appConfig.AutoUpdateCheckInterval.Key,
+		appConfig.DownloadProxyEnabled.Key,
+		appConfig.DownloadProxyURL.Key,
+		appConfig.DownloadProxyUsername.Key,
+		appConfig.DownloadProxyPassword.Key,
 	}
 
 	// 定义需要删除的重复或错误配置键
 	keysToRemove := []string{
-		"adminaddress",                 // 错误的键名
-		"http.basic.password",          // 重复
-		"http.basic.username",          // 重复
-		"http.domain-filter.enable",    // 连字符版本，应该用点号
-		"http.domain-filter.file-path", // 连字符版本，应该用点号
-		"http.filter.domain.file-path", // 顺序错误的版本
-		"http.over-ssh.enable",         // 连字符版本，应该用点号
-		"ssh.private.key.path",         // 重复（原文件中有两个版本）
-		"ssh.private_key_path",         // 下划线版本，应该用点号
-		"http.domain.filter.enable",    // 如果有重复的话
+		"adminaddress",
+		"user",
+		"ssh.path.private_key",
+		"server.ssh.private_key_path",
+		"ssh.private.key.path",
+		"local.addr",
+		"http.local.addr",
+		"http.filter.domain.enable",
+		"http.filter.domain.file-path",
+		"http.domain.filter.enable",
+		"http.domain.filter.file.path",
+		"admin.addr",
 	}
 
 	// 删除重复和错误的配置键

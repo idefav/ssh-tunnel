@@ -40,6 +40,35 @@ Build-Target -GoOS "darwin" -GoArch "arm64" -Output "bin\ssh-tunnel-svc-darwin-a
 Build-Target -GoOS "linux" -GoArch "amd64" -Output "bin\ssh-tunnel-svc-linux-amd64" -Package ".\service\main"
 Build-Target -GoOS "linux" -GoArch "arm64" -Output "bin\ssh-tunnel-svc-linux-arm64" -Package ".\service\main"
 
+$checksumTargets = @(
+    "ssh-tunnel-windows-amd64.exe",
+    "ssh-tunnel-windows-386.exe",
+    "ssh-tunnel-windows-arm64.exe",
+    "ssh-tunnel-darwin-amd64",
+    "ssh-tunnel-darwin-arm64",
+    "ssh-tunnel-linux-amd64",
+    "ssh-tunnel-linux-arm64",
+    "ssh-tunnel-svc-windows-386.exe",
+    "ssh-tunnel-svc-windows-amd64.exe",
+    "ssh-tunnel-svc-windows-arm64.exe",
+    "ssh-tunnel-svc-darwin-amd64",
+    "ssh-tunnel-svc-darwin-arm64",
+    "ssh-tunnel-svc-linux-amd64",
+    "ssh-tunnel-svc-linux-arm64"
+)
+
+$checksumPath = "bin\\SHA256SUMS"
+if (Test-Path $checksumPath) {
+    Remove-Item $checksumPath -Force
+}
+foreach ($target in $checksumTargets) {
+    $fullPath = Join-Path "bin" $target
+    if (Test-Path $fullPath) {
+        $hash = Get-FileHash $fullPath -Algorithm SHA256
+        "$($hash.Hash.ToLower())  $target" | Out-File -FilePath $checksumPath -Append -Encoding ascii
+    }
+}
+
 Remove-Item Env:GOOS -ErrorAction SilentlyContinue
 Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
 

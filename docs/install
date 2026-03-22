@@ -1,0 +1,18 @@
+echo @'
+' > /dev/null
+INSTALL_URL="https://idefav.github.io/ssh-tunnel/assets/install/install-unix.sh"
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "$INSTALL_URL" | sh -s -- "$@"
+elif command -v wget >/dev/null 2>&1; then
+  wget -qO- "$INSTALL_URL" | sh -s -- "$@"
+else
+  echo "curl or wget is required for installation." >&2
+  exit 1
+fi
+exit $?
+echo > /dev/null <<"out-null" ###
+'@ | Out-Null
+$installUrl = "https://idefav.github.io/ssh-tunnel/assets/install/install-windows.ps1"
+$client = New-Object Net.WebClient
+Invoke-Expression ($client.DownloadString($installUrl))
+out-null

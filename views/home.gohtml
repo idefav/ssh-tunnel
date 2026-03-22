@@ -107,7 +107,7 @@
                     <div class="card-body">
                         <pre class="bg-light p-3 rounded">
 Usage of ./ssh-tunnel:
-      -admin.addr string
+      -admin.address string
             Admin监听地址 (default ":1083")
       -admin.enable
             是否启用Admin页面
@@ -119,17 +119,17 @@ Usage of ./ssh-tunnel:
             Basic认证, 用户名
       -http.enable
             是否开启Http代理
-      -http.filter.domain.enable
+      -http.domain-filter.enable
             是否启用Http域名过滤
-      -http.filter.domain.file-path string
+      -http.domain-filter.file-path string
             过滤http请求 (default "C:\\Users\\idefav/.ssh-tunnel/domain.txt")
-      -http.local.addr string
+      -http.local.address string
             Http监听地址 (default "0.0.0.0:1082")
       -http.over.ssh.enable
             是否开启Http Over SSH
       -l string
             本地地址(短命令) (default "0.0.0.0:1081")
-      -local.addr string
+      -local.address string
             本地地址 (default "0.0.0.0:1081")
       -p int
             服务器SSH端口(短命令) (default 22)
@@ -145,11 +145,11 @@ Usage of ./ssh-tunnel:
             服务器SSH端口 (default 22)
       -socks5.enable
             是否开启Socks5代理 (default true)
-      -ssh.path.private_key string
+      -ssh.private_key_path string
             私钥地址 (default "C:\\Users\\idefav/.ssh/id_rsa")
       -u string
             用户名(短命令) (default "root")
-      -user string
+      -login.username string
             用户名 (default "root")
                         </pre>
                     </div>
@@ -208,7 +208,7 @@ Usage of ./ssh-tunnel:
                         </h2>
                         <div id="collapseFour" class="accordion-collapse collapse" aria-labelledby="scenario4" data-bs-parent="#scenariosAccordion">
                             <div class="accordion-body">
-                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -http.filter.domain.enable -http.filter.domain.file-path /path/to/domain.txt</code>
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -http.domain-filter.enable -http.domain-filter.file-path /path/to/domain.txt</code>
                                 <p class="mt-2">启用HTTP域名过滤功能，只有匹配domain.txt文件中的域名才会通过SSH隧道代理，其他请求将直接连接。这对于只需要代理访问特定网站的场景非常有用，可以提高整体浏览速度。</p>
                                 <p>domain.txt文件示例内容：</p>
                                 <pre class="bg-light p-2 rounded">
@@ -239,7 +239,7 @@ githubusercontent.com</pre>
                         </h2>
                         <div id="collapseSix" class="accordion-collapse collapse" aria-labelledby="scenario6" data-bs-parent="#scenariosAccordion">
                             <div class="accordion-body">
-                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -local.addr 127.0.0.1:8888 -http.local.addr 127.0.0.1:8889</code>
+                                <code>./ssh-tunnel -s your-ssh-server-ip -u your-username -local.address 127.0.0.1:8888 -http.local.address 127.0.0.1:8889</code>
                                 <p class="mt-2">自定义Socks5代理和HTTP代理的监听地址和端口。这在已有其他服务占用默认端口或需要限制代理服务只在本地回环地址可用的情况下非常有用。</p>
                             </div>
                         </div>

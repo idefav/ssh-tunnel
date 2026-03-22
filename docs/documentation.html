@@ -112,17 +112,17 @@
                                     <td>22</td>
                                 </tr>
                                 <tr>
-                                    <td><code>-u</code>, <code>-user</code></td>
+                                    <td><code>-u</code>, <code>-login.username</code></td>
                                     <td>用户名</td>
                                     <td>root</td>
                                 </tr>
                                 <tr>
-                                    <td><code>-l</code>, <code>-local.addr</code></td>
+                                    <td><code>-l</code>, <code>-local.address</code></td>
                                     <td>本地SOCKS5代理地址</td>
                                     <td>0.0.0.0:1081</td>
                                 </tr>
                                 <tr>
-                                    <td><code>-pk</code>, <code>-ssh.path.private_key</code></td>
+                                    <td><code>-pk</code>, <code>-ssh.private_key_path</code></td>
                                     <td>私钥地址</td>
                                     <td>~/.ssh/id_rsa</td>
                                 </tr>
@@ -137,7 +137,7 @@
                                     <td>false</td>
                                 </tr>
                                 <tr>
-                                    <td><code>-http.local.addr</code></td>
+                                    <td><code>-http.local.address</code></td>
                                     <td>Http监听地址</td>
                                     <td>0.0.0.0:1082</td>
                                 </tr>
@@ -147,12 +147,12 @@
                                     <td>false</td>
                                 </tr>
                                 <tr>
-                                    <td><code>-http.filter.domain.enable</code></td>
+                                    <td><code>-http.domain-filter.enable</code></td>
                                     <td>是否启用Http域名过滤</td>
                                     <td>false</td>
                                 </tr>
                                 <tr>
-                                    <td><code>-http.filter.domain.file-path</code></td>
+                                    <td><code>-http.domain-filter.file-path</code></td>
                                     <td>过滤http请求的域名文件</td>
                                     <td>~/.ssh-tunnel/domain.txt</td>
                                 </tr>
@@ -177,7 +177,7 @@
                                     <td>false</td>
                                 </tr>
                                 <tr>
-                                    <td><code>-admin.addr</code></td>
+                                    <td><code>-admin.address</code></td>
                                     <td>Admin监听地址</td>
                                     <td>:1083</td>
                                 </tr>
@@ -201,7 +201,7 @@
 
                     <h3>HTTP 代理</h3>
                     <p>SSH-Tunnel 还支持 HTTP 代理模式，默认在本地 1082 端口，需要显式启用：</p>
-                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -http.enable -http.local.addr 0.0.0.0:1082</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -http.enable -http.local.address 127.0.0.1:1082</code></pre>
 
                     <h3>HTTP Basic 认证</h3>
                     <p>您可以为 HTTP 代理启用基本认证，提高安全性：</p>
@@ -215,7 +215,7 @@
                 <div id="admin-ui" class="doc-section">
                     <h2>管理界面</h2>
                     <p>SSH-Tunnel 提供了一个内置的管理界面，方便您监控连接状态、查看日志和配置信息：</p>
-                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -admin.enable -admin.addr :1083</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -admin.enable -admin.address 127.0.0.1:1083</code></pre>
                     <p>启用后，您可以通过浏览器访问 <code>http://localhost:1083/view/index</code> 来打开管理界面。</p>
 
                     <p>管理界面包含以下功能：</p>
@@ -235,7 +235,7 @@
                 <div id="domain-filtering" class="doc-section">
                     <h2>域名过滤</h2>
                     <p>SSH-Tunnel 支持 HTTP 请求的域名过滤功能，可以根据域名决定是否通过 SSH 隧道转发请求：</p>
-                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -http.enable -http.filter.domain.enable -http.filter.domain.file-path /path/to/domain.txt</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -http.enable -http.domain-filter.enable -http.domain-filter.file-path /path/to/domain.txt</code></pre>
 
                     <p>域名过滤文件 <code>domain.txt</code> 的格式示例：</p>
                     <pre class="bg-dark text-light p-3 rounded"><code>*.google.com
@@ -254,14 +254,14 @@ stackoverflow.com</code></pre>
                     <p>在 MacOS 上，您可以将 SSH-Tunnel 配置为 LaunchAgent 以实现开机自启动：</p>
                     <ol>
                         <li>将 ssh-tunnel 可执行文件放到 <code>/usr/local/bin</code> 目录下</li>
-                        <li>创建 <code>com.idefav.macos.ssh-tunnel.plist</code> 文件，内容类似如下：</li>
+                        <li>创建 <code>com.idefav.ssh-tunnel.plist</code> 文件，内容类似如下：</li>
                     </ol>
                     <pre class="bg-dark text-light p-3 rounded"><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
 &lt;!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
 &lt;plist version="1.0"&gt;
   &lt;dict&gt;
     &lt;key&gt;Label&lt;/key&gt;
-    &lt;string&gt;com.idefav.macos.ssh-tunnel&lt;/string&gt;
+    &lt;string&gt;com.idefav.ssh-tunnel&lt;/string&gt;
     &lt;key&gt;Disabled&lt;/key&gt;
     &lt;false/&gt;
     &lt;key&gt;KeepAlive&lt;/key&gt;
@@ -280,7 +280,7 @@ stackoverflow.com</code></pre>
       &lt;string&gt;-socks5.enable=false&lt;/string&gt;
       &lt;string&gt;-http.enable&lt;/string&gt;
       &lt;string&gt;-http.over.ssh.enable&lt;/string&gt;
-      &lt;string&gt;-http.filter.domain.enable&lt;/string&gt;
+      &lt;string&gt;-http.domain-filter.enable&lt;/string&gt;
     &lt;/array&gt;
     &lt;key&gt;UserName&lt;/key&gt;
     &lt;string&gt;root&lt;/string&gt;
@@ -289,11 +289,11 @@ stackoverflow.com</code></pre>
   &lt;/dict&gt;
 &lt;/plist&gt;</code></pre>
                     <ol start="3">
-                        <li>将该文件放到 <code>/Library/LaunchAgents</code> 目录下</li>
+                        <li>将该文件放到 <code>/Library/LaunchDaemons</code> 目录下</li>
                         <li>设置文件权限和加载服务：</li>
                     </ol>
-                    <pre class="bg-dark text-light p-3 rounded"><code>sudo chown -R root /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
-launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>sudo chown -R root /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist
+launchctl load -w /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist</code></pre>
 
                     <h3>Windows 服务配置</h3>
                     <p>在 Windows 上，SSH-Tunnel 提供了服务安装功能：</p>
@@ -303,21 +303,21 @@ launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist</code>
                     </ol>
                     <pre class="bg-dark text-light p-3 rounded"><code>server.ip=xx.xx.xx.xx
 server.ssh.port=22
-server.ssh.private_key_path=C:\\Users\\username\\.ssh\\id_rsa
+ssh.private_key_path=C:\\Users\\username\\.ssh\\id_rsa
 login.username=root
-local.address=0.0.0.0:1081
-http.local.address=0.0.0.0:1082
-http.enable=true
+local.address=127.0.0.1:1081
+http.local.address=127.0.0.1:1082
+http.enable=false
 socks5.enable=true
-http.over-ssh.enable=true
-http.domain-filter.enable=true
-http.filter.domain.file-path=C:\\Users\\username\\Documents\\ssh-tunnel\\domain.txt
+http.over-ssh.enable=false
+http.domain-filter.enable=false
+http.domain-filter.file-path=C:\\Users\\username\\Documents\\ssh-tunnel\\domain.txt
 admin.enable=true
-admin.address=:1083</code></pre>
+admin.address=127.0.0.1:1083</code></pre>
                     <ol start="3">
                         <li>安装 Windows 服务：</li>
                     </ol>
-                    <pre class="bg-dark text-light p-3 rounded"><code>.\ssh-tunnel-winsvc.exe install</code></pre>
+                    <pre class="bg-dark text-light p-3 rounded"><code>C:\ssh-tunnel\ssh-tunnel-svc.exe install --config=C:\ssh-tunnel\.ssh-tunnel\config.properties</code></pre>
                     <p>然后可以在服务管理器中找到并启动 <code>SSHTunnelService</code>。</p>
                 </div>
             </div>
