@@ -200,8 +200,8 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 					log.Println("file modified", event.Name)
 					changed <- true
 				} else if event.Has(fsnotify.Remove) {
-					tunnel.domains = make(map[string]bool)
-					tunnel.domainMatchCache = make(map[string]bool)
+					tunnel.SetDomains(make(map[string]bool))
+					tunnel.SetDomainMatchCache(make(map[string]bool))
 					continue
 				}
 
@@ -235,7 +235,7 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 						}
 					}
 					tunnel.SetDomains(tmpDomains)
-					tunnel.domainMatchCache = make(map[string]bool)
+					tunnel.SetDomainMatchCache(make(map[string]bool))
 				}
 			}
 

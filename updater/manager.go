@@ -2,8 +2,11 @@ package updater
 
 import (
 	"log"
+	"ssh-tunnel/buildinfo"
 	"ssh-tunnel/cfg"
 	"time"
+
+	"github.com/kardianos/service"
 )
 
 var (
@@ -21,10 +24,6 @@ func InitializeUpdater() {
 	if repo == "" {
 		repo = "ssh-tunnel"
 	}
-	currentVersion := appConfig.AutoUpdateCurrentVersion.GetValue()
-	if currentVersion == "" {
-		currentVersion = "v0.0.0"
-	}
 	checkIntervalSec := appConfig.AutoUpdateCheckInterval.GetValue()
 	if checkIntervalSec <= 0 {
 		checkIntervalSec = 3600
@@ -34,21 +33,18 @@ func InitializeUpdater() {
 		Enabled:        appConfig.AutoUpdateEnabled.GetValue(),
 		Owner:          owner,
 		Repo:           repo,
-		CurrentVersion: currentVersion,
+		CurrentVersion: buildinfo.CurrentVersion(),
 		CheckInterval:  time.Duration(checkIntervalSec) * time.Second,
-		AutoDownload:   false, // 默认不自动下载
-		AutoInstall:    false, // 默认不自动安装
+		ServiceMode:    !service.Interactive(),
+		AutoDownload:   false,
+		AutoInstall:    false,
 	}
 
 	globalUpdater = NewUpdater(config)
-
-	// 设置更新回调
 	globalUpdater.SetUpdateCallback(func(release *Release) {
 		log.Printf("发现新版本 %s: %s", release.TagName, release.Name)
-		// 这里可以添加更多的处理逻辑，比如发送通知等
 	})
 
-	// 如果启用了自动更新，启动检查
 	if config.Enabled {
 		globalUpdater.Start()
 		log.Println("自动更新检查已启动")
@@ -60,25 +56,22 @@ func GetGlobalUpdater() *Updater {
 	return globalUpdater
 }
 
-// UpdateConfig 更新配置
+// UpdateConfig 更新更新器配置
 func UpdateConfig() {
 	if globalUpdater == nil {
 		return
 	}
 
 	appConfig := cfg.NewAppConfig()
-
-	// 停止当前的更新器
 	globalUpdater.Stop()
 
-	// 更新配置
 	globalUpdater.config.Enabled = appConfig.AutoUpdateEnabled.GetValue()
 	globalUpdater.config.Owner = appConfig.AutoUpdateOwner.GetValue()
 	globalUpdater.config.Repo = appConfig.AutoUpdateRepo.GetValue()
-	globalUpdater.config.CurrentVersion = appConfig.AutoUpdateCurrentVersion.GetValue()
+	globalUpdater.config.CurrentVersion = buildinfo.CurrentVersion()
 	globalUpdater.config.CheckInterval = time.Duration(appConfig.AutoUpdateCheckInterval.GetValue()) * time.Second
+	globalUpdater.config.ServiceMode = !service.Interactive()
 
-	// 如果启用了自动更新，重新启动检查
 	if globalUpdater.config.Enabled {
 		globalUpdater.Start()
 		log.Println("自动更新检查已重新启动")

@@ -9,6 +9,7 @@ import (
 	"path"
 	"runtime"
 	"ssh-tunnel/api/admin"
+	"ssh-tunnel/buildinfo"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/constants"
 	"ssh-tunnel/safe"
@@ -238,8 +239,12 @@ func innerStart() {
 	constants.ConfigFilePath = vConfig.ConfigFileUsed()
 
 	config.Update()
+	config.AutoUpdateCurrentVersion.SetValue(buildinfo.CurrentVersion())
 	if err := cfg.EnsureAndApplyActiveProfile(config); err != nil {
 		log.Printf("apply active profile failed: %v", err)
+	}
+	if _, err := updater.SyncRuntimeState(config.HomeDir.GetValue(), buildinfo.CurrentVersion()); err != nil {
+		log.Printf("sync update runtime state failed: %v", err)
 	}
 
 	log.Println("成功读取配置文件:", vConfig.ConfigFileUsed())
@@ -257,6 +262,7 @@ func innerStart() {
 			return
 		}
 		config.Update()
+		config.AutoUpdateCurrentVersion.SetValue(buildinfo.CurrentVersion())
 		if err := cfg.EnsureAndApplyActiveProfile(config); err != nil {
 			log.Printf("apply active profile on reload failed: %v", err)
 		}

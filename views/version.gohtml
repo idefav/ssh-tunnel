@@ -1,946 +1,754 @@
 {{define "content"}}
 <style>
-    .version-card {
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        margin-bottom: 15px;
-        transition: box-shadow 0.3s ease;
+    .version-shell .card { box-shadow: var(--shadow-sm); }
+    .version-shell .hero-card { border-left: 4px solid #f59e0b; }
+    .version-shell .current-card { border-left: 4px solid #16a34a; }
+    .version-shell .release-notes {
+        background: #f8fafc;
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        padding: 0.9rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 240px;
+        overflow: auto;
     }
-    .version-card:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    .version-shell .checksum {
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        word-break: break-all;
     }
-    .version-header {
-        background-color: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-        padding: 15px;
-        border-radius: 8px 8px 0 0;
+    .version-shell .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
     }
-    .version-body {
-        padding: 15px;
+    .version-shell .meta-item {
+        background: #f8fafc;
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        padding: 0.85rem;
     }
-    .current-version {
-        border-left: 4px solid #28a745;
+    .version-shell .meta-label {
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+        margin-bottom: 0.25rem;
     }
-    .latest-version {
-        border-left: 4px solid #007bff;
+    .version-shell .meta-value {
+        font-weight: 600;
+        word-break: break-word;
     }
-    .update-available {
-        border-left: 4px solid #ffc107;
+    .version-shell .table td { vertical-align: middle; }
+    .version-shell .actions {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: flex-end;
+        flex-wrap: wrap;
     }
-    .badge-current {
-        background-color: #28a745;
+    .version-shell .status-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
     }
-    .badge-latest {
-        background-color: #007bff;
+    .version-shell .fine-print {
+        color: var(--text-secondary);
+        font-size: 0.78rem;
     }
-    .badge-update {
-        background-color: #ffc107;
-        color: #000;
-    }
-    .disabled-feature {
-        opacity: 0.6;
-        pointer-events: none;
-    }
-    .service-only {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        border-radius: 4px;
-        padding: 10px;
-        margin: 10px 0;
-    }
-    #versionPageMessage {
-        min-height: 1px;
-    }
-    .release-row td {
-        vertical-align: middle;
+    @media (max-width: 991px) {
+        .version-shell .actions { justify-content: flex-start; }
     }
 </style>
 
-<div class="container-fluid mt-4">
-    <div class="row">
-        <div class="col-12">            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2><i class="bi bi-arrow-clockwise"></i> 版本管理</h2>
-                <div>
-                    <button type="button" class="btn btn-outline-primary me-2" id="checkUpdatesBtn" onclick="checkForUpdates()">
-                        <i class="bi bi-search"></i> 检查更新
-                    </button>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#updateSettingsModal">
-                        <i class="bi bi-gear"></i> 更新设置
-                    </button>
+<div class="container-fluid mt-4 version-shell">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <h2 class="mb-0"><i class="bi bi-arrow-repeat"></i> 版本管理</h2>
+        <div class="toolbar">
+            <button type="button" class="btn btn-outline-primary" onclick="checkForUpdates()">
+                <i class="bi bi-search"></i> 检查更新
+            </button>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#updateSettingsModal">
+                <i class="bi bi-gear"></i> 更新设置
+            </button>
+        </div>
+    </div>
+
+    <div id="pageMessage"></div>
+
+    {{if .HasPendingInstall}}
+    <div class="alert alert-warning" role="alert">
+        <i class="bi bi-hourglass-split"></i>
+        待安装版本 <strong>{{.PendingInstallTag}}</strong>
+        {{if .PendingInstallAsset}}，安装包 {{.PendingInstallAsset}}{{end}}
+        {{if .PendingInstallAt}}，请求时间 {{.PendingInstallAt}}{{end}}。
+        {{if .IsServiceMode}}当前正在等待服务重启并收敛状态。{{else}}当前正在等待程序重启完成生效。{{end}}
+    </div>
+    {{end}}
+
+    {{if .StatusMessage}}
+    <div class="alert alert-{{if .StatusMessageType}}{{.StatusMessageType}}{{else}}info{{end}}" role="alert">
+        <i class="bi bi-info-circle"></i> {{.StatusMessage}}
+    </div>
+    {{end}}
+
+    <div class="row g-4">
+        <div class="col-lg-5">
+            <div class="card current-card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-bookmark-check"></i> 当前运行版本</strong>
+                    <span class="badge text-bg-success">{{.CurrentVersion}}</span>
+                </div>
+                <div class="card-body">
+                    <div class="meta-grid mb-3">
+                        <div class="meta-item">
+                            <div class="meta-label">构建时间</div>
+                            <div class="meta-value">{{if .CurrentBuildTime}}{{.CurrentBuildTime}}{{else}}unknown{{end}}</div>
+                        </div>
+                        <div class="meta-item">
+                            <div class="meta-label">安装时间</div>
+                            <div class="meta-value">{{if .InstallTime}}{{.InstallTime}}{{else}}-{{end}}</div>
+                        </div>
+                        <div class="meta-item">
+                            <div class="meta-label">文件大小</div>
+                            <div class="meta-value">{{if .CurrentFileSize}}{{.CurrentFileSize}}{{else}}-{{end}}</div>
+                        </div>
+                        <div class="meta-item">
+                            <div class="meta-label">运行模式</div>
+                            <div class="meta-value">{{if .IsServiceMode}}服务模式{{else}}交互模式{{end}}</div>
+                        </div>
+                        <div class="meta-item">
+                            <div class="meta-label">平台</div>
+                            <div class="meta-value">{{.Platform}} / {{.Architecture}}</div>
+                        </div>
+                    </div>
+                    <div class="meta-label">当前二进制 SHA256</div>
+                    <div class="checksum">{{if .CurrentChecksum}}{{.CurrentChecksum}}{{else}}计算中...{{end}}</div>
                 </div>
             </div>
+        </div>
 
-            <div id="versionPageMessage" class="mb-3"></div>
-
-            <!-- 运行模式提示 -->
-            {{if not .IsServiceMode}}
-            <div class="alert alert-info mb-4" role="alert">
-                <i class="bi bi-info-circle"></i>
-                <strong>命令模式:</strong> 更新完成后需要手动重启程序以应用新版本。
-            </div>
-            {{else}}
-            <div class="alert alert-success mb-4" role="alert">
-                <i class="bi bi-check-circle"></i>
-                <strong>服务模式:</strong> 更新完成后将自动重启服务。
-            </div>
-            {{end}}
-
-            <!-- 自动更新状态 -->
-            <div class="alert {{if .AutoUpdateEnabled}}alert-success{{else}}alert-warning{{end}} mb-4" role="alert">
-                <i class="bi bi-info-circle"></i>
-                自动更新状态: 
-                <strong>{{if .AutoUpdateEnabled}}已启用{{else}}已禁用{{end}}</strong>
-                {{if .AutoUpdateEnabled}}
-                <span class="ms-2">检查间隔: {{.CheckInterval}}分钟</span>
-                {{end}}
-            </div>
-
-            <!-- 当前版本信息 -->
-            <div class="version-card current-version">
-                <div class="version-header">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="bi bi-bookmark-check"></i> 当前版本
-                            <span class="badge badge-current ms-2">{{.CurrentVersion}}</span>
-                        </h5>
-                        <div>
-                            <small class="text-muted">SHA256: </small>
-                            <code class="text-muted">{{if .CurrentChecksum}}{{.CurrentChecksum}}{{else}}计算中...{{end}}</code>
-                        </div>
-                    </div>
-                </div>
-                <div class="version-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <p><strong>安装时间:</strong> {{if .InstallTime}}{{.InstallTime}}{{else}}未知{{end}}</p>
-                            <p><strong>文件大小:</strong> {{if .CurrentFileSize}}{{.CurrentFileSize}}{{else}}未知{{end}}</p>
-                        </div>
-                        <div class="col-md-6">
-                            <p><strong>平台:</strong> {{.Platform}}</p>
-                            <p><strong>架构:</strong> {{.Architecture}}</p>
-                            <p><strong>运行模式:</strong> {{if .IsServiceMode}}服务模式{{else}}命令模式{{end}}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 最新版本信息 -->
-            {{if .LatestRelease}}
-            <div class="version-card {{if .HasUpdate}}update-available{{else}}latest-version{{end}}">
-                <div class="version-header">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="bi bi-tag"></i> 最新版本
-                            <span class="badge {{if .HasUpdate}}badge-update{{else}}badge-latest{{end}} ms-2">
-                                {{.LatestRelease.TagName}}
-                            </span>
-                            {{if .HasUpdate}}
-                            <span class="badge bg-success ms-1">可更新</span>
-                            {{else}}
-                            <span class="badge bg-info ms-1">已是最新</span>
-                            {{end}}
-                        </h5>
-                        <div>
-                            <small class="text-muted">发布于: {{.LatestRelease.PublishedAt}}</small>
-                        </div>
-                    </div>
-                </div>
-                <div class="version-body">
-                    {{if .LatestRelease.Body}}
-                    <div class="mb-3">
-                        <strong>发布说明:</strong>
-                        <div class="mt-2 p-2 bg-light border rounded">{{.LatestRelease.Body}}</div>
-                    </div>
-                    {{end}}
-                    
-                    {{if .LatestRelease.MatchingAsset}}
-                    <div class="d-flex justify-content-between align-items-center border rounded p-3 bg-light">
-                        <div>
-                            <strong>{{.LatestRelease.MatchingAsset.Name}}</strong>
-                            <br>
-                            <small class="text-muted">大小: {{.LatestRelease.MatchingAsset.Size}} | 下载次数: {{.LatestRelease.MatchingAsset.DownloadCount}}</small>
-                        </div>
-                        <div>                            <button type="button" class="btn btn-outline-success me-2" 
-                                    onclick="downloadRelease('{{.LatestRelease.TagName}}', '{{.LatestRelease.MatchingAsset.Name}}', '{{.LatestRelease.MatchingAsset.DownloadURL}}', this)">
-                                <i class="bi bi-download"></i> 下载
-                            </button>
-                            {{if .HasUpdate}}
-                            <button type="button" class="btn btn-warning" 
-                                    onclick="updateToVersion('{{.LatestRelease.TagName}}', '{{.LatestRelease.MatchingAsset.Name}}', '{{.LatestRelease.MatchingAsset.DownloadURL}}', this)">
-                                <i class="bi bi-arrow-up"></i> {{if .IsServiceMode}}更新{{else}}更新 (需手动重启){{end}}
-                            </button>
-                            {{end}}
-                        </div>
-                    </div>
-                    {{else}}
-                    <div class="alert alert-warning" role="alert">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        未找到适合当前平台 ({{.Platform}}/{{.Architecture}}) 的安装包
-                    </div>
+        <div class="col-lg-7">
+            <div class="card hero-card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-stars"></i> 最新可用版本</strong>
+                    {{if .LatestRelease}}
+                    <span class="fine-print">发布于 {{.LatestRelease.PublishedAt}}</span>
                     {{end}}
                 </div>
-            </div>
-            {{else}}            <div class="alert alert-info" role="alert">
-                <i class="bi bi-info-circle"></i>
-                <strong>正在获取版本信息...</strong> 请稍等或检查网络连接和GitHub仓库配置。
-            </div>
-            {{end}}
-
-            <!-- 可用版本列表 -->
-            <div class="version-card">
-                <div class="version-header">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="bi bi-list-ul"></i> 可用版本列表
-                        </h5>
-                        <small class="text-muted">共 {{len .Releases}} 个版本</small>
-                    </div>
-                </div>
-                <div class="version-body">
-                    {{if .Releases}}
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover align-middle mb-3">
-                            <thead>
-                                <tr>
-                                    <th style="width: 72px;">选择</th>
-                                    <th>版本</th>
-                                    <th>发布时间</th>
-                                    <th>安装包</th>
-                                    <th style="width: 90px;">状态</th>
-                                </tr>
-                            </thead>
-                            <tbody id="releaseTableBody">
-                                {{range $index, $release := .Releases}}
-                                <tr class="release-row" data-release-index="{{$index}}">
-                                    <td>
-                                        <input class="form-check-input" type="radio" name="selectedRelease"
-                                               data-version="{{$release.TagName}}"
-                                               data-file-name="{{if $release.MatchingAsset}}{{$release.MatchingAsset.Name}}{{end}}"
-                                               data-download-url="{{if $release.MatchingAsset}}{{$release.MatchingAsset.DownloadURL}}{{end}}"
-                                               {{if not $release.MatchingAsset}}disabled{{end}}>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-secondary">{{$release.TagName}}</span>
-                                    </td>
-                                    <td><small class="text-muted">{{$release.PublishedAt}}</small></td>
-                                    <td>
-                                        {{if $release.MatchingAsset}}
-                                        <small>{{$release.MatchingAsset.Name}}</small>
-                                        {{else}}
-                                        <small class="text-muted">无匹配安装包</small>
-                                        {{end}}
-                                    </td>
-                                    <td>
-                                        {{if $release.IsNewer}}
-                                        <span class="badge bg-success">可更新</span>
-                                        {{else}}
-                                        <span class="badge bg-secondary">当前或更旧</span>
-                                        {{end}}
-                                    </td>
-                                </tr>
+                <div class="card-body">
+                    {{if .LatestRelease}}
+                    <div class="js-release-state"
+                         data-version="{{.LatestRelease.TagName}}"
+                         data-file-name="{{if .LatestRelease.MatchingAsset}}{{.LatestRelease.MatchingAsset.Name}}{{end}}"
+                         data-download-url="{{if .LatestRelease.MatchingAsset}}{{.LatestRelease.MatchingAsset.DownloadURL}}{{end}}"
+                         data-is-current="{{.LatestRelease.IsCurrent}}"
+                         data-is-newer="{{.LatestRelease.IsNewer}}"
+                         data-is-cached="{{.LatestRelease.IsCached}}"
+                         data-can-install="{{.LatestRelease.CanInstall}}"
+                         data-is-installing="{{.LatestRelease.IsInstalling}}"
+                         data-cache-status="{{.LatestRelease.CacheStatus}}"
+                         data-verification-status="{{.LatestRelease.VerificationStatus}}"
+                         data-active-download-id="{{.LatestRelease.ActiveDownloadID}}">
+                        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+                            <div>
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <h4 class="mb-0">{{.LatestRelease.TagName}}</h4>
+                                    <div class="js-status-cell status-wrap"></div>
+                                </div>
+                                {{if .LatestRelease.MatchingAsset}}
+                                <div class="fine-print mt-2">
+                                    安装包 {{.LatestRelease.MatchingAsset.Name}}，大小 {{.LatestRelease.MatchingAsset.Size}}，下载数 {{.LatestRelease.MatchingAsset.DownloadCount}}
+                                </div>
+                                {{else}}
+                                <div class="text-warning mt-2">当前平台没有匹配的安装包。</div>
                                 {{end}}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
-                        <div class="btn-group" role="group" aria-label="版本列表分页">
-                            <button type="button" class="btn btn-outline-secondary btn-sm" id="releasePrevBtn" onclick="changeReleasePage(-1)">
-                                <i class="bi bi-chevron-left"></i> 上一页
-                            </button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" id="releaseNextBtn" onclick="changeReleasePage(1)">
-                                下一页 <i class="bi bi-chevron-right"></i>
-                            </button>
+                            </div>
+                            <div class="js-action-cell actions"></div>
                         </div>
-
-                        <small class="text-muted" id="releasePageInfo">第 1 / 1 页</small>
-
-                        <button type="button" class="btn btn-warning btn-sm" id="updateSelectedBtn" onclick="updateSelectedRelease()" disabled>
-                            <i class="bi bi-arrow-up"></i> 更新选中版本
-                        </button>
+                        {{if .LatestRelease.Body}}
+                        <div class="release-notes">{{.LatestRelease.Body}}</div>
+                        {{else}}
+                        <div class="fine-print">这个版本没有提供发布说明。</div>
+                        {{end}}
                     </div>
                     {{else}}
-                    <div class="alert alert-info mb-0" role="alert">
-                        <i class="bi bi-info-circle"></i> 暂无可用版本信息。
-                    </div>
+                    <div class="alert alert-info mb-0">暂时无法获取发布列表，请稍后再试。</div>
                     {{end}}
                 </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- 更新设置模态框 -->
-<div class="modal fade" id="updateSettingsModal" tabindex="-1" aria-labelledby="updateSettingsModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="updateSettingsModalLabel">更新设置</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="updateSettingsForm">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="autoUpdateEnabled" 
-                                   {{if .AutoUpdateEnabled}}checked{{end}}>
-                            <label class="form-check-label" for="autoUpdateEnabled">
-                                启用自动更新检查
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="checkInterval" class="form-label">检查间隔 (分钟)</label>
-                        <input type="number" class="form-control" id="checkInterval" 
-                               value="{{.CheckIntervalMinutes}}" min="5" max="1440">
-                        <div class="form-text">设置自动检查更新的时间间隔，范围: 5-1440分钟</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="githubOwner" class="form-label">GitHub 仓库所有者</label>
-                        <input type="text" class="form-control" id="githubOwner" value="{{.GitHubOwner}}">
-                    </div>
-                      <div class="mb-3">
-                        <label for="githubRepo" class="form-label">GitHub 仓库名称</label>
-                        <input type="text" class="form-control" id="githubRepo" value="{{.GitHubRepo}}">
-                    </div>
-                    
-                    <hr>
-                    <h6>下载代理设置</h6>
-                    
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="proxyEnabled" 
-                                   {{if .ProxyEnabled}}checked{{end}}>
-                            <label class="form-check-label" for="proxyEnabled">
-                                启用下载代理
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3" id="proxySettings" {{if not .ProxyEnabled}}style="display: none;"{{end}}>
-                        <label for="proxyUrl" class="form-label">代理地址</label>
-                        <input type="text" class="form-control" id="proxyUrl" value="{{.ProxyURL}}" 
-                               placeholder="http://proxy.example.com:8080">
-                        <div class="form-text">格式: http://host:port 或 https://host:port</div>
-                    </div>
-                    
-                    <div class="mb-3" id="proxyAuth" {{if not .ProxyEnabled}}style="display: none;"{{end}}>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <label for="proxyUsername" class="form-label">用户名 (可选)</label>
-                                <input type="text" class="form-control" id="proxyUsername" value="{{.ProxyUsername}}">
-                            </div>
-                            <div class="col-md-6">
-                                <label for="proxyPassword" class="form-label">密码 (可选)</label>
-                                <input type="password" class="form-control" id="proxyPassword" value="{{.ProxyPassword}}">
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" id="saveSettingsBtn" onclick="saveUpdateSettings()">保存设置</button>
-            </div>        </div>
+    <div class="card mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong><i class="bi bi-list-ul"></i> 可用版本列表</strong>
+            <span class="fine-print">共 {{len .Releases}} 个版本</span>
+        </div>
+        <div class="table-scroll-container">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>版本</th>
+                        <th>发布时间</th>
+                        <th>安装包</th>
+                        <th>状态</th>
+                        <th class="text-end">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Releases}}
+                    <tr class="js-release-state"
+                        data-version="{{.TagName}}"
+                        data-file-name="{{if .MatchingAsset}}{{.MatchingAsset.Name}}{{end}}"
+                        data-download-url="{{if .MatchingAsset}}{{.MatchingAsset.DownloadURL}}{{end}}"
+                        data-is-current="{{.IsCurrent}}"
+                        data-is-newer="{{.IsNewer}}"
+                        data-is-cached="{{.IsCached}}"
+                        data-can-install="{{.CanInstall}}"
+                        data-is-installing="{{.IsInstalling}}"
+                        data-cache-status="{{.CacheStatus}}"
+                        data-verification-status="{{.VerificationStatus}}"
+                        data-active-download-id="{{.ActiveDownloadID}}">
+                        <td><strong>{{.TagName}}</strong></td>
+                        <td>{{.PublishedAt}}</td>
+                        <td>{{if .MatchingAsset}}{{.MatchingAsset.Name}}{{else}}-{{end}}</td>
+                        <td class="js-status-cell"></td>
+                        <td class="js-action-cell text-end"></td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<!-- 进度模态框 -->
-<div class="modal fade" id="progressModal" tabindex="-1" aria-labelledby="progressModalLabel" aria-hidden="true" data-bs-backdrop="static">
+<div class="modal fade" id="updateSettingsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="progressModalLabel">处理中...</h5>
+                <h5 class="modal-title">更新设置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="progress mb-3">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                         role="progressbar" style="width: 0%" id="progressBar"></div>
+                <div class="mb-3 form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="autoUpdateEnabled" {{if .AutoUpdateEnabled}}checked{{end}}>
+                    <label class="form-check-label" for="autoUpdateEnabled">启用自动检查更新</label>
                 </div>
-                <div id="progressText">正在处理，请稍候...</div>
-                <div id="progressDetails" style="display: none;" class="mt-3">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <small class="text-muted">文件名:</small>
-                            <div id="downloadFileName">-</div>
-                        </div>
-                        <div class="col-md-6">
-                            <small class="text-muted">下载进度:</small>
-                            <div id="downloadSize">-</div>
-                        </div>
+                <div class="mb-3">
+                    <label class="form-label" for="checkInterval">检查间隔（分钟）</label>
+                    <input class="form-control" id="checkInterval" type="number" min="5" max="1440" value="{{.CheckIntervalMinutes}}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="githubOwner">GitHub Owner</label>
+                    <input class="form-control" id="githubOwner" type="text" value="{{.GitHubOwner}}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="githubRepo">GitHub Repo</label>
+                    <input class="form-control" id="githubRepo" type="text" value="{{.GitHubRepo}}">
+                </div>
+                <div class="mb-3 form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="proxyEnabled" {{if .ProxyEnabled}}checked{{end}}>
+                    <label class="form-check-label" for="proxyEnabled">下载代理</label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="proxyUrl">代理地址</label>
+                    <input class="form-control" id="proxyUrl" type="text" value="{{.ProxyURL}}">
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label" for="proxyUsername">用户名</label>
+                        <input class="form-control" id="proxyUsername" type="text" value="{{.ProxyUsername}}">
                     </div>
-                    <div class="row mt-2">
-                        <div class="col-md-6">
-                            <small class="text-muted">下载速度:</small>
-                            <div id="downloadSpeed">-</div>
-                        </div>
-                        <div class="col-md-6">
-                            <small class="text-muted">剩余时间:</small>
-                            <div id="downloadETA">-</div>
-                        </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="proxyPassword">密码</label>
+                        <input class="form-control" id="proxyPassword" type="password" value="{{.ProxyPassword}}">
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-danger d-none" id="cancelDownloadBtn" onclick="cancelCurrentDownload()">
-                    <i class="bi bi-x-circle"></i> 取消下载
-                </button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveUpdateSettings()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="progressModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="progressModalLabel">处理中</h5>
+            </div>
+            <div class="modal-body">
+                <div class="progress mb-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="progressBar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="progressText">正在准备...</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" id="cancelDownloadBtn" style="display:none;">取消下载</button>
+                <button type="button" class="btn btn-light" id="closeProgressBtn" style="display:none;" data-bs-dismiss="modal">关闭</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    var activeDownloadId = '';
-    var activeDownloadTriggerBtn = null;
-    var activeProgressInterval = null;
-    var releasePageSize = 5;
-    var currentReleasePage = 1;
+window.versionPageConfig = { serviceMode: {{if .IsServiceMode}}true{{else}}false{{end}} };
 
-    function getReleaseRows() {
-        return $('#releaseTableBody .release-row');
+    const releaseStates = {};
+    let progressTimer = null;
+    let restartTimer = null;
+    let currentDownloadId = '';
+
+    function boolValue(value) {
+        return value === true || value === 'true';
     }
 
-    function renderReleasePage() {
-        var $rows = getReleaseRows();
-        if (!$rows.length) {
-            return;
-        }
+    function readReleaseState(el) {
+        const $el = $(el);
+        const version = ($el.data('version') || '').toString();
+        return {
+            version: version,
+            fileName: ($el.data('file-name') || '').toString(),
+            downloadUrl: ($el.data('download-url') || '').toString(),
+            hasAsset: (($el.data('file-name') || '').toString()) !== '',
+            isCurrent: boolValue($el.data('is-current')),
+            isNewer: boolValue($el.data('is-newer')),
+            isCached: boolValue($el.data('is-cached')),
+            canInstall: boolValue($el.data('can-install')),
+            isInstalling: boolValue($el.data('is-installing')),
+            cacheStatus: ($el.data('cache-status') || 'uncached').toString(),
+            verificationStatus: ($el.data('verification-status') || 'unknown').toString(),
+            activeDownloadId: ($el.data('active-download-id') || '').toString()
+        };
+    }
 
-        var totalPages = Math.max(1, Math.ceil($rows.length / releasePageSize));
-        if (currentReleasePage > totalPages) {
-            currentReleasePage = totalPages;
-        }
-        if (currentReleasePage < 1) {
-            currentReleasePage = 1;
-        }
+    function statusMeta(state) {
+        if (!state.hasAsset) return { badge: 'text-bg-secondary', text: '无匹配安装包', note: '' };
+        if (state.isCurrent) return { badge: 'text-bg-primary', text: '当前版本', note: '' };
+        if (state.isInstalling || state.cacheStatus === 'installing') return { badge: 'text-bg-warning', text: '安装中', note: '等待重启完成生效' };
+        if (state.cacheStatus === 'downloading') return { badge: 'text-bg-info', text: '下载中', note: '正在写入版本缓存' };
+        if (state.cacheStatus === 'cached') return { badge: 'text-bg-success', text: '已缓存', note: '已校验，可直接安装' };
+        if (state.cacheStatus === 'unverified') return { badge: 'text-bg-warning', text: '已缓存', note: '未找到 checksum，允许安装' };
+        if (state.isNewer) return { badge: 'text-bg-success', text: '可更新', note: '' };
+        return { badge: 'text-bg-secondary', text: '历史版本', note: '' };
+    }
 
-        var start = (currentReleasePage - 1) * releasePageSize;
-        var end = start + releasePageSize;
-        $rows.each(function(index) {
-            $(this).toggle(index >= start && index < end);
+    function renderActions(state) {
+        if (!state.hasAsset) return '<span class="fine-print">当前平台无安装包</span>';
+        if (state.isCurrent) return '<button type="button" class="btn btn-sm btn-outline-secondary" disabled>当前版本</button>';
+        if (state.isInstalling || state.cacheStatus === 'installing') return '<button type="button" class="btn btn-sm btn-outline-warning" disabled>安装中</button>';
+        if (state.cacheStatus === 'downloading') {
+            return ''
+                + '<button type="button" class="btn btn-sm btn-outline-primary js-release-action" data-action="progress" data-version="' + state.version + '">查看进度</button>'
+                + '<button type="button" class="btn btn-sm btn-outline-danger js-release-action" data-action="cancel" data-version="' + state.version + '">取消下载</button>';
+        }
+        if (state.isCached || state.cacheStatus === 'cached' || state.cacheStatus === 'unverified') {
+            return ''
+                + '<button type="button" class="btn btn-sm btn-warning js-release-action" data-action="install" data-version="' + state.version + '">安装已下载版本</button>'
+                + '<button type="button" class="btn btn-sm btn-outline-success js-release-action" data-action="download" data-version="' + state.version + '">重新下载</button>';
+        }
+        if (state.isNewer) {
+            return ''
+                + '<button type="button" class="btn btn-sm btn-outline-success js-release-action" data-action="download" data-version="' + state.version + '">下载</button>'
+                + '<button type="button" class="btn btn-sm btn-warning js-release-action" data-action="update" data-version="' + state.version + '">下载并更新</button>';
+        }
+        return '<button type="button" class="btn btn-sm btn-outline-success js-release-action" data-action="download" data-version="' + state.version + '">下载</button>';
+    }
+
+    function renderReleaseState(state) {
+        const meta = statusMeta(state);
+        const selector = '.js-release-state[data-version="' + state.version + '"]';
+        $(selector).each(function () {
+            $(this).find('.js-status-cell').html(
+                '<span class="badge ' + meta.badge + '">' + meta.text + '</span>' +
+                (meta.note ? '<span class="fine-print">' + meta.note + '</span>' : '')
+            );
+            $(this).find('.js-action-cell').html(renderActions(state));
         });
-
-        $('#releasePageInfo').text('第 ' + currentReleasePage + ' / ' + totalPages + ' 页');
-        $('#releasePrevBtn').prop('disabled', currentReleasePage <= 1);
-        $('#releaseNextBtn').prop('disabled', currentReleasePage >= totalPages);
     }
 
-    function changeReleasePage(delta) {
-        currentReleasePage += delta;
-        renderReleasePage();
-    }
-
-    function updateSelectedRelease() {
-        var selected = $('input[name="selectedRelease"]:checked');
-        if (!selected.length) {
-            showPageMessage('warning', '请先在版本列表中选择一个可更新版本。');
-            return;
+    function setReleaseState(version, patch) {
+        if (!releaseStates[version]) return;
+        releaseStates[version] = Object.assign({}, releaseStates[version], patch || {});
+        if (releaseStates[version].cacheStatus === 'cached' || releaseStates[version].cacheStatus === 'unverified') {
+            releaseStates[version].isCached = true;
+            releaseStates[version].canInstall = !releaseStates[version].isCurrent;
         }
-
-        var version = selected.data('version');
-        var fileName = selected.data('fileName');
-        var downloadUrl = selected.data('downloadUrl');
-        if (!version || !fileName || !downloadUrl) {
-            showPageMessage('warning', '选中的版本没有可用安装包，无法更新。');
-            return;
+        if (releaseStates[version].cacheStatus === 'installing') {
+            releaseStates[version].isInstalling = true;
+            releaseStates[version].canInstall = false;
         }
-
-        updateToVersion(version, fileName, downloadUrl, document.getElementById('updateSelectedBtn'));
-    }
-
-    function initReleaseList() {
-        if (!getReleaseRows().length) {
-            return;
+        if (releaseStates[version].cacheStatus === 'uncached') {
+            releaseStates[version].isCached = false;
+            releaseStates[version].isInstalling = false;
+            releaseStates[version].activeDownloadId = '';
         }
-
-        renderReleasePage();
-
-        $('input[name="selectedRelease"]').on('change', function() {
-            $('#updateSelectedBtn').prop('disabled', $('input[name="selectedRelease"]:checked').length === 0);
-        });
-
-        var $firstEnabled = $('input[name="selectedRelease"]:enabled').first();
-        if ($firstEnabled.length) {
-            $firstEnabled.prop('checked', true).trigger('change');
-        }
+        renderReleaseState(releaseStates[version]);
     }
 
     function showPageMessage(type, text) {
-        $('#versionPageMessage').html(
-            '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
-            '<i class="bi bi-info-circle me-1"></i>' + text +
-            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
-            '</div>'
+        $('#pageMessage').html(
+            '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">'
+            + text +
+            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>'
         );
     }
 
     function parseAjaxError(xhr, fallback) {
-        if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
-            return xhr.responseJSON.error;
-        }
+        if (xhr && xhr.responseJSON && xhr.responseJSON.error) return xhr.responseJSON.error;
         if (xhr && xhr.responseText) {
             try {
-                var parsed = JSON.parse(xhr.responseText);
-                if (parsed && parsed.error) {
-                    return parsed.error;
-                }
-            } catch (e) {
-            }
+                const data = JSON.parse(xhr.responseText);
+                if (data.error) return data.error;
+            } catch (e) {}
         }
         return fallback || '请求失败';
     }
 
-    function setButtonLoading(button, loading, loadingText) {
-        if (!button) {
-            return;
+    function progressModal() {
+        return bootstrap.Modal.getOrCreateInstance(document.getElementById('progressModal'));
+    }
+
+    function showProgress(title, text, percent, cancellable) {
+        $('#progressModalLabel').text(title || '处理中');
+        $('#progressText').text(text || '正在准备...');
+        $('#progressBar').css('width', (percent || 0) + '%');
+        $('#cancelDownloadBtn').toggle(!!cancellable);
+        $('#closeProgressBtn').hide();
+        progressModal().show();
+    }
+
+    function updateProgress(percent, text) {
+        if (typeof percent === 'number') $('#progressBar').css('width', percent + '%');
+        if (text) $('#progressText').text(text);
+    }
+
+    function hideProgress() {
+        progressModal().hide();
+        currentDownloadId = '';
+    }
+
+    function formatBytes(bytes) {
+        const value = Number(bytes || 0);
+        if (!value) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let size = value;
+        let idx = 0;
+        while (size >= 1024 && idx < units.length - 1) {
+            size /= 1024;
+            idx++;
         }
-        var $btn = $(button);
-        if (loading) {
-            if (!$btn.data('origin-text')) {
-                $btn.data('origin-text', $btn.html());
-            }
-            $btn.prop('disabled', true);
-            $btn.html('<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>' + (loadingText || '处理中...'));
-            return;
+        return size.toFixed(size >= 10 || idx === 0 ? 0 : 1) + ' ' + units[idx];
+    }
+
+    function clearTimers() {
+        if (progressTimer) {
+            clearTimeout(progressTimer);
+            progressTimer = null;
         }
-        $btn.prop('disabled', false);
-        var originText = $btn.data('origin-text');
-        if (originText) {
-            $btn.html(originText);
-            $btn.removeData('origin-text');
+        if (restartTimer) {
+            clearInterval(restartTimer);
+            restartTimer = null;
         }
     }
 
-    function setBusy(selector, busy) {
-        $(selector).prop('disabled', busy);
-    }
-
-    function showModal(selector) {
-        var modalElement = document.querySelector(selector);
-        if (!modalElement) {
-            return;
-        }
-        if (window.bootstrap && window.bootstrap.Modal) {
-            window.bootstrap.Modal.getOrCreateInstance(modalElement).show();
-            return;
-        }
-        if (window.jQuery && $(selector).modal) {
-            $(selector).modal('show');
-        }
-    }
-
-    function hideModal(selector) {
-        var modalElement = document.querySelector(selector);
-        if (!modalElement) {
-            return;
-        }
-        if (window.bootstrap && window.bootstrap.Modal) {
-            window.bootstrap.Modal.getOrCreateInstance(modalElement).hide();
-            return;
-        }
-        if (window.jQuery && $(selector).modal) {
-            $(selector).modal('hide');
-        }
-    }
-
-    function checkForUpdates() {
-        setBusy('#checkUpdatesBtn', true);
-        showProgress('检查更新中...', 50);
+    function monitorDownload(version, downloadId, autoInstall) {
+        currentDownloadId = downloadId;
+        clearTimers();
+        const state = releaseStates[version];
+        if (!state) return;
 
         $.ajax({
-            url: '/api/version/check',
-            method: 'POST',
-            success: function(response) {
-                hideProgress();
-                if (response.success === false) {
-                    showPageMessage('danger', '检查更新失败：' + (response.error || '未知错误'));
+            url: '/api/version/progress',
+            method: 'GET',
+            data: { id: downloadId },
+            success: function (response) {
+                if (!response.success) {
+                    hideProgress();
+                    showPageMessage('danger', response.error || '无法获取下载进度');
                     return;
                 }
-                if (response.hasUpdate) {
-                    showPageMessage('success', '发现新版本：' + response.latestVersion + '，页面即将刷新。');
-                    setTimeout(function() {
-                        location.reload();
+
+                const fileName = response.fileName || state.fileName;
+                if (response.status === 'downloading') {
+                    setReleaseState(version, { cacheStatus: 'downloading', activeDownloadId: downloadId });
+                    updateProgress(response.progress || 0, '已下载 ' + formatBytes(response.downloadedSize) + ' / ' + formatBytes(response.totalSize));
+                    progressTimer = setTimeout(function () {
+                        monitorDownload(version, downloadId, autoInstall);
                     }, 1000);
                     return;
                 }
-                showPageMessage('info', '当前已是最新版本。');
-            },
-            error: function(xhr) {
-                hideProgress();
-                showPageMessage('danger', '检查更新失败：' + parseAjaxError(xhr, '网络或服务异常'));
-            },
-            complete: function() {
-                setBusy('#checkUpdatesBtn', false);
-            }
-        });
-    }
 
-    function downloadRelease(version, fileName, downloadUrl, triggerBtn) {
-        setButtonLoading(triggerBtn, true, '下载中...');
-        showProgress('准备下载: ' + fileName, 0);
-        showProgressDetails();
-        $('#downloadFileName').text(fileName);
-
-        $.ajax({
-            url: '/api/version/download',
-            method: 'POST',
-            data: {
-                version: version,
-                fileName: fileName,
-                downloadUrl: downloadUrl
-            },
-            success: function(response) {
-                if (response.success && response.downloadId) {
-                    monitorDownloadProgress(response.downloadId, fileName, triggerBtn, false);
+                if (response.status === 'completed') {
+                    const cacheStatus = response.verificationStatus === 'verified' ? 'cached' : 'unverified';
+                    setReleaseState(version, {
+                        cacheStatus: cacheStatus,
+                        verificationStatus: response.verificationStatus || 'unknown',
+                        activeDownloadId: ''
+                    });
+                    if (autoInstall) {
+                        updateProgress(100, '下载完成，开始安装...');
+                        installCachedVersion(version, fileName);
+                        return;
+                    }
+                    hideProgress();
+                    showPageMessage('success', '版本 ' + version + ' 已缓存，后续点击更新不会再次下载。');
                     return;
                 }
+
+                if (response.status === 'cancelled') {
+                    hideProgress();
+                    setReleaseState(version, { cacheStatus: 'uncached', activeDownloadId: '' });
+                    showPageMessage('warning', '下载已取消。');
+                    return;
+                }
+
                 hideProgress();
-                setButtonLoading(triggerBtn, false);
-                showPageMessage('danger', '下载启动失败：' + (response.error || '未知错误'));
+                setReleaseState(version, { cacheStatus: 'uncached', activeDownloadId: '' });
+                showPageMessage('danger', response.error || '下载失败');
             },
-            error: function(xhr) {
+            error: function (xhr) {
                 hideProgress();
-                setButtonLoading(triggerBtn, false);
-                showPageMessage('danger', '下载失败：' + parseAjaxError(xhr, '网络或服务异常'));
+                setReleaseState(version, { cacheStatus: 'uncached', activeDownloadId: '' });
+                showPageMessage('danger', parseAjaxError(xhr, '下载进度轮询失败'));
             }
         });
     }
 
-    function updateToVersion(version, fileName, downloadUrl, triggerBtn) {
-        var confirmMessage = '确定要更新到版本 ' + version + ' 吗？\n\n';
-        {{if .IsServiceMode}}
-        confirmMessage += '注意：更新过程中服务将会自动重启。';
-        {{else}}
-        confirmMessage += '注意：Windows系统下将启动更新脚本，程序会自动退出。\n请按照脚本提示完成更新过程。';
-        {{end}}
+    function waitForServerRestart() {
+        clearTimers();
+        let attempts = 0;
+        updateProgress(99, '安装已提交，等待服务重启...');
+        restartTimer = setInterval(function () {
+            attempts++;
+            $.ajax({
+                url: '/resources/css/bootstrap.min.css?_=' + Date.now(),
+                method: 'GET',
+                timeout: 3000,
+                success: function () {
+                    clearTimers();
+                    window.location.reload();
+                },
+                error: function () {
+                    if (attempts >= 40) {
+                        clearTimers();
+                        $('#closeProgressBtn').show();
+                        showPageMessage('warning', '服务重启时间较长，可以稍后手动刷新页面确认结果。');
+                    }
+                }
+            });
+        }, 3000);
+    }
 
-        if (!confirm(confirmMessage)) {
+    function installCachedVersion(version, fileName) {
+        showProgress('安装中', '正在使用已缓存安装包更新...', 96, false);
+        $.ajax({
+            url: '/api/version/install',
+            method: 'POST',
+            data: { version: version, fileName: fileName },
+            success: function (response) {
+                if (!response.success) {
+                    hideProgress();
+                    showPageMessage('danger', response.error || '安装失败');
+                    return;
+                }
+                setReleaseState(version, { cacheStatus: 'installing', isInstalling: true });
+                updateProgress(100, response.message || '安装脚本已启动。');
+                if (window.versionPageConfig.serviceMode) {
+                    waitForServerRestart();
+                } else {
+                    $('#closeProgressBtn').show();
+                    showPageMessage('warning', response.message || '安装脚本已启动，请手动重启程序。');
+                }
+            },
+            error: function (xhr) {
+                hideProgress();
+                showPageMessage('danger', parseAjaxError(xhr, '安装失败'));
+            }
+        });
+    }
+
+    function startReleaseAction(version, action) {
+        const state = releaseStates[version];
+        if (!state || !state.hasAsset) {
+            showPageMessage('warning', '当前版本没有匹配的安装包。');
             return;
         }
 
-        setButtonLoading(triggerBtn, true, '更新中...');
-        showProgress('准备更新到版本 ' + version, 20);
+        if (action === 'install') {
+            installCachedVersion(version, state.fileName);
+            return;
+        }
+        if (action === 'progress' && state.activeDownloadId) {
+            showProgress('下载中', '正在获取进度...', 0, true);
+            monitorDownload(version, state.activeDownloadId, false);
+            return;
+        }
+        if (action === 'cancel' && state.activeDownloadId) {
+            currentDownloadId = state.activeDownloadId;
+            cancelCurrentDownload(version);
+            return;
+        }
+
+        const autoInstall = action === 'update';
+        showProgress(autoInstall ? '下载并更新' : '下载版本', '正在创建下载任务...', 5, false);
 
         $.ajax({
-            url: '/api/version/update',
+            url: autoInstall ? '/api/version/update' : '/api/version/download',
             method: 'POST',
-            data: {
-                version: version,
-                fileName: fileName,
-                downloadUrl: downloadUrl
-            },
-            success: function(response) {
+            data: { version: version, fileName: state.fileName, downloadUrl: state.downloadUrl },
+            success: function (response) {
                 if (!response.success) {
                     hideProgress();
-                    setButtonLoading(triggerBtn, false);
-                    showPageMessage('danger', '更新失败：' + (response.error || '未知错误'));
+                    showPageMessage('danger', response.error || '操作失败');
                     return;
                 }
-                {{if .IsServiceMode}}
-                updateProgress(80, '更新脚本已启动，即将重启服务...');
-                setTimeout(function() {
-                    updateProgress(100, '服务重启中，请稍候...');
-                    setTimeout(function() {
-                        checkServerStatus(triggerBtn);
-                    }, 5000);
-                }, 1000);
-                {{else}}
-                updateProgress(100, '更新脚本已启动，程序即将退出');
-                setTimeout(function() {
+
+                if (response.stage === 'installing') {
+                    setReleaseState(version, { cacheStatus: 'installing', isInstalling: true });
+                    updateProgress(100, response.message || '安装脚本已启动。');
+                    if (window.versionPageConfig.serviceMode) {
+                        waitForServerRestart();
+                    } else {
+                        $('#closeProgressBtn').show();
+                        showPageMessage('warning', response.message || '安装脚本已启动，请手动重启程序。');
+                    }
+                    return;
+                }
+
+                if (response.cacheHit) {
                     hideProgress();
-                    setButtonLoading(triggerBtn, false);
-                    showPageMessage('warning', '更新脚本已启动。请按脚本提示完成更新，完成后手动重启程序。');
-                }, 1000);
-                {{end}}
-            },
-            error: function(xhr) {
+                    setReleaseState(version, {
+                        cacheStatus: response.cacheStatus || 'cached',
+                        verificationStatus: response.verificationStatus || 'unknown'
+                    });
+                    showPageMessage('success', autoInstall ? '已命中本地缓存，将直接安装。' : '该版本已经缓存，无需重复下载。');
+                    if (autoInstall) installCachedVersion(version, state.fileName);
+                    return;
+                }
+
+                if (response.downloadId) {
+                    setReleaseState(version, {
+                        cacheStatus: 'downloading',
+                        activeDownloadId: response.downloadId,
+                        verificationStatus: response.verificationStatus || 'unknown'
+                    });
+                    showProgress('下载中', '正在下载 ' + state.fileName, 0, true);
+                    monitorDownload(version, response.downloadId, !!response.autoInstall);
+                    return;
+                }
+
                 hideProgress();
-                setButtonLoading(triggerBtn, false);
-                showPageMessage('danger', '更新失败：' + parseAjaxError(xhr, '网络或服务异常'));
+                showPageMessage('warning', '服务器未返回可继续跟踪的下载任务。');
+            },
+            error: function (xhr) {
+                hideProgress();
+                showPageMessage('danger', parseAjaxError(xhr, '操作失败'));
+            }
+        });
+    }
+
+    function cancelCurrentDownload(version) {
+        if (!currentDownloadId) return;
+        $.ajax({
+            url: '/api/version/download/cancel',
+            method: 'POST',
+            data: { id: currentDownloadId },
+            success: function (response) {
+                hideProgress();
+                if (!response.success) {
+                    showPageMessage('danger', response.error || '取消失败');
+                    return;
+                }
+                if (version) setReleaseState(version, { cacheStatus: 'uncached', activeDownloadId: '' });
+                showPageMessage('warning', response.message || '下载已取消。');
+            },
+            error: function (xhr) {
+                hideProgress();
+                showPageMessage('danger', parseAjaxError(xhr, '取消下载失败'));
+            }
+        });
+    }
+
+    function checkForUpdates() {
+        showProgress('检查更新', '正在检查最新发布...', 35, false);
+        $.ajax({
+            url: '/api/version/check',
+            method: 'POST',
+            success: function (response) {
+                hideProgress();
+                if (!response.success) {
+                    showPageMessage('danger', response.error || '检查更新失败');
+                    return;
+                }
+                if (response.hasUpdate) {
+                    showPageMessage('success', '发现新版本 ' + response.latestVersion + '，正在刷新列表。');
+                    setTimeout(function () { window.location.reload(); }, 800);
+                } else {
+                    showPageMessage('info', '当前已经是最新版本。');
+                }
+            },
+            error: function (xhr) {
+                hideProgress();
+                showPageMessage('danger', parseAjaxError(xhr, '检查更新失败'));
             }
         });
     }
 
     function saveUpdateSettings() {
-        var checkInterval = parseInt($('#checkInterval').val(), 10);
-        var githubOwner = ($('#githubOwner').val() || '').trim();
-        var githubRepo = ($('#githubRepo').val() || '').trim();
-        var proxyEnabled = $('#proxyEnabled').is(':checked');
-        var proxyUrl = ($('#proxyUrl').val() || '').trim();
-
-        if (!Number.isInteger(checkInterval) || checkInterval < 5 || checkInterval > 1440) {
-            showPageMessage('warning', '检查间隔必须在 5 到 1440 分钟之间。');
-            return;
-        }
-        if (!githubOwner || !githubRepo) {
-            showPageMessage('warning', 'GitHub 仓库所有者和仓库名称不能为空。');
-            return;
-        }
-        if (proxyEnabled && proxyUrl && !/^https?:\/\//i.test(proxyUrl)) {
-            showPageMessage('warning', '代理地址格式错误，请使用 http:// 或 https:// 开头。');
-            return;
-        }
-
-        const settings = {
-            enabled: $('#autoUpdateEnabled').is(':checked'),
-            checkInterval: checkInterval,
-            githubOwner: githubOwner,
-            githubRepo: githubRepo,
-            proxyEnabled: proxyEnabled,
-            proxyUrl: proxyUrl,
-            proxyUsername: $('#proxyUsername').val(),
-            proxyPassword: $('#proxyPassword').val()
-        };
-
-        setBusy('#saveSettingsBtn', true);
         $.ajax({
             url: '/api/version/settings',
             method: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify(settings),
-            success: function(response) {
+            data: JSON.stringify({
+                enabled: $('#autoUpdateEnabled').is(':checked'),
+                checkInterval: parseInt($('#checkInterval').val(), 10),
+                githubOwner: $('#githubOwner').val(),
+                githubRepo: $('#githubRepo').val(),
+                proxyEnabled: $('#proxyEnabled').is(':checked'),
+                proxyUrl: $('#proxyUrl').val(),
+                proxyUsername: $('#proxyUsername').val(),
+                proxyPassword: $('#proxyPassword').val()
+            }),
+            success: function (response) {
                 if (!response.success) {
-                    showPageMessage('danger', '设置保存失败：' + (response.error || '未知错误'));
+                    showPageMessage('danger', response.error || '保存失败');
                     return;
                 }
-                hideModal('#updateSettingsModal');
-                showPageMessage('success', '设置保存成功，页面即将刷新。');
-                setTimeout(function() {
-                    location.reload();
-                }, 800);
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('updateSettingsModal')).hide();
+                showPageMessage('success', response.message || '设置已保存。');
             },
-            error: function(xhr) {
-                showPageMessage('danger', '设置保存失败：' + parseAjaxError(xhr, '网络或服务异常'));
-            },
-            complete: function() {
-                setBusy('#saveSettingsBtn', false);
+            error: function (xhr) {
+                showPageMessage('danger', parseAjaxError(xhr, '保存设置失败'));
             }
         });
     }
 
-    function showProgress(text, percent) {
-        $('#progressText').text(text);
-        $('#progressBar').css('width', percent + '%');
-        showModal('#progressModal');
-    }
-
-    function updateProgress(percent, text) {
-        $('#progressBar').css('width', percent + '%');
-        if (text) {
-            $('#progressText').text(text);
-        }
-    }
-
-    function hideProgress() {
-        hideModal('#progressModal');
-    }
-
-    function setDownloadCancelable(downloadId, triggerBtn) {
-        activeDownloadId = downloadId || '';
-        activeDownloadTriggerBtn = triggerBtn || null;
-        if (activeDownloadId) {
-            $('#cancelDownloadBtn').removeClass('d-none').prop('disabled', false);
-            return;
-        }
-        $('#cancelDownloadBtn').addClass('d-none').prop('disabled', false);
-    }
-
-    function clearActiveDownloadState() {
-        if (activeProgressInterval) {
-            clearInterval(activeProgressInterval);
-            activeProgressInterval = null;
-        }
-        activeDownloadId = '';
-        activeDownloadTriggerBtn = null;
-        $('#cancelDownloadBtn').addClass('d-none').prop('disabled', false);
-    }
-
-    function cancelCurrentDownload() {
-        if (!activeDownloadId) {
-            return;
-        }
-
-        $('#cancelDownloadBtn').prop('disabled', true);
-        $.ajax({
-            url: '/api/version/download/cancel',
-            method: 'POST',
-            data: {
-                id: activeDownloadId
-            },
-            success: function(response) {
-                if (!response.success) {
-                    $('#cancelDownloadBtn').prop('disabled', false);
-                    showPageMessage('danger', '取消下载失败：' + (response.error || '未知错误'));
-                    return;
-                }
-
-                var triggerBtn = activeDownloadTriggerBtn;
-                clearActiveDownloadState();
-                hideProgress();
-                setButtonLoading(triggerBtn, false);
-                showPageMessage('warning', response.message || '已取消本次下载');
-            },
-            error: function(xhr) {
-                $('#cancelDownloadBtn').prop('disabled', false);
-                showPageMessage('danger', '取消下载失败：' + parseAjaxError(xhr, '网络或服务异常'));
-            }
+    $(function () {
+        $('.js-release-state').each(function () {
+            const state = readReleaseState(this);
+            if (!state.version) return;
+            releaseStates[state.version] = Object.assign({}, releaseStates[state.version] || {}, state);
         });
-    }
+        Object.keys(releaseStates).forEach(function (version) {
+            renderReleaseState(releaseStates[version]);
+        });
 
-    function monitorDownloadProgress(downloadId, fileName, triggerBtn, reloadOnComplete) {
-        setDownloadCancelable(downloadId, triggerBtn);
-        var lastDownloaded = 0;
-        var lastTime = Date.now();
+        $(document).on('click', '.js-release-action', function () {
+            const version = ($(this).data('version') || '').toString();
+            const action = ($(this).data('action') || '').toString();
+            startReleaseAction(version, action);
+        });
 
-        if (activeProgressInterval) {
-            clearInterval(activeProgressInterval);
-        }
-
-        activeProgressInterval = setInterval(function() {
-            $.ajax({
-                url: '/api/version/progress?id=' + downloadId,
-                method: 'GET',
-                success: function(response) {
-                    if (response.success === false) {
-                        clearActiveDownloadState();
-                        hideProgress();
-                        setButtonLoading(triggerBtn, false);
-                        showPageMessage('danger', '获取下载进度失败：' + (response.error || '未知错误'));
-                        return;
-                    }
-
-                    var progress = response.progress || 0;
-                    var downloaded = response.downloadedSize || 0;
-                    var total = response.totalSize || 0;
-                    var status = response.status || 'downloading';
-
-                    updateProgress(progress, '下载中: ' + fileName + ' (' + progress.toFixed(1) + '%)');
-                    $('#downloadSize').text(formatBytes(downloaded) + ' / ' + formatBytes(total));
-
-                    var currentTime = Date.now();
-                    var timeDiff = (currentTime - lastTime) / 1000;
-                    var bytesDiff = downloaded - lastDownloaded;
-
-                    if (timeDiff > 0) {
-                        var speed = bytesDiff / timeDiff;
-                        $('#downloadSpeed').text(formatBytes(speed) + '/s');
-                        if (speed > 0 && total > 0) {
-                            var remaining = (total - downloaded) / speed;
-                            $('#downloadETA').text(formatTime(remaining));
-                        }
-                    }
-
-                    lastDownloaded = downloaded;
-                    lastTime = currentTime;
-
-                    if (status === 'completed') {
-                        clearActiveDownloadState();
-                        updateProgress(100, '下载完成: ' + fileName);
-                        setTimeout(function() {
-                            hideProgress();
-                            setButtonLoading(triggerBtn, false);
-                            showPageMessage('success', '下载完成：' + fileName);
-                            if (reloadOnComplete) {
-                                location.reload();
-                            }
-                        }, 800);
-                    } else if (status === 'error') {
-                        clearActiveDownloadState();
-                        hideProgress();
-                        setButtonLoading(triggerBtn, false);
-                        showPageMessage('danger', '下载失败：' + (response.error || '未知错误'));
-                    } else if (status === 'cancelled') {
-                        clearActiveDownloadState();
-                        hideProgress();
-                        setButtonLoading(triggerBtn, false);
-                        showPageMessage('warning', '下载已取消。');
-                    }
-                },
-                error: function(xhr) {
-                    clearActiveDownloadState();
-                    hideProgress();
-                    setButtonLoading(triggerBtn, false);
-                    showPageMessage('danger', '无法获取下载进度：' + parseAjaxError(xhr, '网络或服务异常'));
-                }
+        $('#cancelDownloadBtn').on('click', function () {
+            const version = Object.keys(releaseStates).find(function (key) {
+                return releaseStates[key] && releaseStates[key].activeDownloadId === currentDownloadId;
             });
-        }, 1000);
-    }
-    
-    // 格式化字节数
-    function formatBytes(bytes) {
-        if (bytes === 0) return '0 B';
-        var k = 1024;
-        var sizes = ['B', 'KB', 'MB', 'GB'];
-        var i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-    
-    // 格式化时间
-    function formatTime(seconds) {
-        if (seconds < 60) return Math.round(seconds) + '秒';
-        var minutes = Math.floor(seconds / 60);
-        if (minutes < 60) return minutes + '分' + Math.round(seconds % 60) + '秒';
-        var hours = Math.floor(minutes / 60);
-        return hours + '时' + (minutes % 60) + '分';
-    }
-    
-    // 显示进度详情
-    function showProgressDetails() {
-        $('#progressDetails').show();
-    }
-    
-    // 隐藏进度详情
-    function hideProgressDetails() {
-        $('#progressDetails').hide();
-    }
-    
-    // 代理设置切换
-    $('#proxyEnabled').change(function() {
-        if ($(this).is(':checked')) {
-            $('#proxySettings, #proxyAuth').show();
-        } else {
-            $('#proxySettings, #proxyAuth').hide();
-        }
+            cancelCurrentDownload(version || '');
+        });
     });
-    
-    // 检查服务器状态（用于服务重启后的重连）
-    function checkServerStatus(triggerBtn) {
-        var attempts = 0;
-        var maxAttempts = 30; // 最多尝试30次，约5分钟
-        
-        function attempt() {
-            attempts++;
-            $.ajax({
-                url: '/api/version/check',
-                method: 'POST',
-                timeout: 3000,
-                success: function() {
-                    hideProgress();
-                    setButtonLoading(triggerBtn, false);
-                    showPageMessage('success', '服务已成功重启，页面即将刷新。');
-                    setTimeout(function() {
-                        location.reload();
-                    }, 1000);
-                },
-                error: function(xhr) {
-                    if (attempts < maxAttempts) {
-                        updateProgress(100, '等待服务重启... (' + attempts + '/' + maxAttempts + ')');
-                        setTimeout(attempt, 10000); // 10秒后重试
-                    } else {
-                        hideProgress();
-                        setButtonLoading(triggerBtn, false);
-                        showPageMessage('warning', '服务重启超时：' + parseAjaxError(xhr, '请手动刷新页面检查状态。'));
-                    }
-                }
-            });
-        }
-
-        setTimeout(attempt, 10000); // 10秒后开始第一次检查
-    }
-
-    initReleaseList();
 </script>
 {{end}}

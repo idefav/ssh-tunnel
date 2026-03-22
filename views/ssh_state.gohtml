@@ -9,6 +9,41 @@
             </div>
         </div>
         <div class="card-body">
+            <div class="rounded-3 border bg-light px-3 py-3 mb-4">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                    <div>
+                        <div class="small text-muted mb-1">当前代理出口 IP</div>
+                        <div id="sshExitIP" class="fs-4 fw-semibold text-dark">检测中...</div>
+                        <div id="sshExitStatus" class="small text-muted mt-1">通过当前 SSH 出口访问 ipinfo.io 获取</div>
+                    </div>
+                    <div class="text-md-end">
+                        <div class="small text-muted">最近刷新</div>
+                        <div id="sshExitUpdatedAt" class="fw-medium">--</div>
+                        <button id="refreshExitInfo" type="button" class="btn btn-outline-secondary btn-sm mt-2">
+                            <i class="bi bi-arrow-clockwise me-1"></i>刷新出口信息
+                        </button>
+                    </div>
+                </div>
+                <div class="row g-3 mt-1">
+                    <div class="col-md-4">
+                        <div class="small text-muted">地理位置</div>
+                        <div id="sshExitLocation" class="fw-medium">--</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="small text-muted">运营商 / 组织</div>
+                        <div id="sshExitOrganization" class="fw-medium text-break">--</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="small text-muted">时区 / 坐标</div>
+                        <div id="sshExitTimezone" class="fw-medium">--</div>
+                        <div id="sshExitCoordinate" class="small text-muted mt-1">--</div>
+                    </div>
+                </div>
+                <div id="sshExitErrorWrap" class="alert alert-warning py-2 px-3 mt-3 mb-0 d-none">
+                    <div class="small text-muted mb-1">出口信息获取异常</div>
+                    <div id="sshExitError" class="text-break mb-0">--</div>
+                </div>
+            </div>
             <div class="row">
                 <div class="col-md-6">
                     <table class="table table-borderless">
@@ -32,6 +67,14 @@
                         <tr>
                             <th class="text-secondary">累计重连次数</th>
                             <td id="sshReconnectCount">{{.ReconnectCount}}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">活跃代理连接</th>
+                            <td id="sshActiveProxyConns">0</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">连续重连失败</th>
+                            <td id="sshReconnectFailures">{{.ConsecutiveReconnectFailures}}</td>
                         </tr>
                         </tbody>
                     </table>
@@ -63,9 +106,21 @@
                             <th class="text-secondary">累计流量</th>
                             <td id="sshTrafficTotal">↑ 0 B / ↓ 0 B</td>
                         </tr>
+                        <tr>
+                            <th class="text-secondary">最近重连成功</th>
+                            <td id="sshLastReconnectAt">{{.LastReconnectAt}}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-secondary">最近重连失败</th>
+                            <td id="sshLastReconnectFailureAt">{{.LastReconnectFailureAt}}</td>
+                        </tr>
                         </tbody>
                     </table>
                 </div>
+            </div>
+            <div class="alert alert-light border mt-3 mb-0">
+                <div class="small text-muted mb-1">最近重连错误</div>
+                <div id="sshLastReconnectError" class="text-break">{{.LastReconnectError}}</div>
             </div>
             <div class="d-flex justify-content-center mt-3 gap-2">
                 <button id="testSshQuality" type="button" class="btn btn-outline-primary">
@@ -238,6 +293,21 @@
             const trafficTotalEl = document.getElementById("sshTrafficTotal");
             const connectionCountEl = document.getElementById("sshConnectionCount");
             const reconnectCountEl = document.getElementById("sshReconnectCount");
+            const activeProxyConnsEl = document.getElementById("sshActiveProxyConns");
+            const reconnectFailuresEl = document.getElementById("sshReconnectFailures");
+            const lastReconnectAtEl = document.getElementById("sshLastReconnectAt");
+            const lastReconnectFailureAtEl = document.getElementById("sshLastReconnectFailureAt");
+            const lastReconnectErrorEl = document.getElementById("sshLastReconnectError");
+            const exitIPEl = document.getElementById("sshExitIP");
+            const exitStatusEl = document.getElementById("sshExitStatus");
+            const exitUpdatedAtEl = document.getElementById("sshExitUpdatedAt");
+            const exitLocationEl = document.getElementById("sshExitLocation");
+            const exitOrganizationEl = document.getElementById("sshExitOrganization");
+            const exitTimezoneEl = document.getElementById("sshExitTimezone");
+            const exitCoordinateEl = document.getElementById("sshExitCoordinate");
+            const exitErrorWrapEl = document.getElementById("sshExitErrorWrap");
+            const exitErrorEl = document.getElementById("sshExitError");
+            const refreshExitInfoBtn = document.getElementById("refreshExitInfo");
             const chartCanvas = document.getElementById("sshSpeedChart");
             const toggleRefreshBtn = document.getElementById("toggleRefresh");
             const refreshStatusText = document.getElementById("refreshStatusText");
@@ -246,6 +316,8 @@
             const maxPoints = 60;
             let refreshPaused = false;
             let refreshTimer = null;
+            let exitInfoTimer = null;
+            const exitInfoIntervalMs = 60000;
 
             // Speed test modal elements
             const stModal = new bootstrap.Modal(document.getElementById("speedTestModal"));
@@ -282,6 +354,58 @@
                 toast.classList.add(success ? "bg-success" : "bg-danger", "text-white");
                 const bsToast = new bootstrap.Toast(toast);
                 bsToast.show();
+            }
+
+            function joinNonEmpty(parts, separator) {
+                return (parts || []).filter(function(part) {
+                    return part && part.toString().trim() !== "";
+                }).join(separator || " / ");
+            }
+
+            function updateExitInfoUI(data) {
+                const hasIP = !!(data && data.ip);
+                if (exitIPEl) {
+                    exitIPEl.textContent = hasIP ? data.ip : "暂未获取";
+                }
+                if (exitLocationEl) {
+                    exitLocationEl.textContent = joinNonEmpty([data.city, data.region, data.country], " / ") || "--";
+                }
+                if (exitOrganizationEl) {
+                    exitOrganizationEl.textContent = data.organization || "--";
+                }
+                if (exitTimezoneEl) {
+                    exitTimezoneEl.textContent = data.timezone || "--";
+                }
+                if (exitCoordinateEl) {
+                    exitCoordinateEl.textContent = data.location || "--";
+                }
+                if (exitUpdatedAtEl) {
+                    exitUpdatedAtEl.textContent = data.updatedAt || "--";
+                }
+                if (exitStatusEl) {
+                    exitStatusEl.textContent = hasIP ? "通过当前 SSH 出口访问 ipinfo.io 获取，每分钟自动刷新一次" : "暂未获取到当前 SSH 代理出口信息，可手动刷新重试";
+                }
+                if (exitErrorWrapEl && exitErrorEl) {
+                    if (data && data.error) {
+                        exitErrorEl.textContent = data.error;
+                        exitErrorWrapEl.classList.remove("d-none");
+                    } else {
+                        exitErrorEl.textContent = "--";
+                        exitErrorWrapEl.classList.add("d-none");
+                    }
+                }
+            }
+
+            function fetchExitInfo(forceRefresh) {
+                let requestUrl = "/admin/ssh/exit-info";
+                if (forceRefresh) {
+                    requestUrl += "?refresh=1";
+                }
+                return $.get(requestUrl)
+                    .done(function(data) {
+                        if (!data || data.success === false) return;
+                        updateExitInfoUI(data);
+                    });
             }
 
             // ======================== Realtime Proxy Metrics ========================
@@ -360,6 +484,21 @@
                 }
                 if (reconnectCountEl) {
                     reconnectCountEl.textContent = (data.reconnectCount ?? 0).toString();
+                }
+                if (activeProxyConnsEl) {
+                    activeProxyConnsEl.textContent = (data.activeProxyConns ?? 0).toString();
+                }
+                if (reconnectFailuresEl) {
+                    reconnectFailuresEl.textContent = (data.consecutiveReconnectFailures ?? 0).toString();
+                }
+                if (lastReconnectAtEl) {
+                    lastReconnectAtEl.textContent = data.lastReconnectAt || "--";
+                }
+                if (lastReconnectFailureAtEl) {
+                    lastReconnectFailureAtEl.textContent = data.lastReconnectFailureAt || "--";
+                }
+                if (lastReconnectErrorEl) {
+                    lastReconnectErrorEl.textContent = data.lastReconnectError || "--";
                 }
                 pushHistory(data.uploadBps || 0, data.downloadBps || 0);
                 drawSpeedChart();
@@ -663,6 +802,31 @@
                 }
             });
 
+            refreshExitInfoBtn.addEventListener("click", function() {
+                refreshExitInfoBtn.disabled = true;
+                refreshExitInfoBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>刷新中...';
+
+                fetchExitInfo(true)
+                    .done(function(data) {
+                        if (data && data.success !== false) {
+                            showToast("出口信息已刷新", true);
+                            if (!refreshPaused) {
+                                clearInterval(exitInfoTimer);
+                                exitInfoTimer = setInterval(fetchExitInfo, exitInfoIntervalMs);
+                            }
+                            return;
+                        }
+                        showToast((data && data.message) || "出口信息刷新失败", false);
+                    })
+                    .fail(function() {
+                        showToast("出口信息刷新失败", false);
+                    })
+                    .always(function() {
+                        refreshExitInfoBtn.disabled = false;
+                        refreshExitInfoBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>刷新出口信息';
+                    });
+            });
+
             reconnectBtn.addEventListener("click", function() {
                 reconnectBtn.disabled = true;
                 reconnectBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 连接中...';
@@ -697,6 +861,18 @@
                         if (reconnectCountEl) {
                             reconnectCountEl.textContent = (data.reconnectCount ?? 0).toString();
                         }
+                        if (reconnectFailuresEl) {
+                            reconnectFailuresEl.textContent = (data.consecutiveReconnectFailures ?? 0).toString();
+                        }
+                        if (lastReconnectAtEl) {
+                            lastReconnectAtEl.textContent = data.lastReconnectAt || "--";
+                        }
+                        if (lastReconnectFailureAtEl) {
+                            lastReconnectFailureAtEl.textContent = data.lastReconnectFailureAt || "--";
+                        }
+                        if (lastReconnectErrorEl) {
+                            lastReconnectErrorEl.textContent = data.lastReconnectError || "--";
+                        }
                         showToast("重连计数已清零", true);
                     })
                     .fail(function() {
@@ -713,13 +889,17 @@
                 if (refreshPaused) {
                     clearInterval(refreshTimer);
                     refreshTimer = null;
+                    clearInterval(exitInfoTimer);
+                    exitInfoTimer = null;
                     toggleRefreshBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>恢复';
                     toggleRefreshBtn.classList.remove("btn-outline-secondary");
                     toggleRefreshBtn.classList.add("btn-outline-success");
                     refreshStatusText.textContent = "已暂停";
                 } else {
                     fetchRealtimeMetrics();
+                    fetchExitInfo(true);
                     refreshTimer = setInterval(fetchRealtimeMetrics, 1000);
+                    exitInfoTimer = setInterval(fetchExitInfo, exitInfoIntervalMs);
                     toggleRefreshBtn.innerHTML = '<i class="bi bi-pause-fill me-1"></i>暂停';
                     toggleRefreshBtn.classList.remove("btn-outline-success");
                     toggleRefreshBtn.classList.add("btn-outline-secondary");
@@ -729,6 +909,8 @@
 
             fetchRealtimeMetrics();
             refreshTimer = setInterval(fetchRealtimeMetrics, 1000);
+            fetchExitInfo();
+            exitInfoTimer = setInterval(fetchExitInfo, exitInfoIntervalMs);
             fetchRequests();
             requestRefreshTimer = setInterval(fetchRequests, 1000);
             window.addEventListener("resize", drawSpeedChart);

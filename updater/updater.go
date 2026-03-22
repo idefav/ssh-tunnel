@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +47,7 @@ type UpdaterConfig struct {
 	Repo           string
 	CurrentVersion string
 	CheckInterval  time.Duration
+	ServiceMode    bool
 	AutoDownload   bool
 	AutoInstall    bool
 }
@@ -99,7 +99,6 @@ func (u *Updater) Stop() {
 	u.isRunning = false
 }
 
-// checkLoop 定时检查更新的循环
 func (u *Updater) checkLoop() {
 	for {
 		select {
@@ -129,8 +128,6 @@ func (u *Updater) CheckForUpdates() (*Release, bool) {
 	}
 
 	latestRelease := releases[0]
-
-	// 跳过预发布版本和草稿版本
 	for _, release := range releases {
 		if !release.Prerelease && !release.Draft {
 			latestRelease = release
@@ -138,7 +135,7 @@ func (u *Updater) CheckForUpdates() (*Release, bool) {
 		}
 	}
 
-	if u.isNewerVersion(latestRelease.TagName, u.config.CurrentVersion) {
+	if IsNewerVersion(latestRelease.TagName, u.config.CurrentVersion) {
 		return &latestRelease, true
 	}
 
@@ -165,7 +162,7 @@ func (u *Updater) GetReleases() ([]Release, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API请求失败: %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub API 请求失败: %d", resp.StatusCode)
 	}
 
 	var releases []Release
@@ -184,8 +181,6 @@ func (u *Updater) DownloadRelease(release *Release, targetDir string) (string, e
 	}
 
 	filename := filepath.Join(targetDir, asset.Name)
-
-	// 下载文件
 	if err := u.downloadFile(asset.DownloadURL, filename); err != nil {
 		return "", fmt.Errorf("下载失败: %v", err)
 	}
@@ -193,7 +188,7 @@ func (u *Updater) DownloadRelease(release *Release, targetDir string) (string, e
 	return filename, nil
 }
 
-// VerifyChecksum 验证文件SHA256校验和
+// VerifyChecksum 验证文件 SHA256 校验和
 func (u *Updater) VerifyChecksum(filePath, expectedChecksum string) (bool, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -210,7 +205,7 @@ func (u *Updater) VerifyChecksum(filePath, expectedChecksum string) (bool, error
 	return strings.EqualFold(actualChecksum, expectedChecksum), nil
 }
 
-// GetFileChecksum 计算文件的SHA256校验和
+// GetFileChecksum 计算文件的 SHA256 校验和
 func (u *Updater) GetFileChecksum(filePath string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -244,7 +239,6 @@ func (u *Updater) SetEnabled(enabled bool) {
 	defer u.mu.Unlock()
 
 	u.config.Enabled = enabled
-
 	if enabled && !u.isRunning {
 		go u.Start()
 	} else if !enabled && u.isRunning {
@@ -252,72 +246,10 @@ func (u *Updater) SetEnabled(enabled bool) {
 	}
 }
 
-// isNewerVersion 比较版本号，判断是否为更新版本
-func (u *Updater) isNewerVersion(newVersion, currentVersion string) bool {
-	parse := func(version string) [3]int {
-		version = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(version, "v"), "V"))
-		parts := strings.Split(version, ".")
-		result := [3]int{0, 0, 0}
-		for i := 0; i < len(parts) && i < 3; i++ {
-			segment := strings.TrimSpace(parts[i])
-			if segment == "" {
-				continue
-			}
-			end := 0
-			for end < len(segment) && segment[end] >= '0' && segment[end] <= '9' {
-				end++
-			}
-			if end == 0 {
-				continue
-			}
-			value, err := strconv.Atoi(segment[:end])
-			if err == nil {
-				result[i] = value
-			}
-		}
-		return result
-	}
-
-	newParts := parse(newVersion)
-	currentParts := parse(currentVersion)
-	for i := 0; i < 3; i++ {
-		if newParts[i] > currentParts[i] {
-			return true
-		}
-		if newParts[i] < currentParts[i] {
-			return false
-		}
-	}
-
-	return false
-}
-
-// findAssetForCurrentPlatform 根据当前平台查找合适的资源文件
 func (u *Updater) findAssetForCurrentPlatform(assets []Asset) *Asset {
-	osName := runtime.GOOS
-	archName := runtime.GOARCH
-
-	// 构建平台标识符
-	platformIdentifiers := []string{
-		fmt.Sprintf("%s-%s", osName, archName),
-		fmt.Sprintf("%s_%s", osName, archName),
-		osName,
-	}
-
-	// 查找匹配的资源文件
-	for _, asset := range assets {
-		assetNameLower := strings.ToLower(asset.Name)
-		for _, platform := range platformIdentifiers {
-			if strings.Contains(assetNameLower, strings.ToLower(platform)) {
-				return &asset
-			}
-		}
-	}
-
-	return nil
+	return SelectAsset(assets, u.config.ServiceMode, runtime.GOOS, runtime.GOARCH)
 }
 
-// downloadFile 下载文件
 func (u *Updater) downloadFile(url, filepath string) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -325,7 +257,6 @@ func (u *Updater) downloadFile(url, filepath string) error {
 	}
 
 	req.Header.Set("User-Agent", USER_AGENT)
-
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {

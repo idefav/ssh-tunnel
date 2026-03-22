@@ -39,13 +39,17 @@ type Data struct {
 }
 
 type SSHClientState struct {
-	Version         string
-	LocalAddr       net.Addr
-	RemoteAddr      net.Addr
-	SessionID       string
-	User            string
-	ConnectionCount int
-	ReconnectCount  uint64
+	Version                      string
+	LocalAddr                    net.Addr
+	RemoteAddr                   net.Addr
+	SessionID                    string
+	User                         string
+	ConnectionCount              int
+	ReconnectCount               uint64
+	ConsecutiveReconnectFailures uint64
+	LastReconnectAt              string
+	LastReconnectFailureAt       string
+	LastReconnectError           string
 }
 
 func ListStaticFiles(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +107,7 @@ func ViewStaticFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func ShowIndexView(response http.ResponseWriter, request *http.Request) {
-
-	var tunnel = tunnel2.DefaultSshTunnel
+	tunnel := &tunnel2.DefaultSshTunnel
 
 	var data = Data{
 		Domains:                tunnel.Domains(),
@@ -122,7 +125,7 @@ func ShowIndexView(response http.ResponseWriter, request *http.Request) {
 }
 
 func ShowDomainsView(response http.ResponseWriter, request *http.Request) {
-	var tunnel = tunnel2.DefaultSshTunnel
+	tunnel := &tunnel2.DefaultSshTunnel
 
 	var data = Data{
 		Domains:                tunnel.Domains(),
@@ -140,7 +143,7 @@ func ShowDomainsView(response http.ResponseWriter, request *http.Request) {
 }
 
 func ShowCacheView(response http.ResponseWriter, request *http.Request) {
-	var tunnel = tunnel2.DefaultSshTunnel
+	tunnel := &tunnel2.DefaultSshTunnel
 
 	var data = Data{
 		Domains:                tunnel.Domains(),
@@ -158,25 +161,47 @@ func ShowCacheView(response http.ResponseWriter, request *http.Request) {
 }
 
 func ShowSSHClientStateView(response http.ResponseWriter, request *http.Request) {
-	var tunnel = tunnel2.DefaultSshTunnel
-	client := tunnel.GetSSHClient()
-	version := client.ClientVersion()
-	addr := client.LocalAddr()
-	remoteAddr := client.RemoteAddr()
-	id := client.SessionID()
-	user := client.User()
+	tunnel := &tunnel2.DefaultSshTunnel
+	client := tunnel.PeekSSHClient()
+	var version string
+	var addr net.Addr
+	var remoteAddr net.Addr
+	var id []byte
+	var user string
+	if client != nil {
+		version = string(client.ClientVersion())
+		addr = client.LocalAddr()
+		remoteAddr = client.RemoteAddr()
+		id = client.SessionID()
+		user = client.User()
+	}
 	stats := tunnel.SnapshotSSHConnectionStats()
 
-	marshal, _ := json.Marshal(id)
+	sessionID := ""
+	if len(id) > 0 {
+		marshal, _ := json.Marshal(id)
+		sessionID = string(marshal)
+	}
+
+	formatTime := func(value time.Time) string {
+		if value.IsZero() {
+			return ""
+		}
+		return value.Local().Format("2006-01-02 15:04:05")
+	}
 
 	var data = SSHClientState{
-		Version:         string(version),
-		LocalAddr:       addr,
-		RemoteAddr:      remoteAddr,
-		SessionID:       string(marshal),
-		User:            user,
-		ConnectionCount: stats.ConnectionCount,
-		ReconnectCount:  stats.ReconnectCount,
+		Version:                      version,
+		LocalAddr:                    addr,
+		RemoteAddr:                   remoteAddr,
+		SessionID:                    sessionID,
+		User:                         user,
+		ConnectionCount:              stats.ConnectionCount,
+		ReconnectCount:               stats.ReconnectCount,
+		ConsecutiveReconnectFailures: stats.ConsecutiveReconnectFailures,
+		LastReconnectAt:              formatTime(stats.LastReconnectAt),
+		LastReconnectFailureAt:       formatTime(stats.LastReconnectFailureAt),
+		LastReconnectError:           stats.LastReconnectError,
 	}
 
 	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml",
@@ -207,7 +232,7 @@ type ConfigMetadata struct {
 }
 
 func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
-	var tunnel = tunnel2.DefaultSshTunnel
+	tunnel := &tunnel2.DefaultSshTunnel
 	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml",
 		"nav.gohtml",
 		"app_config.gohtml")
@@ -352,6 +377,8 @@ func getWorkingDirectory() string {
 }
 
 func ShowVersionView(w http.ResponseWriter, r *http.Request) {
+	showVersionViewV2(w, r)
+	return
 	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml", "nav.gohtml", "version.gohtml")
 	if err != nil {
 		http.Error(w, "模板解析错误: "+err.Error(), http.StatusInternalServerError)
@@ -447,6 +474,8 @@ func ShowVersionView(w http.ResponseWriter, r *http.Request) {
 
 // API处理函数
 func CheckForUpdatesHandler(w http.ResponseWriter, r *http.Request) {
+	checkForUpdatesV2(w, r)
+	return
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
@@ -478,6 +507,8 @@ func CheckForUpdatesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
+	downloadReleaseV2(w, r)
+	return
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
@@ -540,6 +571,8 @@ func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CancelDownloadHandler(w http.ResponseWriter, r *http.Request) {
+	cancelDownloadV2(w, r)
+	return
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
@@ -570,6 +603,8 @@ func CancelDownloadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
+	updateToVersionV2(w, r)
+	return
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
@@ -866,6 +901,8 @@ func (dm *DownloadManager) CancelDownload(id string) (bool, string) {
 }
 
 func GetDownloadProgressHandler(w http.ResponseWriter, r *http.Request) {
+	getDownloadProgressV2(w, r)
+	return
 	if r.Method != http.MethodGet {
 		http.Error(w, "仅支持GET方法", http.StatusMethodNotAllowed)
 		return
