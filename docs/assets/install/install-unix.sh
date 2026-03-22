@@ -14,6 +14,11 @@ SYSV_SCRIPT_PATH="/etc/init.d/ssh-tunnel"
 DARWIN_PLIST_PATH="/Library/LaunchDaemons/com.idefav.ssh-tunnel.plist"
 
 DRY_RUN=0
+PROMPT_INPUT="/dev/tty"
+
+if [ ! -r "$PROMPT_INPUT" ]; then
+    PROMPT_INPUT="/dev/stdin"
+fi
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -82,8 +87,8 @@ prompt_default() {
     prompt_text=$1
     default_value=$2
     while :; do
-        printf '%s [%s]: ' "$prompt_text" "$default_value"
-        IFS= read -r answer
+        printf '%s [%s]: ' "$prompt_text" "$default_value" >&2
+        IFS= read -r answer <"$PROMPT_INPUT"
         if [ -n "$answer" ]; then
             printf '%s\n' "$answer"
             return
@@ -98,8 +103,8 @@ prompt_default() {
 prompt_required() {
     prompt_text=$1
     while :; do
-        printf '%s: ' "$prompt_text"
-        IFS= read -r answer
+        printf '%s: ' "$prompt_text" >&2
+        IFS= read -r answer <"$PROMPT_INPUT"
         if [ -n "$answer" ]; then
             printf '%s\n' "$answer"
             return
