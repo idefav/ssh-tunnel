@@ -1,46 +1,58 @@
-# 多平台服务配置指南
+# 多平台服务安装说明
 
-本文档说明如何在不同操作系统上将SSH隧道程序配置为系统服务，以支持重启功能。
+首次安装建议优先使用 GitHub Pages 单入口安装脚本：
 
-## Windows 系统
+```bash
+curl -fsSL https://idefav.github.io/ssh-tunnel/install | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://idefav.github.io/ssh-tunnel/install | iex
+```
+
+一键安装只用于首次安装。后续升级请在管理页面版本页完成：
+
+```text
+http://127.0.0.1:1083/view/version
+```
+
+如果你需要手动部署服务，请保持下面的服务名、落盘路径和配置键不变，这样管理页的“重启服务”和“版本更新”才能正确识别当前实例。
+
+## Windows
+
+### 文件布局
+
+- 二进制: `C:\ssh-tunnel\ssh-tunnel-svc.exe`
+- 配置: `C:\ssh-tunnel\.ssh-tunnel\config.properties`
+- 服务名: `SSHTunnelService`
 
 ### 安装服务
-```cmd
-# 使用程序自带的服务管理功能
-ssh-tunnel.exe install
 
-# 或者使用service目录下的专用服务程序
-cd service
-ssh-tunnel-svc-windows-amd64.exe install
+```powershell
+C:\ssh-tunnel\ssh-tunnel-svc.exe install --config=C:\ssh-tunnel\.ssh-tunnel\config.properties
+Start-Service SSHTunnelService
 ```
 
-### 服务管理
-```cmd
-# 启动服务
-sc start SSHTunnelService
-# 或
-net start SSHTunnelService
+### 常用管理命令
 
-# 停止服务
-sc stop SSHTunnelService
-# 或  
-net stop SSHTunnelService
-
-# 查看服务状态
-sc query SSHTunnelService
-
-# 卸载服务
-ssh-tunnel.exe uninstall
+```powershell
+Start-Service SSHTunnelService
+Stop-Service SSHTunnelService
+Get-Service SSHTunnelService
 ```
 
-### 配置文件位置
-- 默认路径: `C:\ssh-tunnel\.ssh-tunnel\config.properties`
-- 可通过 `--config` 参数指定
+## macOS
 
-## macOS 系统
+### 文件布局
 
-### 创建 LaunchDaemon
-创建文件 `/Library/LaunchDaemons/com.idefav.ssh-tunnel.plist`:
+- 二进制: `/usr/local/bin/ssh-tunnel`
+- 配置: `/etc/ssh-tunnel/config.properties`
+- LaunchDaemon: `/Library/LaunchDaemons/com.idefav.ssh-tunnel.plist`
+- 服务标识: `com.idefav.ssh-tunnel`
+
+### LaunchDaemon 示例
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -49,245 +61,139 @@ ssh-tunnel.exe uninstall
 <dict>
     <key>Label</key>
     <string>com.idefav.ssh-tunnel</string>
-    
+
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/ssh-tunnel</string>
         <string>--config=/etc/ssh-tunnel/config.properties</string>
     </array>
-    
+
     <key>RunAtLoad</key>
     <true/>
-    
+
     <key>KeepAlive</key>
     <true/>
-    
-    <key>StandardOutPath</key>
-    <string>/var/log/ssh-tunnel.log</string>
-    
-    <key>StandardErrorPath</key>
-    <string>/var/log/ssh-tunnel.error.log</string>
-    
+
     <key>WorkingDirectory</key>
     <string>/usr/local/bin</string>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/ssh-tunnel.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/ssh-tunnel.error.log</string>
 </dict>
 </plist>
 ```
 
-### 服务管理
+### 常用管理命令
+
 ```bash
-# 加载服务
 sudo launchctl load /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist
-
-# 启动服务
 sudo launchctl start com.idefav.ssh-tunnel
-
-# 停止服务
 sudo launchctl stop com.idefav.ssh-tunnel
-
-# 卸载服务
 sudo launchctl unload /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist
-
-# 查看服务状态
-launchctl list | grep ssh-tunnel
 ```
 
-### 配置文件位置
-- 推荐路径: `/etc/ssh-tunnel/config.properties`
-- 用户路径: `~/.ssh-tunnel/config.properties`
+## Linux
 
-## Linux 系统
+### 文件布局
 
-### systemd (现代Linux发行版)
+- 二进制: `/usr/local/bin/ssh-tunnel`
+- 配置: `/etc/ssh-tunnel/config.properties`
+- systemd 服务: `/etc/systemd/system/ssh-tunnel.service`
+- SysV 脚本: `/etc/init.d/ssh-tunnel`
+- 服务名: `ssh-tunnel`
 
-创建文件 `/etc/systemd/system/ssh-tunnel.service`:
+### systemd 示例
 
 ```ini
 [Unit]
 Description=SSH Tunnel Service
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=ssh-tunnel
-Group=ssh-tunnel
 ExecStart=/usr/local/bin/ssh-tunnel --config=/etc/ssh-tunnel/config.properties
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-#### 服务管理
+### systemd 常用命令
+
 ```bash
-# 重新加载systemd配置
 sudo systemctl daemon-reload
-
-# 启用服务（开机自启）
 sudo systemctl enable ssh-tunnel
-
-# 启动服务
 sudo systemctl start ssh-tunnel
-
-# 停止服务
-sudo systemctl stop ssh-tunnel
-
-# 重启服务
 sudo systemctl restart ssh-tunnel
-
-# 查看服务状态
 sudo systemctl status ssh-tunnel
-
-# 查看日志
-sudo journalctl -u ssh-tunnel -f
 ```
 
-### SysV init (传统Linux系统)
-
-创建文件 `/etc/init.d/ssh-tunnel`:
+### SysV 示例
 
 ```bash
-#!/bin/bash
-# ssh-tunnel        SSH Tunnel Service
-# chkconfig: 35 99 99
-# description: SSH Tunnel Service
-#
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          ssh-tunnel
+# Required-Start:    $remote_fs $network
+# Required-Stop:     $remote_fs $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+### END INIT INFO
 
-. /etc/rc.d/init.d/functions
+DAEMON="/usr/local/bin/ssh-tunnel"
+CONFIG="/etc/ssh-tunnel/config.properties"
+PIDFILE="/var/run/ssh-tunnel.pid"
 
-USER="ssh-tunnel"
-DAEMON="ssh-tunnel"
-ROOT_DIR="/usr/local/bin"
-
-SERVER="$ROOT_DIR/$DAEMON"
-LOCK_FILE="/var/lock/subsys/ssh-tunnel"
-
-do_start() {
-    if [ ! -f "$LOCK_FILE" ] ; then
-        echo -n "Starting $DAEMON: "
-        runuser -l "$USER" -c "$SERVER --config=/etc/ssh-tunnel/config.properties" && echo_success || echo_failure
-        RETVAL=$?
-        echo
-        [ $RETVAL -eq 0 ] && touch $LOCK_FILE
-    else
-        echo "$DAEMON is locked."
+start() {
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "ssh-tunnel already running"
+        return 0
     fi
+    "$DAEMON" --config="$CONFIG" >/dev/null 2>&1 &
+    echo $! > "$PIDFILE"
 }
-do_stop() {
-    echo -n $"Shutting down $DAEMON: "
-    pid=`ps -aefw | grep "$DAEMON" | grep -v " grep " | awk '{print $2}'`
-    kill -9 $pid > /dev/null 2>&1
-    [ $? -eq 0 ] && echo_success || echo_failure
-    RETVAL=$?
-    echo
-    [ $RETVAL -eq 0 ] && rm -f $LOCK_FILE
+
+stop() {
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null || true
+        rm -f "$PIDFILE"
+    fi
 }
 
 case "$1" in
-    start)
-        do_start
-        ;;
-    stop)
-        do_stop
-        ;;
-    restart)
-        do_stop
-        do_start
-        ;;
-    *)
-        echo "Usage: $0 {start|stop|restart}"
-        RETVAL=1
+    start) start ;;
+    stop) stop ;;
+    restart) stop; start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
 esac
-
-exit $RETVAL
 ```
 
-#### 服务管理
-```bash
-# 设置可执行权限
-sudo chmod +x /etc/init.d/ssh-tunnel
+## 规范配置键示例
 
-# 启用服务（开机自启）
-sudo chkconfig ssh-tunnel on
-
-# 启动服务
-sudo service ssh-tunnel start
-
-# 停止服务
-sudo service ssh-tunnel stop
-
-# 重启服务
-sudo service ssh-tunnel restart
-
-# 查看服务状态
-sudo service ssh-tunnel status
-```
-
-## 用户和权限设置
-
-### 创建专用用户（推荐）
-```bash
-# Linux/macOS
-sudo useradd -r -s /bin/false ssh-tunnel
-sudo mkdir -p /etc/ssh-tunnel
-sudo chown ssh-tunnel:ssh-tunnel /etc/ssh-tunnel
-
-# 设置SSH密钥权限
-sudo chmod 600 /etc/ssh-tunnel/id_rsa
-sudo chown ssh-tunnel:ssh-tunnel /etc/ssh-tunnel/id_rsa
-```
-
-## 配置文件示例
-
-### config.properties
 ```properties
-# 服务器配置
+home.dir=/var/lib/ssh-tunnel
 server.ip=your-server-ip
 server.ssh.port=22
-user=your-username
-
-# SSH配置
-ssh.path.private_key=/etc/ssh-tunnel/id_rsa
-
-# 本地代理配置
-local.addr=127.0.0.1:1080
-http.local.addr=127.0.0.1:8080
-
-# 功能开关
+ssh.private_key_path=/etc/ssh-tunnel/id_rsa
+login.username=root
+local.address=127.0.0.1:1081
+http.local.address=127.0.0.1:1082
 socks5.enable=true
-http.enable=true
-http.over.ssh.enable=true
-
-# 管理界面
+http.enable=false
+http.over-ssh.enable=false
+http.domain-filter.enable=false
+http.domain-filter.file-path=/var/lib/ssh-tunnel/domain.txt
 admin.enable=true
-admin.addr=127.0.0.1:1083
-
-# 日志配置
+admin.address=127.0.0.1:1083
 log.file.path=/var/log/ssh-tunnel.log
+auto-update.enabled=true
+auto-update.owner=idefav
+auto-update.repo=ssh-tunnel
+auto-update.current-version=v0.0.0
+auto-update.check-interval=3600
 ```
-
-## 验证服务模式
-
-在配置页面访问 `http://localhost:1083/view/app/config`，如果程序正确配置为服务模式：
-- 会显示"重启服务"按钮
-- 按钮下方会显示"程序作为系统服务运行，支持在线重启"
-
-如果是直接运行模式：
-- 不会显示"重启服务"按钮  
-- 会显示"程序直接运行模式，配置更改后需要手动重启程序"
-
-## 故障排除
-
-### 常见问题
-1. **权限问题**: 确保服务用户有读取配置文件和SSH密钥的权限
-2. **网络问题**: 检查防火墙设置，确保相关端口开放
-3. **SSH密钥问题**: 确保SSH密钥格式正确且有正确的权限
-4. **配置文件问题**: 检查配置文件路径和格式
-
-### 日志查看
-- Windows: 事件查看器 或 配置文件中指定的日志文件
-- macOS: `/var/log/ssh-tunnel.log` 或 `Console.app`
-- Linux: `journalctl -u ssh-tunnel` 或 配置文件中指定的日志文件

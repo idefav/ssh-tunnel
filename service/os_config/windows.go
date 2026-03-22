@@ -7,9 +7,8 @@ import (
 	"github.com/kardianos/service"
 	"github.com/spf13/viper"
 	"path"
+	"ssh-tunnel/constants"
 )
-
-const DEFAULT_HOME = "C:\\ssh-tunnel"
 
 func SetConfig(vConfig *viper.Viper) {
 	// Windows 系统特定配置
@@ -17,6 +16,6 @@ func SetConfig(vConfig *viper.Viper) {
 	interactive := service.Interactive()
 	if !interactive {
 		// 通过服务管理器运行时，配置文件路径可能在特定目录下
-		vConfig.AddConfigPath(path.Join(DEFAULT_HOME, ".ssh-tunnel"))
+		vConfig.AddConfigPath(path.Join(constants.WindowsInstallRoot, ".ssh-tunnel"))
 	}
 }

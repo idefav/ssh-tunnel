@@ -33,5 +33,6 @@ jobs:
             ./bin/ssh-tunnel-svc-darwin-arm64
             ./bin/ssh-tunnel-svc-linux-amd64
             ./bin/ssh-tunnel-svc-linux-arm64
+            ./bin/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -19,12 +19,32 @@ Open ssh tunnel, start Sock5 port locally by default 1081
 
 注意: 需要配置本地服务器到目标服务器的SSH免密登录, 免密登录请参考: [SSH免密登录](https://idefav.github.io/ssh-tunnel/ssh-key-setup.html)
 
+## one-click install
+
+首次安装请使用 GitHub Pages 单入口安装脚本:
+
+```bash
+curl -fsSL https://idefav.github.io/ssh-tunnel/install | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://idefav.github.io/ssh-tunnel/install | iex
+```
+
+脚本只处理首次安装。若检测到已有安装、已有服务或已有配置，会直接提示访问管理页版本页面完成更新:
+
+```text
+http://127.0.0.1:1083/view/version
+```
+
 ## commands
 
 ```bash
 ./ssh-tunnel -h
 Usage of ./bin/ssh-tunnel-amd64-darwin:
-  -admin.addr string
+  -admin.address string
         Admin监听地址 (default ":1083")
   -admin.enable
         是否启用Admin页面
@@ -36,17 +56,17 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
         Basic认证, 用户名
   -http.enable
         是否开启Http代理
-  -http.filter.domain.enable
+  -http.domain-filter.enable
         是否启用Http域名过滤
-  -http.filter.domain.file-path string
+  -http.domain-filter.file-path string
         过滤http请求 (default "C:\\Users\\idefav/.ssh-tunnel/domain.txt")
-  -http.local.addr string
+  -http.local.address string
         Http监听地址 (default "0.0.0.0:1082")
   -http.over.ssh.enable
         是否开启Http Over SSH
   -l string
         本地地址(短命令) (default "0.0.0.0:1081")
-  -local.addr string
+  -local.address string
         本地地址 (default "0.0.0.0:1081")
   -p int
         服务器SSH端口(短命令) (default 22)
@@ -74,11 +94,11 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
         服务器SSH端口 (default 22)
   -socks5.enable
         是否开启Socks5代理 (default true)
-  -ssh.path.private_key string
+  -ssh.private_key_path string
         私钥地址 (default "C:\\Users\\idefav/.ssh/id_rsa")
   -u string
         用户名(短命令) (default "root")
-  -user string
+  -login.username string
         用户名 (default "root")
 
 
@@ -160,7 +180,7 @@ ssh.reconnect.max.interval.sec=5
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>com.idefav.macos.ssh-tunnel</string>
+    <string>com.idefav.ssh-tunnel</string>
     <key>Disabled</key>
     <false/>
     <key>KeepAlive</key>
@@ -179,7 +199,7 @@ ssh.reconnect.max.interval.sec=5
       <string>-socks5.enable=false</string>
       <string>-http.enable</string>
       <string>-http.over.ssh.enable</string>
-      <string>-http.filter.domain.enable</string>
+      <string>-http.domain-filter.enable</string>
     </array>
     <key>UserName</key>
     <string>root</string>
@@ -189,24 +209,24 @@ ssh.reconnect.max.interval.sec=5
 </plist>
 ```
 
-把这个文件保持到 `com.idefav.macos.ssh-tunnel.plist` 注意文件名要和`label` 相同
+把这个文件保存为 `com.idefav.ssh-tunnel.plist`，注意文件名要和 `label` 相同
 
-放到 `/Library/LaunchAgents` 目录下
+放到 `/Library/LaunchDaemons` 目录下
 
 ```bash
-sudo chown -R root /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+sudo chown -R root /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist
 ```
 
 ```bash
 # 加载配置
-launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+launchctl load -w /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist
 
 # 卸载配置
-launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+launchctl unload /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist
 
 # 修改配置后重载配置
-launchctl unload /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist && \
-launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
+launchctl unload /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist && \
+launchctl load -w /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist
 ```
 
 # Windows Service支持
@@ -218,17 +238,17 @@ launchctl load -w /Library/LaunchAgents/com.idefav.macos.ssh-tunnel.plist
 ```properties
 server.ip=xx.xx.xx.xx
 server.ssh.port=22
-server.ssh.private_key_path=C:\\Users\\idefav\\.ssh\\id_rsa
+ssh.private_key_path=C:\\Users\\idefav\\.ssh\\id_rsa
 login.username=root
-local.address=0.0.0.0:1081
-http.local.address=0.0.0.0:1082
-http.enable=true
+local.address=127.0.0.1:1081
+http.local.address=127.0.0.1:1082
+http.enable=false
 socks5.enable=true
-http.over-ssh.enable=true
-http.domain-filter.enable=true
-http.filter.domain.file-path=C:\\Users\\idefav\\Documents\\ssh-tunnel\\domain.txt
+http.over-ssh.enable=false
+http.domain-filter.enable=false
+http.domain-filter.file-path=C:\\Users\\idefav\\Documents\\ssh-tunnel\\domain.txt
 admin.enable=true
-admin.address=:1083
+admin.address=127.0.0.1:1083
 
 # 自动更新配置
 auto-update.enabled=true
@@ -241,7 +261,7 @@ auto-update.check-interval=3600
 ### 2. 安装windows服务
 
 ```text
- .\ssh-tunnel-svc-windows-amd64.exe install  --config=C:\ssh-tunnel\.ssh-tunnel\config.properties
+ C:\ssh-tunnel\ssh-tunnel-svc.exe install --config=C:\ssh-tunnel\.ssh-tunnel\config.properties
 ```
 
 ### 3. 查看服务

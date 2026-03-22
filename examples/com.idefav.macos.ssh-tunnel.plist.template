@@ -3,30 +3,21 @@
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>com.idefav.macos.ssh-tunnel</string>
-    <key>Disabled</key>
-    <false/>
+    <string>com.idefav.ssh-tunnel</string>
+    <key>RunAtLoad</key>
+    <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>ProcessType</key>
-    <string>Background</string>
     <key>ProgramArguments</key>
     <array>
       <string>/usr/local/bin/ssh-tunnel</string>
-      <string>-s</string>
-      <string>xx.xx.xx.xx</string>
-      <string>-server.ssh.port</string>
-      <string>10022</string>
-      <string>-l</string>
-      <string>0.0.0.0:1081</string>
-      <string>-socks5.enable=false</string>
-      <string>-http.enable</string>
-      <string>-http.over.ssh.enable</string>
-      <string>-http.filter.domain.enable</string>
+      <string>--config=/etc/ssh-tunnel/config.properties</string>
     </array>
-    <key>UserName</key>
-    <string>root</string>
-    <key>GroupName</key>
-    <string>wheel</string>
+    <key>WorkingDirectory</key>
+    <string>/usr/local/bin</string>
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/ssh-tunnel.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/ssh-tunnel.error.log</string>
   </dict>
 </plist>

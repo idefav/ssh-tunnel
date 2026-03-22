@@ -44,7 +44,7 @@
 
 1. **启动SSH隧道管理界面**
    ```bash
-   ./ssh-tunnel -admin.enable -admin.addr :1083
+   ./ssh-tunnel -admin.enable -admin.address 127.0.0.1:1083
    ```
 
 2. **访问域名管理页面**

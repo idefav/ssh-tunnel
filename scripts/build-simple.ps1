@@ -52,9 +52,9 @@ Get-ChildItem $OutputDir | ForEach-Object {
 # Generate checksums
 Write-Host ""
 Write-Host "Generating SHA256 checksums..." -ForegroundColor Cyan
-$ChecksumFile = Join-Path $OutputDir "SHA256SUMS.txt"
-Get-ChildItem $OutputDir -File | Where-Object { $_.Name -ne "SHA256SUMS.txt" } | ForEach-Object {
+$ChecksumFile = Join-Path $OutputDir "SHA256SUMS"
+Get-ChildItem $OutputDir -File | Where-Object { $_.Name -ne "SHA256SUMS" } | ForEach-Object {
     $Hash = Get-FileHash $_.FullName -Algorithm SHA256
     "$($Hash.Hash.ToLower())  $($_.Name)" | Out-File -FilePath $ChecksumFile -Append -Encoding UTF8
 }
-Write-Host "  Checksums saved to: SHA256SUMS.txt" -ForegroundColor Green
+Write-Host "  Checksums saved to: SHA256SUMS" -ForegroundColor Green

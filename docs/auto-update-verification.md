@@ -99,7 +99,7 @@ auto-update.check-interval=3600
 
 1. **启动服务**
 ```bash
-./ssh-tunnel-auto-update.exe --admin.enable=true --admin.address=:1083
+./ssh-tunnel-auto-update.exe --admin.enable=true --admin.address=127.0.0.1:1083
 ```
 
 2. **访问管理界面**
