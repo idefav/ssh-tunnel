@@ -17,7 +17,7 @@ $BuildTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 # 通用构建标志
 $CommonFlags = @(
     "-ldflags",
-    "-s -w -X 'main.Version=$Version' -X 'main.BuildTime=$BuildTime'"
+    "-s -w -X 'ssh-tunnel/buildinfo.Version=$Version' -X 'ssh-tunnel/buildinfo.BuildTime=$BuildTime'"
 )
 
 # 构建目标平台

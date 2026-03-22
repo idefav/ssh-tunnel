@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // SpeedTestStatus 速测状态的 JSON 输出
@@ -166,10 +168,17 @@ func (t *Tunnel) sshHTTPClient(timeout time.Duration) (*http.Client, error) {
 	if sshClient == nil {
 		return nil, errors.New("SSH client not connected")
 	}
+	return t.sshHTTPClientForClient(sshClient, timeout)
+}
+
+func (t *Tunnel) sshHTTPClientForClient(sshClient *ssh.Client, timeout time.Duration) (*http.Client, error) {
+	if sshClient == nil {
+		return nil, errors.New("SSH client not connected")
+	}
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return sshClient.Dial(network, addr)
+			return sshClient.DialContext(ctx, network, addr)
 		},
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: false,
@@ -177,7 +186,7 @@ func (t *Tunnel) sshHTTPClient(timeout time.Duration) (*http.Client, error) {
 		// TLS 也需要通过 SSH 隧道
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			// 先通过 SSH 建立 TCP 连接
-			rawConn, err := sshClient.Dial(network, addr)
+			rawConn, err := sshClient.DialContext(ctx, network, addr)
 			if err != nil {
 				return nil, err
 			}

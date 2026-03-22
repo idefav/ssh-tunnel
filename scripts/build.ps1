@@ -1,108 +1,46 @@
-# 设置脚本和控制台编码为UTF-8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
-chcp 65001 > $null # 设置控制台代码页为UTF-8 (65001)
+chcp 65001 > $null
 
-# PowerShell构建脚本 - Windows版本的build.sh
-
-# 确保bin目录存在
 if (-not (Test-Path -Path "bin")) {
-    New-Item -Path "bin" -ItemType Directory
+    New-Item -Path "bin" -ItemType Directory | Out-Null
 }
 
-# windows
-# Windows AMD64
-$env:GOOS = "windows"
-$env:GOARCH = "amd64"
-Write-Host "编译 Windows AMD64 版本..."
-go build -o bin\ssh-tunnel-windows-amd64.exe
+$Version = if ($env:VERSION) { $env:VERSION } else { "dev" }
+$BuildTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$LdFlags = "-s -w -X 'ssh-tunnel/buildinfo.Version=$Version' -X 'ssh-tunnel/buildinfo.BuildTime=$BuildTime'"
 
-# Windows 386
-$env:GOOS = "windows"
-$env:GOARCH = "386"
-Write-Host "编译 Windows 386 版本..."
-go build -o bin\ssh-tunnel-windows-386.exe
+function Build-Target {
+    param(
+        [string]$GoOS,
+        [string]$GoArch,
+        [string]$Output,
+        [string]$Package = "."
+    )
 
-# Windows arm64
-$env:GOOS = "windows"
-$env:GOARCH = "arm64"
-Write-Host "编译 Windows arm64 版本..."
-go build -o bin\ssh-tunnel-windows-arm64.exe
+    $env:GOOS = $GoOS
+    $env:GOARCH = $GoArch
+    Write-Host "Building $Output ..."
+    go build -ldflags $LdFlags -o $Output $Package
+}
 
-# darwin MacOS
+Build-Target -GoOS "windows" -GoArch "amd64" -Output "bin\ssh-tunnel-windows-amd64.exe"
+Build-Target -GoOS "windows" -GoArch "386" -Output "bin\ssh-tunnel-windows-386.exe"
+Build-Target -GoOS "windows" -GoArch "arm64" -Output "bin\ssh-tunnel-windows-arm64.exe"
+Build-Target -GoOS "darwin" -GoArch "amd64" -Output "bin\ssh-tunnel-darwin-amd64"
+Build-Target -GoOS "darwin" -GoArch "arm64" -Output "bin\ssh-tunnel-darwin-arm64"
+Build-Target -GoOS "linux" -GoArch "amd64" -Output "bin\ssh-tunnel-linux-amd64"
+Build-Target -GoOS "linux" -GoArch "arm64" -Output "bin\ssh-tunnel-linux-arm64"
 
-# macOS AMD64
-$env:GOOS = "darwin"
-$env:GOARCH = "amd64"
-Write-Host "编译 macOS AMD64 版本..."
-go build -o bin\ssh-tunnel-darwin-amd64
+Build-Target -GoOS "windows" -GoArch "386" -Output "bin\ssh-tunnel-svc-windows-386.exe" -Package ".\service\main"
+Build-Target -GoOS "windows" -GoArch "amd64" -Output "bin\ssh-tunnel-svc-windows-amd64.exe" -Package ".\service\main"
+Build-Target -GoOS "windows" -GoArch "arm64" -Output "bin\ssh-tunnel-svc-windows-arm64.exe" -Package ".\service\main"
+Build-Target -GoOS "darwin" -GoArch "amd64" -Output "bin\ssh-tunnel-svc-darwin-amd64" -Package ".\service\main"
+Build-Target -GoOS "darwin" -GoArch "arm64" -Output "bin\ssh-tunnel-svc-darwin-arm64" -Package ".\service\main"
+Build-Target -GoOS "linux" -GoArch "amd64" -Output "bin\ssh-tunnel-svc-linux-amd64" -Package ".\service\main"
+Build-Target -GoOS "linux" -GoArch "arm64" -Output "bin\ssh-tunnel-svc-linux-arm64" -Package ".\service\main"
 
-# macOS ARM64
-$env:GOOS = "darwin"
-$env:GOARCH = "arm64"
-Write-Host "编译 macOS ARM64 版本..."
-go build -o bin\ssh-tunnel-darwin-arm64
+Remove-Item Env:GOOS -ErrorAction SilentlyContinue
+Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
 
-# linux
-
-# Linux AMD64
-$env:GOOS = "linux"
-$env:GOARCH = "amd64"
-Write-Host "编译 Linux AMD64 版本..."
-go build -o bin\ssh-tunnel-linux-amd64
-
-# Linux arm64
-$env:GOOS = "linux"
-$env:GOARCH = "arm64"
-Write-Host "编译 Linux arm64 版本..."
-go build -o bin\ssh-tunnel-linux-arm64
-
-# Service版本
-
-# Windows服务版本
-# i386
-$env:GOOS = "windows"
-$env:GOARCH = "386"
-Write-Host "编译 Windows服务 版本..."
-go build -o bin\ssh-tunnel-svc-windows-386.exe .\service\main
-
-# amd64
-$env:GOOS = "windows"
-$env:GOARCH = "amd64"
-Write-Host "编译 Windows服务 版本..."
-go build -o bin\ssh-tunnel-svc-windows-amd64.exe .\service\main
-
-# arm64
-$env:GOOS = "windows"
-$env:GOARCH = "arm64"
-Write-Host "编译 Windows服务 版本..."
-go build -o bin\ssh-tunnel-svc-windows-arm64.exe .\service\main
-
-# macOS服务版本
-# amd64
-$env:GOOS = "darwin"
-$env:GOARCH = "amd64"
-Write-Host "编译 macOS服务 版本..."
-go build -o bin\ssh-tunnel-svc-darwin-amd64 .\service\main
-
-# arm64
-$env:GOOS = "darwin"
-$env:GOARCH = "arm64"
-Write-Host "编译 macOS服务 版本..."
-go build -o bin\ssh-tunnel-svc-darwin-arm64 .\service\main
-
-# linux服务版本
-# amd64
-$env:GOOS = "linux"
-$env:GOARCH = "amd64"
-Write-Host "编译 Linux服务 版本..."
-go build -o bin\ssh-tunnel-svc-linux-amd64 .\service\main
-
-# arm64
-$env:GOOS = "linux"
-$env:GOARCH = "arm64"
-Write-Host "编译 Linux服务 版本..."
-go build -o bin\ssh-tunnel-svc-linux-arm64 .\service\main
-
-
-Write-Host "所有版本编译完成！"
+Write-Host "All builds completed."

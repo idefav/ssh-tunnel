@@ -607,7 +607,12 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			tunnel.ReconnectSSHWithSource(connCtx, "admin-manual")
 			client := tunnel.PeekSSHClient()
 			if client == nil {
-				respondWithError(writer, "SSH client is not connected", http.StatusInternalServerError)
+				stats := tunnel.SnapshotSSHConnectionStats()
+				errMsg := stats.LastReconnectError
+				if strings.TrimSpace(errMsg) == "" {
+					errMsg = "SSH client is not connected"
+				}
+				respondWithError(writer, errMsg, http.StatusInternalServerError)
 				return
 			}
 			version := client.ClientVersion()
@@ -637,10 +642,14 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			tunnel.ResetReconnectCount()
 			sshStats := tunnel.SnapshotSSHConnectionStats()
 			response := map[string]interface{}{
-				"success":         true,
-				"message":         "重连次数已清零",
-				"connectionCount": sshStats.ConnectionCount,
-				"reconnectCount":  sshStats.ReconnectCount,
+				"success":                      true,
+				"message":                      "重连次数已清零",
+				"connectionCount":              sshStats.ConnectionCount,
+				"reconnectCount":               sshStats.ReconnectCount,
+				"consecutiveReconnectFailures": sshStats.ConsecutiveReconnectFailures,
+				"lastReconnectAt":              formatOptionalTime(sshStats.LastReconnectAt),
+				"lastReconnectFailureAt":       formatOptionalTime(sshStats.LastReconnectFailureAt),
+				"lastReconnectError":           sshStats.LastReconnectError,
 			}
 			mbytes, _ := json.Marshal(response)
 			writer.Write(mbytes)
@@ -655,16 +664,55 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 			metrics := tunnel.SnapshotProxyMetrics()
 			sshStats := tunnel.SnapshotSSHConnectionStats()
+			listenerStats := tunnel.SnapshotListenerStats()
+			tracker := tunnel.GetRequestTracker()
 			response := map[string]interface{}{
-				"success":            true,
-				"uploadBytesTotal":   metrics.UploadBytesTotal,
-				"downloadBytesTotal": metrics.DownloadBytesTotal,
-				"uploadBps":          metrics.UploadBps,
-				"downloadBps":        metrics.DownloadBps,
-				"uploadSpeed":        formatNetworkSpeed(metrics.UploadBps),
-				"downloadSpeed":      formatNetworkSpeed(metrics.DownloadBps),
-				"connectionCount":    sshStats.ConnectionCount,
-				"reconnectCount":     sshStats.ReconnectCount,
+				"success":                      true,
+				"uploadBytesTotal":             metrics.UploadBytesTotal,
+				"downloadBytesTotal":           metrics.DownloadBytesTotal,
+				"uploadBps":                    metrics.UploadBps,
+				"downloadBps":                  metrics.DownloadBps,
+				"uploadSpeed":                  formatNetworkSpeed(metrics.UploadBps),
+				"downloadSpeed":                formatNetworkSpeed(metrics.DownloadBps),
+				"activeProxyConns":             metrics.ActiveProxyConns,
+				"activeRequests":               tracker.ActiveCount(),
+				"connectionCount":              sshStats.ConnectionCount,
+				"reconnectCount":               sshStats.ReconnectCount,
+				"consecutiveReconnectFailures": sshStats.ConsecutiveReconnectFailures,
+				"lastReconnectError":           sshStats.LastReconnectError,
+				"lastReconnectAt":              formatOptionalTime(sshStats.LastReconnectAt),
+				"lastReconnectFailureAt":       formatOptionalTime(sshStats.LastReconnectFailureAt),
+				"acceptErrors":                 listenerStats.AcceptErrors,
+				"listenerRestarts":             listenerStats.ListenerRestarts,
+			}
+			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/exit-info", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodGet {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+
+			forceRefresh := request.URL.Query().Get("refresh") == "1"
+			exitInfo := tunnel.GetExitIPInfo(request.Context(), forceRefresh)
+			response := map[string]interface{}{
+				"success":      true,
+				"available":    exitInfo.Available,
+				"ip":           exitInfo.IP,
+				"city":         exitInfo.City,
+				"region":       exitInfo.Region,
+				"country":      exitInfo.Country,
+				"location":     exitInfo.Location,
+				"organization": exitInfo.Organization,
+				"timezone":     exitInfo.Timezone,
+				"updatedAt":    formatOptionalTime(exitInfo.UpdatedAt),
+				"error":        exitInfo.Error,
+			}
+			if !exitInfo.Available && strings.TrimSpace(exitInfo.Error) != "" {
+				response["message"] = exitInfo.Error
 			}
 			mbytes, _ := json.Marshal(response)
 			writer.Write(mbytes)
@@ -684,15 +732,26 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			}
 
 			metrics := tunnel.SnapshotProxyMetrics()
+			sshStats := tunnel.SnapshotSSHConnectionStats()
+			listenerStats := tunnel.SnapshotListenerStats()
 			response := map[string]interface{}{
-				"success":            true,
-				"latencyMs":          latencyMs,
-				"uploadBytesTotal":   metrics.UploadBytesTotal,
-				"downloadBytesTotal": metrics.DownloadBytesTotal,
-				"uploadBps":          metrics.UploadBps,
-				"downloadBps":        metrics.DownloadBps,
-				"uploadSpeed":        formatNetworkSpeed(metrics.UploadBps),
-				"downloadSpeed":      formatNetworkSpeed(metrics.DownloadBps),
+				"success":                      true,
+				"latencyMs":                    latencyMs,
+				"uploadBytesTotal":             metrics.UploadBytesTotal,
+				"downloadBytesTotal":           metrics.DownloadBytesTotal,
+				"uploadBps":                    metrics.UploadBps,
+				"downloadBps":                  metrics.DownloadBps,
+				"uploadSpeed":                  formatNetworkSpeed(metrics.UploadBps),
+				"downloadSpeed":                formatNetworkSpeed(metrics.DownloadBps),
+				"activeProxyConns":             metrics.ActiveProxyConns,
+				"connectionCount":              sshStats.ConnectionCount,
+				"reconnectCount":               sshStats.ReconnectCount,
+				"consecutiveReconnectFailures": sshStats.ConsecutiveReconnectFailures,
+				"lastReconnectError":           sshStats.LastReconnectError,
+				"lastReconnectAt":              formatOptionalTime(sshStats.LastReconnectAt),
+				"lastReconnectFailureAt":       formatOptionalTime(sshStats.LastReconnectFailureAt),
+				"acceptErrors":                 listenerStats.AcceptErrors,
+				"listenerRestarts":             listenerStats.ListenerRestarts,
 			}
 			mbytes, _ := json.Marshal(response)
 			writer.Write(mbytes)
@@ -1167,7 +1226,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 					// 先尝试优雅关闭SSH连接，触发重连
 					if tunnel != nil && tunnel.GetSSHClient() != nil {
 						log.Println("正在关闭SSH连接以触发重连...")
-						tunnel.GetSSHClient().Close()
+						tunnel.DisconnectSSHClient()
 					}
 
 					// 尝试重新加载配置
@@ -1414,6 +1473,13 @@ func formatNetworkSpeed(bytesPerSecond float64) string {
 		return fmt.Sprintf("%.0f %s", value, units[unitIdx])
 	}
 	return fmt.Sprintf("%.2f %s", value, units[unitIdx])
+}
+
+func formatOptionalTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Local().Format("2006-01-02 15:04:05")
 }
 
 // 使用systemd重启服务

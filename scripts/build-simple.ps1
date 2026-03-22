@@ -21,19 +21,19 @@ Write-Host "Building Windows x64..." -ForegroundColor Cyan
 $env:GOOS = "windows"
 $env:GOARCH = "amd64"
 $env:CGO_ENABLED = "0"
-go build -ldflags "-s -w -X 'main.Version=$Version' -X 'main.BuildTime=$BuildTime'" -o "$OutputDir\ssh-tunnel-windows-amd64.exe" main.go
+go build -ldflags "-s -w -X 'ssh-tunnel/buildinfo.Version=$Version' -X 'ssh-tunnel/buildinfo.BuildTime=$BuildTime'" -o "$OutputDir\ssh-tunnel-windows-amd64.exe" main.go
 
 # Build Linux x64
 Write-Host "Building Linux x64..." -ForegroundColor Cyan
 $env:GOOS = "linux"
 $env:GOARCH = "amd64"
-go build -ldflags "-s -w -X 'main.Version=$Version' -X 'main.BuildTime=$BuildTime'" -o "$OutputDir\ssh-tunnel-linux-amd64" main.go
+go build -ldflags "-s -w -X 'ssh-tunnel/buildinfo.Version=$Version' -X 'ssh-tunnel/buildinfo.BuildTime=$BuildTime'" -o "$OutputDir\ssh-tunnel-linux-amd64" main.go
 
 # Build macOS x64
 Write-Host "Building macOS x64..." -ForegroundColor Cyan
 $env:GOOS = "darwin"
 $env:GOARCH = "amd64"
-go build -ldflags "-s -w -X 'main.Version=$Version' -X 'main.BuildTime=$BuildTime'" -o "$OutputDir\ssh-tunnel-darwin-amd64" main.go
+go build -ldflags "-s -w -X 'ssh-tunnel/buildinfo.Version=$Version' -X 'ssh-tunnel/buildinfo.BuildTime=$BuildTime'" -o "$OutputDir\ssh-tunnel-darwin-amd64" main.go
 
 # Reset environment
 Remove-Item Env:GOOS -ErrorAction SilentlyContinue
