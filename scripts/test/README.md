@@ -10,6 +10,7 @@
 
 ### 多平台测试脚本
 - `test_multiplatform_restart.sh` - 跨平台服务重启测试脚本（Linux/macOS）
+- `test_install_unix_path_expansion.sh` - Unix 一键安装脚本路径展开回归测试
 - `test_multiplatform_restart.bat` - 跨平台服务重启测试脚本（Windows）
 
 ### API测试脚本
@@ -28,6 +29,10 @@ chmod +x test_restart.sh
 # 多平台测试
 chmod +x test_multiplatform_restart.sh
 ./test_multiplatform_restart.sh
+
+# 安装脚本回归测试
+chmod +x test_install_unix_path_expansion.sh
+./test_install_unix_path_expansion.sh
 ```
 
 ### Windows
@@ -45,7 +50,8 @@ test_multiplatform_restart.bat
 1. 运行模式检测API (`/admin/service/mode`)
 2. 服务重启API (`/admin/service/restart`)
 3. 多平台兼容性验证
-4. 错误处理和回退机制
+4. Unix 安装脚本 `~` 路径展开回归验证
+5. 错误处理和回退机制
 
 ## 注意事项
 

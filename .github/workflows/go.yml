@@ -26,3 +26,15 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+
+  install-script-regression:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Test install script path expansion
+      run: /bin/sh scripts/test/test_install_unix_path_expansion.sh
