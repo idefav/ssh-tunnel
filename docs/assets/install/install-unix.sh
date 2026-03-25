@@ -75,7 +75,11 @@ expand_path() {
             printf '%s\n' "$HOME"
             ;;
         "~/"*)
-            printf '%s/%s\n' "$HOME" "${1#~/}"
+            # Avoid using "~" in parameter-expansion patterns because macOS /bin/sh
+            # can keep the literal "~/" and produce "$HOME/~/" style paths.
+            relative_path=${1#?}
+            relative_path=${relative_path#/}
+            printf '%s/%s\n' "$HOME" "$relative_path"
             ;;
         *)
             printf '%s\n' "$1"
