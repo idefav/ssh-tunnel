@@ -5,6 +5,7 @@
 - 主页: [docs/index.html](index.html)
 - 安装指南: [docs/installation.html](installation.html)
 - SSH 免密登录: [docs/ssh-key-setup.html](ssh-key-setup.html)
+- SSH 免密初始化方案: [docs/ssh-免密初始化一键安装_gen.md](ssh-%E5%85%8D%E5%AF%86%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%80%E9%94%AE%E5%AE%89%E8%A3%85_gen.md)
 - 常见问题: [docs/faq.html](faq.html)
 - 单入口首装脚本: `https://idefav.github.io/ssh-tunnel/install`
 
@@ -38,4 +39,5 @@
 1. [README.md](../README.md)
 2. [docs/installation.html](installation.html)
 3. [docs/ssh-key-setup.html](ssh-key-setup.html)
-4. [docs/setup/MULTIPLATFORM_SERVICE_SETUP.md](setup/MULTIPLATFORM_SERVICE_SETUP.md)
+4. [docs/ssh-免密初始化一键安装_gen.md](ssh-%E5%85%8D%E5%AF%86%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%80%E9%94%AE%E5%AE%89%E8%A3%85_gen.md)
+5. [docs/setup/MULTIPLATFORM_SERVICE_SETUP.md](setup/MULTIPLATFORM_SERVICE_SETUP.md)

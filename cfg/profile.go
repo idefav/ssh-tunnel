@@ -358,6 +358,32 @@ func UpsertProfile(profileID string, profile SSHProfile, appConfig *AppConfig) (
 	return store, nil
 }
 
+func UpdateActiveProfilePrivateKeyPath(privateKeyPath string, appConfig *AppConfig) error {
+	privateKeyPath = strings.TrimSpace(privateKeyPath)
+	if privateKeyPath == "" {
+		return fmt.Errorf("private key path 不能为空")
+	}
+
+	store, err := ListProfiles(appConfig)
+	if err != nil {
+		return err
+	}
+
+	activeProfileID := strings.TrimSpace(store.ActiveProfileID)
+	if activeProfileID == "" {
+		return nil
+	}
+
+	profile, ok := store.Profiles[activeProfileID]
+	if !ok {
+		return nil
+	}
+
+	profile.SshPrivateKeyPath = privateKeyPath
+	store.Profiles[activeProfileID] = profile
+	return saveProfileStore(store)
+}
+
 func DeleteProfile(profileID string, appConfig *AppConfig) (ProfileStore, error) {
 	if profileID == "" {
 		return ProfileStore{}, fmt.Errorf("profile id 不能为空")

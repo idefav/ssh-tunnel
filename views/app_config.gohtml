@@ -85,6 +85,107 @@
         </div>
     </div>
 
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <h6 class="mb-0"><i class="bi bi-key"></i> SSH 免密初始化</h6>
+                <small class="text-muted" id="sshBootstrapStatusText">初始化状态：未检测</small>
+            </div>
+            <div class="btn-group" role="group">
+                <button class="btn btn-sm btn-outline-secondary" type="button" id="reloadBootstrapStatusBtn">
+                    <i class="bi bi-arrow-clockwise"></i> 检测密钥
+                </button>
+                <button class="btn btn-sm btn-primary" type="button" id="openBootstrapModalBtn">
+                    <i class="bi bi-shield-lock"></i> 初始化免密
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label text-muted small">目标私钥路径</label>
+                    <input type="text" class="form-control" id="bootstrapTargetPrivateKeyPathDisplay" readonly>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label text-muted small">目标公钥路径</label>
+                    <input type="text" class="form-control" id="bootstrapPublicKeyPathDisplay" readonly>
+                </div>
+                <div class="col-md-4">
+                    <div class="border rounded p-2 h-100">
+                        <div class="text-muted small">当前配置私钥</div>
+                        <div id="bootstrapConfiguredKeyPath" class="small text-break">-</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="border rounded p-2 h-100">
+                        <div class="text-muted small">本地密钥检测</div>
+                        <div id="bootstrapKeyPairState" class="small">未检测</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="border rounded p-2 h-100">
+                        <div class="text-muted small">目标服务器</div>
+                        <div id="bootstrapServerSummary" class="small text-break">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="alert alert-light border mt-3 mb-0">
+                <div id="bootstrapDetectionMessage" class="small mb-1">首次安装或更换服务器后，可在这里自动完成公钥生成、下发和免密验证。</div>
+                <div class="small text-muted">登录密码仅在当前初始化请求内存中使用，不会写入配置文件或日志。</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="sshBootstrapModal" tabindex="-1" aria-labelledby="sshBootstrapModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sshBootstrapModalLabel">
+                        <i class="bi bi-key"></i> SSH 免密初始化
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="sshBootstrapForm">
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <label for="bootstrapServerIp" class="form-label mb-1">Server IP</label>
+                                <input type="text" class="form-control" id="bootstrapServerIp" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="bootstrapServerSshPort" class="form-label mb-1">SSH Port</label>
+                                <input type="number" class="form-control" id="bootstrapServerSshPort" min="1" max="65535" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="bootstrapLoginUser" class="form-label mb-1">Login User</label>
+                                <input type="text" class="form-control" id="bootstrapLoginUser" required>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label for="bootstrapTargetPrivateKeyPath" class="form-label mb-1">Service Private Key Path</label>
+                                <input type="text" class="form-control" id="bootstrapTargetPrivateKeyPath" required>
+                            </div>
+                            <div class="col-12 mb-2">
+                                <label for="bootstrapPassword" class="form-label mb-1">首次登录密码</label>
+                                <input type="password" class="form-control" id="bootstrapPassword" autocomplete="new-password" required>
+                                <div class="form-text">密码只用于当前初始化请求，不会写入配置或 profile。</div>
+                            </div>
+                        </div>
+                        <div class="alert alert-warning mt-2 mb-0">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            初始化会在本机生成服务专用 ed25519 密钥，并通过一次性密码登录将公钥追加到远端 authorized_keys。
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary" id="runBootstrapBtn">
+                            <i class="bi bi-play-circle"></i> 开始初始化
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Profile 编辑弹窗 -->
     <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -421,11 +522,14 @@
         let currentSwitchId = '';
         let profileModalMode = 'create';
         let profileModalOriginalId = '';
+        let currentBootstrapJobId = '';
+        let latestBootstrapDetection = null;
 
         document.addEventListener('DOMContentLoaded', function() {
             checkRunningMode();
             loadProfiles();
             loadSwitchStatus();
+            loadBootstrapStatus();
         });
 
         // 检查运行模式
@@ -523,6 +627,150 @@
             } catch (error) {
                 console.error('加载切换状态失败:', error);
                 return null;
+            }
+        }
+
+        function renderBootstrapDetection(detection) {
+            latestBootstrapDetection = detection || null;
+            document.getElementById('bootstrapTargetPrivateKeyPathDisplay').value = detection?.targetPrivateKeyPath || '';
+            document.getElementById('bootstrapPublicKeyPathDisplay').value = detection?.publicKeyPath || '';
+            document.getElementById('bootstrapConfiguredKeyPath').textContent = detection?.configuredPrivateKeyPath || '-';
+            document.getElementById('bootstrapServerSummary').textContent = detection
+                ? `${detection.serverIp || '-'} : ${detection.serverSshPort || '-'} / ${detection.loginUser || '-'}`
+                : '-';
+
+            let keyText = '未检测';
+            if (detection) {
+                if (detection.keyPairReady) {
+                    keyText = '私钥和公钥均已存在';
+                } else if (detection.privateKeyExists) {
+                    keyText = '私钥已存在，缺少公钥';
+                } else {
+                    keyText = '本地服务密钥不存在，将在初始化时自动生成';
+                }
+            }
+            document.getElementById('bootstrapKeyPairState').textContent = keyText;
+            document.getElementById('bootstrapDetectionMessage').textContent = detection?.message || '首次安装或更换服务器后，可在这里自动完成公钥生成、下发和免密验证。';
+        }
+
+        function renderBootstrapStatus(status) {
+            const textEl = document.getElementById('sshBootstrapStatusText');
+            if (!status || !status.status) {
+                textEl.textContent = '初始化状态：未检测';
+                return;
+            }
+
+            let text = `初始化状态：${status.status}`;
+            if (status.message) {
+                text += ` - ${status.message}`;
+            }
+            textEl.textContent = text;
+        }
+
+        function fillBootstrapFormFromDetection() {
+            const detection = latestBootstrapDetection || {};
+            document.getElementById('bootstrapServerIp').value = detection.serverIp || '';
+            document.getElementById('bootstrapServerSshPort').value = detection.serverSshPort || 22;
+            document.getElementById('bootstrapLoginUser').value = detection.loginUser || 'root';
+            document.getElementById('bootstrapTargetPrivateKeyPath').value = detection.targetPrivateKeyPath || '';
+            document.getElementById('bootstrapPassword').value = '';
+        }
+
+        function openBootstrapModal() {
+            fillBootstrapFormFromDetection();
+            const modal = new bootstrap.Modal(document.getElementById('sshBootstrapModal'));
+            modal.show();
+        }
+
+        async function loadBootstrapStatus(jobId = '') {
+            try {
+                const url = jobId
+                    ? `/admin/ssh/bootstrap/status?jobId=${encodeURIComponent(jobId)}`
+                    : '/admin/ssh/bootstrap/status';
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    return null;
+                }
+                const payload = result.data || {};
+                renderBootstrapStatus(payload.status || null);
+                renderBootstrapDetection(payload.detection || null);
+                return payload.status || null;
+            } catch (error) {
+                console.error('加载SSH免密初始化状态失败:', error);
+                return null;
+            }
+        }
+
+        async function pollBootstrapStatus(jobId) {
+            if (!jobId) return;
+            currentBootstrapJobId = jobId;
+            let tries = 0;
+            const maxTries = 40;
+
+            while (tries < maxTries && currentBootstrapJobId === jobId) {
+                const status = await loadBootstrapStatus(jobId);
+                if (status && status.status === 'COMPLETED') {
+                    showToast('success', status.message || 'SSH免密初始化完成');
+                    await loadProfiles();
+                    return;
+                }
+                if (status && status.status === 'FAILED') {
+                    showToast('error', status.message || 'SSH免密初始化失败');
+                    return;
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                tries++;
+            }
+        }
+
+        async function runBootstrap(event) {
+            event.preventDefault();
+            const runBtn = document.getElementById('runBootstrapBtn');
+            const originalHtml = runBtn.innerHTML;
+            runBtn.disabled = true;
+            runBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>初始化中...';
+
+            try {
+                const payload = {
+                    serverIp: document.getElementById('bootstrapServerIp').value.trim(),
+                    serverSshPort: parseInt(document.getElementById('bootstrapServerSshPort').value, 10) || 22,
+                    loginUser: document.getElementById('bootstrapLoginUser').value.trim(),
+                    targetPrivateKeyPath: document.getElementById('bootstrapTargetPrivateKeyPath').value.trim(),
+                    password: document.getElementById('bootstrapPassword').value
+                };
+
+                const response = await fetch('/admin/ssh/bootstrap/run', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    showToast('error', result.message || 'SSH免密初始化失败');
+                    return;
+                }
+
+                const modal = bootstrap.Modal.getInstance(document.getElementById('sshBootstrapModal'));
+                if (modal) {
+                    modal.hide();
+                }
+
+                showToast('info', result.message || '已触发SSH免密初始化');
+                await pollBootstrapStatus(result.jobId || '');
+            } catch (error) {
+                console.error('SSH免密初始化失败:', error);
+                showToast('error', 'SSH免密初始化失败：' + error.message);
+            } finally {
+                runBtn.disabled = false;
+                runBtn.innerHTML = originalHtml;
             }
         }
 
@@ -830,6 +1078,9 @@
         document.getElementById('clearProfileFormBtn').addEventListener('click', clearProfileForm);
         document.getElementById('openCreateProfileBtn').addEventListener('click', openCreateProfileModal);
         document.getElementById('reloadProfilesBtn').addEventListener('click', loadProfiles);
+        document.getElementById('reloadBootstrapStatusBtn').addEventListener('click', () => loadBootstrapStatus());
+        document.getElementById('openBootstrapModalBtn').addEventListener('click', openBootstrapModal);
+        document.getElementById('sshBootstrapForm').addEventListener('submit', runBootstrap);
 
         // 搜索功能
         document.getElementById('configSearch').addEventListener('keyup', function() {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,7 +16,7 @@ import (
 	"ssh-tunnel/constants"
 	"ssh-tunnel/router"
 	"ssh-tunnel/safe"
-	"ssh-tunnel/tunnel"
+	tunnel2 "ssh-tunnel/tunnel"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,14 @@ type profileDeleteRequest struct {
 	ProfileID string `json:"profileId"`
 }
 
+type sshBootstrapRequest struct {
+	ServerIP             string `json:"serverIp"`
+	ServerSshPort        int    `json:"serverSshPort"`
+	LoginUser            string `json:"loginUser"`
+	Password             string `json:"password"`
+	TargetPrivateKeyPath string `json:"targetPrivateKeyPath"`
+}
+
 type profileSwitchStatus struct {
 	SwitchID      string `json:"switchId"`
 	FromProfileID string `json:"fromProfileId"`
@@ -49,11 +58,36 @@ type profileSwitchStatus struct {
 	DurationMs    int64  `json:"durationMs"`
 }
 
+type sshBootstrapStatus struct {
+	JobID                  string `json:"jobId"`
+	Status                 string `json:"status"`
+	Message                string `json:"message"`
+	ServerIP               string `json:"serverIp"`
+	ServerSshPort          int    `json:"serverSshPort"`
+	LoginUser              string `json:"loginUser"`
+	PrivateKeyPath         string `json:"privateKeyPath"`
+	PublicKeyPath          string `json:"publicKeyPath"`
+	PrivateKeyExists       bool   `json:"privateKeyExists"`
+	PublicKeyExists        bool   `json:"publicKeyExists"`
+	KeyGenerated           bool   `json:"keyGenerated"`
+	AuthorizedKeyInstalled bool   `json:"authorizedKeyInstalled"`
+	VerifiedWithPublicKey  bool   `json:"verifiedWithPublicKey"`
+	StartedAt              string `json:"startedAt"`
+	UpdatedAt              string `json:"updatedAt"`
+	DurationMs             int64  `json:"durationMs"`
+	LastError              string `json:"lastError,omitempty"`
+}
+
 const (
 	SwitchStatusIdle      = "IDLE"
 	SwitchStatusSwitching = "SWITCHING"
 	SwitchStatusCompleted = "COMPLETED"
 	SwitchStatusFailed    = "FAILED"
+
+	SSHBootstrapStatusIdle      = "IDLE"
+	SSHBootstrapStatusRunning   = "RUNNING"
+	SSHBootstrapStatusCompleted = "COMPLETED"
+	SSHBootstrapStatusFailed    = "FAILED"
 )
 
 var profileSwitchState = struct {
@@ -61,6 +95,13 @@ var profileSwitchState = struct {
 	latest profileSwitchStatus
 }{
 	latest: profileSwitchStatus{Status: SwitchStatusIdle, Message: "尚未执行切换", UpdatedAt: time.Now().Format(time.RFC3339)},
+}
+
+var sshBootstrapState = struct {
+	mu     sync.Mutex
+	latest sshBootstrapStatus
+}{
+	latest: sshBootstrapStatus{Status: SSHBootstrapStatusIdle, Message: "尚未执行免密初始化", UpdatedAt: time.Now().Format(time.RFC3339)},
 }
 
 func getProfileSwitchStatus() profileSwitchStatus {
@@ -84,9 +125,30 @@ func updateProfileSwitchStatusIfMatch(switchID string, updater func(*profileSwit
 	updater(&profileSwitchState.latest)
 }
 
+func getSSHBootstrapStatus() sshBootstrapStatus {
+	sshBootstrapState.mu.Lock()
+	defer sshBootstrapState.mu.Unlock()
+	return sshBootstrapState.latest
+}
+
+func setSSHBootstrapStatus(status sshBootstrapStatus) {
+	sshBootstrapState.mu.Lock()
+	defer sshBootstrapState.mu.Unlock()
+	sshBootstrapState.latest = status
+}
+
+func updateSSHBootstrapStatusIfMatch(jobID string, updater func(*sshBootstrapStatus)) {
+	sshBootstrapState.mu.Lock()
+	defer sshBootstrapState.mu.Unlock()
+	if sshBootstrapState.latest.JobID != jobID {
+		return
+	}
+	updater(&sshBootstrapState.latest)
+}
+
 // 获取配置键映射（前端配置键 -> 实际配置文件键）
 func getConfigKeyMapping() map[string]string {
-	appConfig := tunnel.DefaultSshTunnel.AppConfig()
+	appConfig := tunnel2.DefaultSshTunnel.AppConfig()
 	return map[string]string{
 		"ServerIp":                   appConfig.ServerIp.Key,
 		"ServerSshPort":              appConfig.ServerSshPort.Key,
@@ -128,7 +190,85 @@ func respondWithError(writer http.ResponseWriter, message string, statusCode int
 	writer.Write(jsonResponse)
 }
 
-func monitorProfileSwitchResult(switchID string, timeout time.Duration, tun *tunnel.Tunnel) {
+func isLoopbackRequest(request *http.Request) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(request.RemoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(request.RemoteAddr)
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	parsed := net.ParseIP(host)
+	return parsed != nil && parsed.IsLoopback()
+}
+
+func isLocalAdminAddress(address string) bool {
+	trimmed := strings.TrimSpace(address)
+	if trimmed == "" {
+		return false
+	}
+	host := trimmed
+	if strings.HasPrefix(trimmed, ":") {
+		return false
+	}
+	if parsedHost, _, err := net.SplitHostPort(trimmed); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	parsed := net.ParseIP(host)
+	return parsed != nil && parsed.IsLoopback()
+}
+
+func guardSSHBootstrapRequest(writer http.ResponseWriter, request *http.Request, appConfig *cfg.AppConfig) bool {
+	if !isLoopbackRequest(request) {
+		respondWithError(writer, "SSH免密初始化接口仅允许本机请求访问", http.StatusForbidden)
+		return false
+	}
+	if appConfig == nil || !isLocalAdminAddress(appConfig.AdminAddress.GetValue()) {
+		respondWithError(writer, "当前管理端监听地址不是本地回环地址，已禁止通过管理端执行SSH免密初始化", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+func normalizeSSHBootstrapRequest(req sshBootstrapRequest, appConfig *cfg.AppConfig) sshBootstrapRequest {
+	if appConfig == nil {
+		return req
+	}
+
+	req.ServerIP = strings.TrimSpace(req.ServerIP)
+	if req.ServerIP == "" {
+		req.ServerIP = strings.TrimSpace(appConfig.ServerIp.GetValue())
+	}
+	if req.ServerSshPort <= 0 {
+		req.ServerSshPort = appConfig.ServerSshPort.GetValue()
+	}
+	if req.ServerSshPort <= 0 {
+		req.ServerSshPort = 22
+	}
+	req.LoginUser = strings.TrimSpace(req.LoginUser)
+	if req.LoginUser == "" {
+		req.LoginUser = strings.TrimSpace(appConfig.LoginUser.GetValue())
+	}
+	req.TargetPrivateKeyPath = strings.TrimSpace(req.TargetPrivateKeyPath)
+	if req.TargetPrivateKeyPath == "" {
+		req.TargetPrivateKeyPath = tunnel2.DefaultBootstrapPrivateKeyPath()
+	}
+
+	return req
+}
+
+func monitorProfileSwitchResult(switchID string, timeout time.Duration, tun *tunnel2.Tunnel) {
 	startedAt := time.Now()
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -161,7 +301,7 @@ func monitorProfileSwitchResult(switchID string, timeout time.Duration, tun *tun
 
 func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 	safe.GO(func() {
-		var tunnel = &tunnel.DefaultSshTunnel
+		var tunnel = &tunnel2.DefaultSshTunnel
 
 		if !config.EnableAdmin.GetValue() || config.AdminAddress.GetValue() == "" {
 			return
@@ -631,6 +771,198 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			m["message"] = "已按最新配置重新连接SSH"
 			mbytes, _ := json.Marshal(m)
 			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/bootstrap/status", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+			if request.Method == "OPTIONS" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			if request.Method != http.MethodGet {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+			if !guardSSHBootstrapRequest(writer, request, tunnel.AppConfig()) {
+				return
+			}
+
+			status := getSSHBootstrapStatus()
+			requestedJobID := strings.TrimSpace(request.URL.Query().Get("jobId"))
+			if requestedJobID != "" && status.JobID != requestedJobID {
+				respondWithError(writer, fmt.Sprintf("未找到jobId: %s", requestedJobID), http.StatusNotFound)
+				return
+			}
+
+			detection := tunnel2.DetectSSHBootstrap(tunnel.AppConfig(), request.URL.Query().Get("targetPrivateKeyPath"))
+			response := map[string]interface{}{
+				"success": true,
+				"data": map[string]interface{}{
+					"status":    status,
+					"detection": detection,
+				},
+			}
+			jsonResponse, _ := json.Marshal(response)
+			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/bootstrap/run", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+			if request.Method == "OPTIONS" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			if !guardSSHBootstrapRequest(writer, request, tunnel.AppConfig()) {
+				return
+			}
+
+			var req sshBootstrapRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+
+			req = normalizeSSHBootstrapRequest(req, tunnel.AppConfig())
+			if req.ServerIP == "" {
+				respondWithError(writer, "serverIp不能为空", http.StatusBadRequest)
+				return
+			}
+			if req.LoginUser == "" {
+				respondWithError(writer, "loginUser不能为空", http.StatusBadRequest)
+				return
+			}
+			if strings.TrimSpace(req.Password) == "" {
+				respondWithError(writer, "password不能为空", http.StatusBadRequest)
+				return
+			}
+
+			detection := tunnel2.DetectSSHBootstrap(tunnel.AppConfig(), req.TargetPrivateKeyPath)
+			jobID := fmt.Sprintf("bootstrap_%d", time.Now().UnixNano())
+			startedAt := time.Now()
+			setSSHBootstrapStatus(sshBootstrapStatus{
+				JobID:            jobID,
+				Status:           SSHBootstrapStatusRunning,
+				Message:          "正在执行SSH免密初始化",
+				ServerIP:         req.ServerIP,
+				ServerSshPort:    req.ServerSshPort,
+				LoginUser:        req.LoginUser,
+				PrivateKeyPath:   detection.TargetPrivateKeyPath,
+				PublicKeyPath:    detection.PublicKeyPath,
+				PrivateKeyExists: detection.PrivateKeyExists,
+				PublicKeyExists:  detection.PublicKeyExists,
+				StartedAt:        startedAt.Format(time.RFC3339),
+				UpdatedAt:        startedAt.Format(time.RFC3339),
+			})
+
+			password := req.Password
+			safe.GO(func() {
+				defer func() {
+					password = ""
+				}()
+
+				result, err := tunnel2.BootstrapPasswordlessSSH(tunnel2.SSHBootstrapOptions{
+					ServerIP:       req.ServerIP,
+					ServerSshPort:  req.ServerSshPort,
+					LoginUser:      req.LoginUser,
+					Password:       password,
+					PrivateKeyPath: detection.TargetPrivateKeyPath,
+				})
+				if err != nil {
+					updateSSHBootstrapStatusIfMatch(jobID, func(status *sshBootstrapStatus) {
+						status.Status = SSHBootstrapStatusFailed
+						status.Message = err.Error()
+						status.LastError = err.Error()
+						status.UpdatedAt = time.Now().Format(time.RFC3339)
+						status.DurationMs = time.Since(startedAt).Milliseconds()
+					})
+					return
+				}
+
+				localApplyErrors := make([]string, 0, 3)
+				if err := cfg.UpdateConfigValue(cfg.SSH_PRIVATE_KEY_PATH_KEY, result.PrivateKeyPath); err != nil {
+					localApplyErrors = append(localApplyErrors, fmt.Sprintf("配置文件更新失败: %v", err))
+				} else {
+					tunnel.AppConfig().Update()
+				}
+
+				if err := cfg.UpdateActiveProfilePrivateKeyPath(result.PrivateKeyPath, tunnel.AppConfig()); err != nil {
+					localApplyErrors = append(localApplyErrors, fmt.Sprintf("活动Profile私钥路径同步失败: %v", err))
+				}
+
+				if err := tunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
+					localApplyErrors = append(localApplyErrors, fmt.Sprintf("运行时配置刷新失败: %v", err))
+				} else {
+					tunnel.DisconnectSSHClient()
+					safe.GO(func() {
+						tunnel.ReconnectSSHWithSource(connCtx, "ssh-bootstrap")
+					})
+
+					deadline := time.Now().Add(10 * time.Second)
+					for time.Now().Before(deadline) {
+						if tunnel.PeekSSHClient() != nil {
+							break
+						}
+						time.Sleep(500 * time.Millisecond)
+					}
+					if tunnel.PeekSSHClient() == nil {
+						localApplyErrors = append(localApplyErrors, "运行时SSH重连未在预期时间内完成")
+					}
+				}
+
+				if len(localApplyErrors) > 0 {
+					updateSSHBootstrapStatusIfMatch(jobID, func(status *sshBootstrapStatus) {
+						status.Status = SSHBootstrapStatusFailed
+						status.Message = "远端免密初始化已完成，但本地配置切换失败：" + strings.Join(localApplyErrors, "；")
+						status.LastError = strings.Join(localApplyErrors, "；")
+						status.ServerIP = result.ServerIP
+						status.ServerSshPort = result.ServerSshPort
+						status.LoginUser = result.LoginUser
+						status.PrivateKeyPath = result.PrivateKeyPath
+						status.PublicKeyPath = result.PublicKeyPath
+						status.PrivateKeyExists = true
+						status.PublicKeyExists = true
+						status.KeyGenerated = result.KeyGenerated
+						status.AuthorizedKeyInstalled = result.AuthorizedKeyInstalled
+						status.VerifiedWithPublicKey = result.VerifiedWithPublicKey
+						status.UpdatedAt = time.Now().Format(time.RFC3339)
+						status.DurationMs = time.Since(startedAt).Milliseconds()
+					})
+					return
+				}
+
+				updateSSHBootstrapStatusIfMatch(jobID, func(status *sshBootstrapStatus) {
+					status.Status = SSHBootstrapStatusCompleted
+					status.Message = result.Message
+					status.ServerIP = result.ServerIP
+					status.ServerSshPort = result.ServerSshPort
+					status.LoginUser = result.LoginUser
+					status.PrivateKeyPath = result.PrivateKeyPath
+					status.PublicKeyPath = result.PublicKeyPath
+					status.PrivateKeyExists = true
+					status.PublicKeyExists = true
+					status.KeyGenerated = result.KeyGenerated
+					status.AuthorizedKeyInstalled = result.AuthorizedKeyInstalled
+					status.VerifiedWithPublicKey = result.VerifiedWithPublicKey
+					status.UpdatedAt = time.Now().Format(time.RFC3339)
+					status.DurationMs = time.Since(startedAt).Milliseconds()
+				})
+			})
+
+			response := map[string]interface{}{
+				"success": true,
+				"message": "已触发SSH免密初始化任务",
+				"jobId":   jobID,
+				"status":  SSHBootstrapStatusRunning,
+				"data":    detection,
+			}
+			jsonResponse, _ := json.Marshal(response)
+			writer.Write(jsonResponse)
 		})
 
 		adminRouter.HandleFunc("/admin/ssh/reconnect-count/reset", func(writer http.ResponseWriter, request *http.Request) {
@@ -1337,7 +1669,7 @@ func triggerConfigReload() error {
 	log.Println("配置文件重新加载成功")
 
 	// 获取应用配置并更新
-	appConfig := tunnel.DefaultSshTunnel.AppConfig()
+	appConfig := tunnel2.DefaultSshTunnel.AppConfig()
 	if appConfig != nil {
 		appConfig.Update()
 		if err := cfg.EnsureAndApplyActiveProfile(appConfig); err != nil {

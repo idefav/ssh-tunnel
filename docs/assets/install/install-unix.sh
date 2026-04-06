@@ -9,6 +9,7 @@ RELEASE_DOWNLOAD_BASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/la
 
 INSTALL_BINARY_PATH="/usr/local/bin/ssh-tunnel"
 CONFIG_PATH="/etc/ssh-tunnel/config.properties"
+CONFIG_DIR=$(dirname "$CONFIG_PATH")
 SYSTEMD_UNIT_PATH="/etc/systemd/system/ssh-tunnel.service"
 SYSV_SCRIPT_PATH="/etc/init.d/ssh-tunnel"
 DARWIN_PLIST_PATH="/Library/LaunchDaemons/com.idefav.ssh-tunnel.plist"
@@ -109,6 +110,32 @@ prompt_required() {
     while :; do
         printf '%s: ' "$prompt_text" >&2
         IFS= read -r answer <"$PROMPT_INPUT"
+        if [ -n "$answer" ]; then
+            printf '%s\n' "$answer"
+            return
+        fi
+        log "Value cannot be empty."
+    done
+}
+
+prompt_password() {
+    prompt_text=$1
+    while :; do
+        printf '%s: ' "$prompt_text" >&2
+        can_hide=0
+        if [ -t 0 ] && [ "$PROMPT_INPUT" = "/dev/stdin" ]; then
+            can_hide=1
+        elif [ "$PROMPT_INPUT" = "/dev/tty" ] && [ -r /dev/tty ]; then
+            can_hide=1
+        fi
+        if [ "$can_hide" -eq 1 ]; then
+            stty -echo <"$PROMPT_INPUT"
+        fi
+        IFS= read -r answer <"$PROMPT_INPUT"
+        if [ "$can_hide" -eq 1 ]; then
+            stty echo <"$PROMPT_INPUT"
+        fi
+        printf '\n' >&2
         if [ -n "$answer" ]; then
             printf '%s\n' "$answer"
             return
@@ -325,15 +352,8 @@ while :; do
 done
 
 LOGIN_USER=$(prompt_default "Enter SSH login username" "root")
-
-while :; do
-    SSH_KEY_INPUT=$(prompt_default "Enter SSH private key path" "~/.ssh/id_rsa")
-    SSH_KEY_PATH=$(expand_path "$SSH_KEY_INPUT")
-    if [ -f "$SSH_KEY_PATH" ]; then
-        break
-    fi
-    log "Private key not found: $SSH_KEY_PATH"
-done
+SSH_KEY_PATH="${CONFIG_DIR}/keys/id_ed25519"
+SSH_LOGIN_PASSWORD=$(prompt_password "Enter SSH login password for one-time bootstrap")
 
 while :; do
     BIND_CHOICE=$(prompt_default "Bind services to localhost only? (y/n)" "y")
@@ -470,9 +490,30 @@ auto-update.check-interval=3600
 EOF
 
 run_root mkdir -p "$(dirname "$INSTALL_BINARY_PATH")" "$(dirname "$CONFIG_PATH")" "$STATE_DIR" "$(dirname "$LOG_FILE")"
+run_root mkdir -p "$(dirname "$SSH_KEY_PATH")"
 run_root touch "$DOMAIN_FILE"
 write_root_file "$INSTALL_BINARY_PATH" "$BINARY_TMP"
 run_root chmod 0755 "$INSTALL_BINARY_PATH"
+
+if [ -n "${SUDO_CMD}" ]; then
+    printf '%s\n' "$SSH_LOGIN_PASSWORD" | "$SUDO_CMD" "$INSTALL_BINARY_PATH" bootstrap \
+        --config="$CONFIG_PATH" \
+        --server.ip="$SERVER_IP" \
+        --server.ssh.port="$SERVER_PORT" \
+        --login.username="$LOGIN_USER" \
+        --ssh.private_key_path="$SSH_KEY_PATH" \
+        --password-stdin >/dev/null
+else
+    printf '%s\n' "$SSH_LOGIN_PASSWORD" | "$INSTALL_BINARY_PATH" bootstrap \
+        --config="$CONFIG_PATH" \
+        --server.ip="$SERVER_IP" \
+        --server.ssh.port="$SERVER_PORT" \
+        --login.username="$LOGIN_USER" \
+        --ssh.private_key_path="$SSH_KEY_PATH" \
+        --password-stdin >/dev/null
+fi
+run_root chmod 0700 "$(dirname "$SSH_KEY_PATH")"
+run_root chmod 0600 "$SSH_KEY_PATH"
 write_root_file "$CONFIG_PATH" "$CONFIG_TMP"
 
 case "$SERVICE_KIND" in

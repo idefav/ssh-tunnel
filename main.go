@@ -30,6 +30,10 @@ import (
 var started atomic.Bool
 
 func main() {
+	if handled, exitCode := tunnel.TryRunBootstrapCLI(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); handled {
+		os.Exit(exitCode)
+	}
+
 	for {
 		err := safe.SafeCallWithReturnRecover(runOnce)
 		if err == nil {

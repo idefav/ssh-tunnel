@@ -20,12 +20,21 @@ http://127.0.0.1:1083/view/version
 
 如果你需要手动部署服务，请保持下面的服务名、落盘路径和配置键不变，这样管理页的“重启服务”和“版本更新”才能正确识别当前实例。
 
+## SSH 免密初始化说明
+
+- 当前首装脚本会默认在服务配置目录下生成服务专用 `ed25519` 密钥，并自动执行一次性密码登录、公钥下发和免密验证。
+- Windows 默认私钥路径：`C:\ssh-tunnel\.ssh-tunnel\keys\id_ed25519`
+- Linux / macOS 默认私钥路径：`/etc/ssh-tunnel/keys/id_ed25519`
+- 如后续需要重新授权、公钥丢失或更换服务器，不需要重新安装，可进入管理页“应用配置”页面使用“SSH 免密初始化”卡片重试。
+- 管理端中的该能力仅允许在本机回环地址下调用；若 `admin.address` 绑定为非本地地址，管理端会拒绝执行该操作。
+
 ## Windows
 
 ### 文件布局
 
 - 二进制: `C:\ssh-tunnel\ssh-tunnel-svc.exe`
 - 配置: `C:\ssh-tunnel\.ssh-tunnel\config.properties`
+- 服务私钥: `C:\ssh-tunnel\.ssh-tunnel\keys\id_ed25519`
 - 服务名: `SSHTunnelService`
 
 ### 安装服务
@@ -49,6 +58,7 @@ Get-Service SSHTunnelService
 
 - 二进制: `/usr/local/bin/ssh-tunnel`
 - 配置: `/etc/ssh-tunnel/config.properties`
+- 服务私钥: `/etc/ssh-tunnel/keys/id_ed25519`
 - LaunchDaemon: `/Library/LaunchDaemons/com.idefav.ssh-tunnel.plist`
 - 服务标识: `com.idefav.ssh-tunnel`
 
@@ -101,6 +111,7 @@ sudo launchctl unload /Library/LaunchDaemons/com.idefav.ssh-tunnel.plist
 
 - 二进制: `/usr/local/bin/ssh-tunnel`
 - 配置: `/etc/ssh-tunnel/config.properties`
+- 服务私钥: `/etc/ssh-tunnel/keys/id_ed25519`
 - systemd 服务: `/etc/systemd/system/ssh-tunnel.service`
 - SysV 脚本: `/etc/init.d/ssh-tunnel`
 - 服务名: `ssh-tunnel`
@@ -179,7 +190,7 @@ esac
 home.dir=/var/lib/ssh-tunnel
 server.ip=your-server-ip
 server.ssh.port=22
-ssh.private_key_path=/etc/ssh-tunnel/id_rsa
+ssh.private_key_path=/etc/ssh-tunnel/keys/id_ed25519
 login.username=root
 local.address=127.0.0.1:1081
 http.local.address=127.0.0.1:1082

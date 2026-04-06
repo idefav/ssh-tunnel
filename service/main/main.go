@@ -26,6 +26,10 @@ import (
 )
 
 func main() {
+	if handled, exitCode := tunnel.TryRunBootstrapCLI(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); handled {
+		os.Exit(exitCode)
+	}
+
 	srvConfig := &service.Config{
 		Name:        constants.ServiceNameForGOOS(runtime.GOOS),
 		DisplayName: constants.ServiceDisplayNameForGOOS(runtime.GOOS),

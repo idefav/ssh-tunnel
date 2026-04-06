@@ -85,14 +85,15 @@
                 <section id="installer-behavior" class="mb-5">
                     <h2>安装器行为</h2>
                     <ul>
-                        <li>首次安装时会采集 <code>server.ip</code>、<code>server.ssh.port</code>、<code>login.username</code>、<code>ssh.private_key_path</code>。</li>
+                        <li>首次安装时会采集 <code>server.ip</code>、<code>server.ssh.port</code>、<code>login.username</code> 和一次性 SSH 登录密码。</li>
                         <li>会询问服务监听范围，并据此生成 <code>local.address</code>、<code>http.local.address</code>、<code>admin.address</code>。</li>
-                        <li>会先检查私钥文件是否存在，并在默认端口冲突时要求输入新端口。</li>
+                        <li>会在服务配置目录下生成或复用服务专用 <code>ed25519</code> 密钥，并自动将公钥下发到远端 <code>authorized_keys</code>。</li>
+                        <li>会在默认端口冲突时要求输入新端口，并在初始化成功后验证私钥免密登录。</li>
                         <li>会下载最新 Release 的目标资产与 <code>SHA256SUMS</code>，校验成功后再写入磁盘和注册服务。</li>
                         <li>默认配置为 <code>socks5.enable=true</code>、<code>http.enable=false</code>、<code>admin.enable=true</code>、自动更新开启。</li>
                     </ul>
                     <div class="alert alert-info mb-0">
-                        如果检测到已有安装、已有服务或已有配置，安装器不会覆盖现有文件，而是提示你去管理页的版本页面完成更新。
+                        如果检测到已有安装、已有服务或已有配置，安装器不会覆盖现有文件，而是提示你去管理页的版本页面完成更新。安装完成后，如需重新下发公钥或重建服务密钥，请进入“应用配置”页面的“SSH 免密初始化”卡片操作。
                     </div>
                 </section>
 
@@ -105,6 +106,7 @@
                                     <th>平台</th>
                                     <th>二进制</th>
                                     <th>配置</th>
+                                    <th>服务私钥</th>
                                     <th>服务标识</th>
                                 </tr>
                             </thead>
@@ -113,24 +115,27 @@
                                     <td>Windows</td>
                                     <td><code>C:\ssh-tunnel\ssh-tunnel-svc.exe</code></td>
                                     <td><code>C:\ssh-tunnel\.ssh-tunnel\config.properties</code></td>
+                                    <td><code>C:\ssh-tunnel\.ssh-tunnel\keys\id_ed25519</code></td>
                                     <td><code>SSHTunnelService</code></td>
                                 </tr>
                                 <tr>
                                     <td>Linux</td>
                                     <td><code>/usr/local/bin/ssh-tunnel</code></td>
                                     <td><code>/etc/ssh-tunnel/config.properties</code></td>
+                                    <td><code>/etc/ssh-tunnel/keys/id_ed25519</code></td>
                                     <td><code>ssh-tunnel.service</code> 或 <code>/etc/init.d/ssh-tunnel</code></td>
                                 </tr>
                                 <tr>
                                     <td>macOS</td>
                                     <td><code>/usr/local/bin/ssh-tunnel</code></td>
                                     <td><code>/etc/ssh-tunnel/config.properties</code></td>
+                                    <td><code>/etc/ssh-tunnel/keys/id_ed25519</code></td>
                                     <td><code>/Library/LaunchDaemons/com.idefav.ssh-tunnel.plist</code></td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
-                    <p class="mb-0">手动安装服务时，也请沿用上面的服务名和路径，这样管理页中的重启和升级逻辑才能准确识别当前平台服务。</p>
+                    <p class="mb-0">手动安装服务时，也请沿用上面的服务名和路径，这样管理页中的重启、升级和 SSH 免密重建逻辑才能准确识别当前平台服务。</p>
                 </section>
 
                 <section id="manual-config" class="mb-5">
@@ -139,7 +144,7 @@
                     <pre class="bg-dark text-light p-3 rounded"><code>home.dir=/var/lib/ssh-tunnel
 server.ip=your-ssh-server
 server.ssh.port=22
-ssh.private_key_path=/path/to/id_rsa
+ssh.private_key_path=/etc/ssh-tunnel/keys/id_ed25519
 login.username=root
 local.address=127.0.0.1:1081
 http.local.address=127.0.0.1:1082
@@ -162,7 +167,8 @@ auto-update.check-interval=3600</code></pre>
                     <h2>后续更新</h2>
                     <p>一键安装只用于首装。升级现有实例时，请打开管理页面版本页：</p>
                     <pre class="bg-dark text-light p-3 rounded"><code>http://127.0.0.1:1083/view/version</code></pre>
-                    <p class="mb-0">如果安装时自定义了管理端口，请使用当前 <code>admin.address</code> 对应的地址访问版本页。</p>
+                    <p>如果安装时自定义了管理端口，请使用当前 <code>admin.address</code> 对应的地址访问版本页。</p>
+                    <p class="mb-0">如果只是 SSH 免密失效、公钥丢失或更换服务器，不需要重新运行首装脚本，直接进入管理页“应用配置”中的“SSH 免密初始化”卡片即可。</p>
                 </section>
             </div>
         </div>

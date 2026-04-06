@@ -72,7 +72,7 @@
         "serverIp": "10.0.0.10",
         "serverSshPort": 22,
         "loginUser": "root",
-        "sshPrivateKeyPath": "C:\\Users\\ops\\.ssh\\id_rsa"
+        "sshPrivateKeyPath": "C:\\ssh-tunnel\\.ssh-tunnel\\keys\\id_ed25519"
       },
       "proxy": {
         "enableSocks5": true,

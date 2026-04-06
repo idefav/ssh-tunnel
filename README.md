@@ -17,7 +17,7 @@ Open ssh tunnel, start Sock5 port locally by default 1081
 ./ssh-tunnel -s xx.xx.xx.xx
 ```
 
-注意: 需要配置本地服务器到目标服务器的SSH免密登录, 免密登录请参考: [SSH免密登录](https://idefav.github.io/ssh-tunnel/ssh-key-setup.html)
+注意: 运行时仍依赖 SSH 公私钥免密登录。当前一键安装脚本和管理页配置页面已经支持首次通过服务器用户名和密码完成服务专用 ed25519 密钥生成、公钥下发和免密验证；如需手工处理，可参考: [SSH免密登录](https://idefav.github.io/ssh-tunnel/ssh-key-setup.html)
 
 ## one-click install
 
@@ -38,6 +38,15 @@ irm https://idefav.github.io/ssh-tunnel/install | iex
 ```text
 http://127.0.0.1:1083/view/version
 ```
+
+首次安装时，脚本会额外执行以下动作：
+
+1. 在服务配置目录下生成服务专用 ed25519 密钥对。
+2. 通过一次性 SSH 密码登录远端服务器。
+3. 自动把公钥写入远端 authorized_keys。
+4. 验证后续服务进程可以直接走私钥免密登录。
+
+安装完成后，如需重新授权或重建服务密钥，可在管理页 [应用配置] 页面使用“SSH 免密初始化”卡片重新执行。
 
 ## commands
 
@@ -113,6 +122,7 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 - 📊 **实时状态监控** - 查看SSH连接状态、隧道状态
 - ⚙️ **配置管理** - 在线修改配置参数，支持实时预览
 - 🧩 **多 Profile 管理** - 支持维护多套 SSH 配置并在管理页动态切换 🆕
+- 🔐 **SSH 免密初始化** - 配置页支持检测服务专用密钥、首次密码登录自动下发公钥并验证免密 🆕
 - 🗂️ **Profile 文件持久化** - 保存 Profile 时同步写入 `profiles.json`（格式化JSON）🆕
 - 📁 **进程信息** - 显示程序执行路径和工作目录，便于故障排查
 - 📶 **SSH链路指标** - SSH状态页支持延迟测试、实时上下行速率和累计流量展示 🆕

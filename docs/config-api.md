@@ -41,6 +41,8 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 |------|------|------|------|
 | `/admin/ssh/state` | GET | 获取当前 SSH 客户端状态 | `version/localAddr/remoteAddr/sessionId/user` |
 | `/admin/ssh/reconnect` | POST | 使用最新配置执行真实 SSH 重连 | 成功返回新的 SSH 会话信息 |
+| `/admin/ssh/bootstrap/status` | GET | 查询 SSH 免密初始化状态与本地密钥检测结果 | `status + detection` |
+| `/admin/ssh/bootstrap/run` | POST | 执行一次性密码登录、公钥下发与免密验证 | `jobId/status` |
 | `/admin/ssh/metrics` | GET | 获取当前 SSH 代理实时上下行速率与累计流量 | `uploadSpeed/downloadSpeed/uploadBytesTotal/downloadBytesTotal` |
 | `/admin/ssh/test` | POST | 执行 SSH 延迟与当前速率测试 | `latencyMs/uploadSpeed/downloadSpeed` |
 
@@ -50,6 +52,54 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 3. 刷新隧道运行时参数（地址/端口/用户/私钥认证）
 4. 强制断开旧连接
 5. 立即建立新连接并返回新会话信息
+
+`/admin/ssh/bootstrap/run` 的执行顺序：
+1. 校验当前请求来自本机回环地址
+2. 校验 `admin.address` 当前绑定为本地回环地址
+3. 检测或生成服务专用 `ed25519` 密钥
+4. 使用一次性密码执行首次 SSH 登录
+5. 自动创建远端 `~/.ssh/authorized_keys` 并幂等追加公钥
+6. 使用新私钥验证免密登录
+7. 持久化新的 `ssh.private_key_path`
+8. 刷新运行时配置并触发 SSH 重连
+
+> 安全限制：SSH 免密初始化接口只允许本机访问，且不会对外开放跨域调用。若管理端监听地址不是本地回环地址，接口会直接拒绝执行。
+
+#### SSH 免密初始化请求体
+
+```json
+{
+    "serverIp": "203.0.113.10",
+    "serverSshPort": 22,
+    "loginUser": "root",
+    "password": "one-time-password",
+    "targetPrivateKeyPath": "/etc/ssh-tunnel/keys/id_ed25519"
+}
+```
+
+#### SSH 免密初始化状态结构
+
+```go
+type sshBootstrapStatus struct {
+        JobID                  string `json:"jobId"`
+        Status                 string `json:"status"`
+        Message                string `json:"message"`
+        ServerIP               string `json:"serverIp"`
+        ServerSshPort          int    `json:"serverSshPort"`
+        LoginUser              string `json:"loginUser"`
+        PrivateKeyPath         string `json:"privateKeyPath"`
+        PublicKeyPath          string `json:"publicKeyPath"`
+        PrivateKeyExists       bool   `json:"privateKeyExists"`
+        PublicKeyExists        bool   `json:"publicKeyExists"`
+        KeyGenerated           bool   `json:"keyGenerated"`
+        AuthorizedKeyInstalled bool   `json:"authorizedKeyInstalled"`
+        VerifiedWithPublicKey  bool   `json:"verifiedWithPublicKey"`
+        StartedAt              string `json:"startedAt"`
+        UpdatedAt              string `json:"updatedAt"`
+        DurationMs             int64  `json:"durationMs"`
+        LastError              string `json:"lastError,omitempty"`
+}
+```
 
 #### 服务控制API
 
@@ -308,7 +358,7 @@ curl -X POST http://localhost:1083/admin/profiles/upsert \
             "serverIp": "1.2.3.4",
             "serverSshPort": 22,
             "loginUser": "root",
-            "sshPrivateKeyPath": "C:/Users/test/.ssh/id_rsa",
+            "sshPrivateKeyPath": "C:/ssh-tunnel/.ssh-tunnel/keys/id_ed25519",
             "localAddress": "0.0.0.0:1081",
             "httpLocalAddress": "0.0.0.0:1082",
             "enableSocks5": true,

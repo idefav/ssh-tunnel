@@ -59,6 +59,18 @@ function Expand-UserPath {
     return [Environment]::ExpandEnvironmentVariables($PathValue)
 }
 
+function ConvertTo-PlainText {
+    param([Security.SecureString]$SecureValue)
+
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
+
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -177,14 +189,12 @@ while ($true) {
 }
 
 $loginUser = Read-Default -Prompt "Enter SSH login username" -DefaultValue "root"
-
-while ($true) {
-    $keyInput = Read-Default -Prompt "Enter SSH private key path" -DefaultValue "~\.ssh\id_rsa"
-    $sshKeyPath = Expand-UserPath -PathValue $keyInput
-    if (Test-Path $sshKeyPath) {
-        break
-    }
-    Write-Note "Private key not found: $sshKeyPath"
+$serviceKeyDir = Join-Path $ConfigDir "keys"
+$sshKeyPath = Join-Path $serviceKeyDir "id_ed25519"
+$sshPasswordSecure = Read-Host "Enter SSH login password for one-time bootstrap" -AsSecureString
+$sshPasswordPlain = ConvertTo-PlainText -SecureValue $sshPasswordSecure
+if ([string]::IsNullOrWhiteSpace($sshPasswordPlain)) {
+    Fail "SSH login password cannot be empty."
 }
 
 while ($true) {
@@ -269,7 +279,25 @@ try {
 
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $serviceKeyDir -Force | Out-Null
     Copy-Item -Path $downloadedAsset -Destination $BinaryPath -Force
+
+    $bootstrapArgs = @(
+        'bootstrap',
+        "--server.ip=$serverIp",
+        "--server.ssh.port=$serverPort",
+        "--login.username=$loginUser",
+        "--ssh.private_key_path=$sshKeyPath",
+        '--password-stdin'
+    )
+    $bootstrapOutput = ($sshPasswordPlain + [Environment]::NewLine) | & $BinaryPath @bootstrapArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Fail "SSH bootstrap failed: $bootstrapOutput"
+    }
+    & icacls $serviceKeyDir /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
+    & icacls $sshKeyPath /inheritance:r /grant:r "SYSTEM:F" "Administrators:F" | Out-Null
+    $sshPasswordPlain = $null
+    $sshPasswordSecure = $null
 
     $configContent = @"
 home.dir=$ConfigDir
@@ -314,6 +342,7 @@ auto-update.check-interval=3600
     Write-Note "Future upgrades should be done from the management page version screen."
 }
 finally {
+    $sshPasswordPlain = $null
     if (Test-Path $tempDir) {
         Remove-Item -Path $tempDir -Recurse -Force
     }

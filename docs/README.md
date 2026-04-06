@@ -32,6 +32,7 @@
 - `index.html` - 文档首页
 - `installation.html` - 安装指南
 - `ssh-key-setup.html` - SSH密钥配置指南
+- `ssh-免密初始化一键安装_gen.md` - SSH免密初始化一键安装技术方案报告 🆕
 - `PANIC_RECOVERY_REPORT.md` - Panic恢复机制测试报告 🆕
 
 ### 📄 更新相关文档
