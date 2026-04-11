@@ -1,5 +1,20 @@
 # 更新日志
 
+## v1.4.17 (2026-04-11)
+
+### 🆕 新功能
+- **安装脚本 SSH 密钥自动发现**：install-unix.sh 新增自动发现 `~/.ssh` 下已有密钥对，引导用户选择或生成新密钥，减少手动填写。
+- **无密码登录配置向导**：新增交互式无密码配置流程，支持自动生成 SSH 密钥并完成 `ssh-copy-id` 操作。
+- **Windows 安装脚本同步增强**：install-windows.ps1 同步实现 SSH 密钥发现与无密码配置功能。
+- **Profile 表单默认值优化**：新建 Profile 时，表单以当前运行配置为默认值预填充，降低重复输入成本。
+
+### 🔧 技术改进
+- 提取 `applyProfileFormValues()` 函数，统一 create / edit / copy 三种 Profile 操作的表单赋值逻辑。
+- 新增安装脚本单元测试：`test_install_unix_ssh_key_discovery.sh`、`test_install_unix_ssh_key_generation.sh`、`test_install_unix_passwordless_setup.sh`。
+
+### 📚 文档更新
+- 更新 `docs/installation.html`、`docs/ssh-key-setup.html`、`docs/setup/MULTIPLATFORM_SERVICE_SETUP.md`、根 `README.md`。
+
 ## v1.3.1 (2026-03-03)
 
 ### 🛠 稳定性修复
