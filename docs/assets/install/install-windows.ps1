@@ -59,6 +59,250 @@ function Expand-UserPath {
     return [Environment]::ExpandEnvironmentVariables($PathValue)
 }
 
+function Convert-ToUserPath {
+    param([string]$PathValue)
+
+    if ([string]::IsNullOrWhiteSpace($PathValue)) {
+        return $PathValue
+    }
+
+    $homePath = [System.IO.Path]::GetFullPath($HOME)
+    $targetPath = [System.IO.Path]::GetFullPath($PathValue)
+    if ($targetPath.Equals($homePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return "~"
+    }
+
+    $homePrefix = $homePath.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if ($targetPath.StartsWith($homePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return "~\" + $targetPath.Substring($homePrefix.Length)
+    }
+
+    return $PathValue
+}
+
+function Get-SshKeySelection {
+    $sshDir = Join-Path $HOME ".ssh"
+    $keyNames = @("id_ed25519", "id_ed25519_sk", "id_ecdsa", "id_ecdsa_sk", "id_rsa", "id_dsa", "identity")
+    $candidates = New-Object System.Collections.Generic.List[object]
+    $seen = @{}
+
+    if (-not (Test-Path $sshDir -PathType Container)) {
+        return [pscustomobject]@{
+            InputPath = "~\.ssh\id_rsa"
+            PrivatePath = Expand-UserPath -PathValue "~\.ssh\id_rsa"
+            PublicPath = $null
+            HasKeys = $false
+        }
+    }
+
+    foreach ($name in $keyNames) {
+        $privatePath = Join-Path $sshDir $name
+        $publicPath = "$privatePath.pub"
+        if ((Test-Path $privatePath -PathType Leaf) -and (Test-Path $publicPath -PathType Leaf) -and -not $seen.ContainsKey($publicPath)) {
+            $seen[$publicPath] = $true
+            $candidates.Add([pscustomobject]@{
+                InputPath = Convert-ToUserPath -PathValue $publicPath
+                PrivatePath = $privatePath
+                PublicPath = $publicPath
+                HasKeys = $true
+                AllowMissing = $false
+            })
+        }
+    }
+
+    Get-ChildItem -Path $sshDir -Filter "*.pub" -File -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object {
+        $publicPath = $_.FullName
+        $privatePath = $publicPath.Substring(0, $publicPath.Length - 4)
+        if ((Test-Path $privatePath -PathType Leaf) -and -not $seen.ContainsKey($publicPath)) {
+            $seen[$publicPath] = $true
+            $candidates.Add([pscustomobject]@{
+                InputPath = Convert-ToUserPath -PathValue $publicPath
+                PrivatePath = $privatePath
+                PublicPath = $publicPath
+                HasKeys = $true
+                AllowMissing = $false
+            })
+        }
+    }
+
+    if ($candidates.Count -eq 0) {
+        foreach ($name in $keyNames) {
+            $privatePath = Join-Path $sshDir $name
+            if ((Test-Path $privatePath -PathType Leaf) -and -not $seen.ContainsKey($privatePath)) {
+                $seen[$privatePath] = $true
+                $candidates.Add([pscustomobject]@{
+                    InputPath = Convert-ToUserPath -PathValue $privatePath
+                    PrivatePath = $privatePath
+                    PublicPath = $null
+                    HasKeys = $true
+                    AllowMissing = $false
+                })
+            }
+        }
+
+        Get-ChildItem -Path $sshDir -File -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object {
+            $privatePath = $_.FullName
+            if ($privatePath -match '\.pub$') {
+                return
+            }
+            if ($_.Name -in @('authorized_keys', 'authorized_keys2', 'known_hosts', 'known_hosts.old', 'config')) {
+                return
+            }
+            if (-not $seen.ContainsKey($privatePath)) {
+                $seen[$privatePath] = $true
+                $candidates.Add([pscustomobject]@{
+                    InputPath = Convert-ToUserPath -PathValue $privatePath
+                    PrivatePath = $privatePath
+                    PublicPath = $null
+                    HasKeys = $true
+                    AllowMissing = $false
+                })
+            }
+        }
+    }
+
+    if ($candidates.Count -gt 0) {
+        Write-Note "Detected local SSH keys:"
+        foreach ($candidate in $candidates) {
+            if ($candidate.PublicPath) {
+                Write-Note "  - $((Convert-ToUserPath -PathValue $candidate.PublicPath)) -> $((Convert-ToUserPath -PathValue $candidate.PrivatePath))"
+            }
+            else {
+                Write-Note "  - $((Convert-ToUserPath -PathValue $candidate.PrivatePath))"
+            }
+        }
+        return $candidates[0]
+    }
+
+    return [pscustomobject]@{
+        InputPath = "~\.ssh\id_rsa"
+        PrivatePath = Expand-UserPath -PathValue "~\.ssh\id_rsa"
+        PublicPath = $null
+        HasKeys = $false
+    }
+}
+
+function Get-SshKeyComment {
+    $hostName = [Environment]::MachineName
+    if ([string]::IsNullOrWhiteSpace($hostName)) {
+        $hostName = "local"
+    }
+    return "ssh-tunnel@$hostName"
+}
+
+function New-SshKeySelectionAuto {
+    $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
+    if (-not $sshKeygen) {
+        Fail "ssh-keygen is required to generate a new SSH key pair."
+    }
+
+    while ($true) {
+        $pathInput = Read-Default -Prompt "Enter new SSH private key path" -DefaultValue "~\.ssh\id_ed25519"
+        $privateKeyPath = Expand-UserPath -PathValue $pathInput
+        $publicKeyPath = "$privateKeyPath.pub"
+        if ((Test-Path $privateKeyPath) -or (Test-Path $publicKeyPath)) {
+            Write-Note "Target key path already exists: $(Convert-ToUserPath -PathValue $privateKeyPath)"
+            continue
+        }
+        break
+    }
+
+    $comment = Read-Default -Prompt "Enter SSH key comment" -DefaultValue (Get-SshKeyComment)
+
+    if ($DryRun) {
+        Write-Note "Dry run: would generate a new SSH key pair at $(Convert-ToUserPath -PathValue $privateKeyPath)"
+        return [pscustomobject]@{
+            InputPath = Convert-ToUserPath -PathValue $publicKeyPath
+            PrivatePath = $privateKeyPath
+            PublicPath = $publicKeyPath
+            HasKeys = $true
+            AllowMissing = $true
+        }
+    }
+
+    $parentDir = Split-Path -Path $privateKeyPath -Parent
+    if (-not (Test-Path $parentDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+    }
+
+    & $sshKeygen.Source -t ed25519 -f $privateKeyPath -N "" -C $comment
+    if ($LASTEXITCODE -ne 0) {
+        Fail "ssh-keygen failed to create a new SSH key pair."
+    }
+
+    Write-Note "Generated SSH key pair: $(Convert-ToUserPath -PathValue $privateKeyPath)"
+    return [pscustomobject]@{
+        InputPath = Convert-ToUserPath -PathValue $publicKeyPath
+        PrivatePath = $privateKeyPath
+        PublicPath = $publicKeyPath
+        HasKeys = $true
+        AllowMissing = $false
+    }
+}
+
+function New-SshKeySelectionInteractive {
+    $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
+    if (-not $sshKeygen) {
+        Fail "ssh-keygen is required to generate a new SSH key pair."
+    }
+
+    if ($DryRun) {
+        Write-Note "Dry run: would start interactive ssh-keygen and then continue with the generated key."
+        return [pscustomobject]@{
+            InputPath = "~\.ssh\id_ed25519.pub"
+            PrivatePath = Expand-UserPath -PathValue "~\.ssh\id_ed25519"
+            PublicPath = Expand-UserPath -PathValue "~\.ssh\id_ed25519.pub"
+            HasKeys = $true
+            AllowMissing = $true
+        }
+    }
+
+    Write-Note "Starting interactive ssh-keygen. Generate a key pair, then return to continue installation."
+    & $sshKeygen.Source
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Interactive ssh-keygen did not complete successfully."
+    }
+
+    return Get-SshKeySelection
+}
+
+function Ensure-LocalSshKeySelection {
+    $selection = Get-SshKeySelection
+    if ($selection.HasKeys) {
+        return $selection
+    }
+
+    Write-Note "No local SSH key pairs were found in $(Convert-ToUserPath -PathValue (Join-Path $HOME '.ssh'))."
+    while ($true) {
+        $mode = Read-Default -Prompt "Generate a new SSH key pair now? (a=auto, i=interactive, m=manual)" -DefaultValue "a"
+        switch -Regex ($mode) {
+            '^(a|auto)$' {
+                return New-SshKeySelectionAuto
+            }
+            '^(i|interactive)$' {
+                $selection = New-SshKeySelectionInteractive
+                if ($selection.HasKeys) {
+                    return $selection
+                }
+                Write-Note "No usable SSH key pair was found after generation. Please try again."
+            }
+            '^(m|manual)$' {
+                Write-Note "Manual mode selected. Enter an existing SSH key path to continue."
+                return [pscustomobject]@{
+                    InputPath = "~\.ssh\id_ed25519"
+                    PrivatePath = Expand-UserPath -PathValue "~\.ssh\id_ed25519"
+                    PublicPath = $null
+                    HasKeys = $false
+                    AllowMissing = $false
+                }
+            }
+            default {
+                Write-Note "Please answer a, i, or m."
+            }
+        }
+    }
+}
+
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -135,6 +379,129 @@ function Test-ExistingInstall {
     return $false
 }
 
+function Resolve-SshPublicKeyPath {
+    param(
+        [string]$PrivatePath,
+        [string]$PublicPath
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($PublicPath) -and (Test-Path $PublicPath -PathType Leaf)) {
+        return $PublicPath
+    }
+
+    $derivedPublicPath = "$PrivatePath.pub"
+    if (Test-Path $derivedPublicPath -PathType Leaf) {
+        return $derivedPublicPath
+    }
+
+    $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
+    if (-not $sshKeygen) {
+        return $null
+    }
+
+    $generatedPublicPath = Join-Path $env:TEMP ("ssh-tunnel-authorized-key-" + [guid]::NewGuid().ToString('N') + ".pub")
+    $output = & $sshKeygen.Source -y -f $PrivatePath 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($output | Out-String))) {
+        if (Test-Path $generatedPublicPath) {
+            Remove-Item -Path $generatedPublicPath -Force
+        }
+        return $null
+    }
+
+    Set-Content -Path $generatedPublicPath -Value (($output | Out-String).Trim()) -Encoding ascii
+    return $generatedPublicPath
+}
+
+function Test-PasswordlessSsh {
+    param(
+        [string]$ServerIp,
+        [int]$ServerPort,
+        [string]$LoginUser,
+        [string]$PrivateKeyPath
+    )
+
+    $sshCommand = Get-Command ssh -ErrorAction SilentlyContinue
+    if (-not $sshCommand) {
+        Fail "OpenSSH client (ssh) is required to verify passwordless login."
+    }
+
+    & $sshCommand.Source -p $ServerPort -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -i $PrivateKeyPath "$LoginUser@$ServerIp" exit *> $null
+    return $LASTEXITCODE -eq 0
+}
+
+function Invoke-PasswordlessSshSetup {
+    param(
+        [string]$ServerIp,
+        [int]$ServerPort,
+        [string]$LoginUser,
+        [string]$PrivateKeyPath,
+        [string]$PublicKeyPath
+    )
+
+    $sshCommand = Get-Command ssh -ErrorAction SilentlyContinue
+    if (-not $sshCommand) {
+        Fail "OpenSSH client (ssh) is required to configure passwordless login."
+    }
+
+    $resolvedPublicKeyPath = Resolve-SshPublicKeyPath -PrivatePath $PrivateKeyPath -PublicPath $PublicKeyPath
+    if ([string]::IsNullOrWhiteSpace($resolvedPublicKeyPath) -or -not (Test-Path $resolvedPublicKeyPath -PathType Leaf)) {
+        Fail "Failed to locate or derive a public key for $PrivateKeyPath."
+    }
+
+    if ((Get-Item $resolvedPublicKeyPath).Length -le 0) {
+        Fail "Public key is empty: $resolvedPublicKeyPath"
+    }
+
+    Write-Note "Passwordless SSH is not configured. Attempting automatic setup..."
+    Write-Note "Public key source: $(Convert-ToUserPath -PathValue $resolvedPublicKeyPath)"
+
+    $remoteCommand = 'umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && pub=$(cat) && (grep -qxF "$pub" ~/.ssh/authorized_keys || printf "%s\n" "$pub" >> ~/.ssh/authorized_keys)'
+    try {
+        (Get-Content -Path $resolvedPublicKeyPath -Raw) | & $sshCommand.Source -p $ServerPort -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$LoginUser@$ServerIp" $remoteCommand
+        if ($LASTEXITCODE -ne 0) {
+            Fail "Automatic passwordless SSH setup failed while updating authorized_keys."
+        }
+    }
+    finally {
+        if ($resolvedPublicKeyPath -ne $PublicKeyPath -and $resolvedPublicKeyPath -ne "$PrivateKeyPath.pub" -and (Test-Path $resolvedPublicKeyPath)) {
+            Remove-Item -Path $resolvedPublicKeyPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    return $resolvedPublicKeyPath
+}
+
+function Ensure-PasswordlessSsh {
+    param(
+        [switch]$DryRun,
+        [string]$ServerIp,
+        [int]$ServerPort,
+        [string]$LoginUser,
+        [string]$PrivateKeyPath,
+        [string]$PublicKeyPath
+    )
+
+    if ($DryRun) {
+        Write-Note "Dry run: would verify passwordless SSH for $LoginUser@$ServerIp with $(Convert-ToUserPath -PathValue $PrivateKeyPath) and auto-configure it if missing."
+        return $PublicKeyPath
+    }
+
+    Write-Note "Checking passwordless SSH login..."
+    if (Test-PasswordlessSsh -ServerIp $ServerIp -ServerPort $ServerPort -LoginUser $LoginUser -PrivateKeyPath $PrivateKeyPath) {
+        Write-Note "Passwordless SSH is already configured."
+        return $PublicKeyPath
+    }
+
+    $resolvedPublicKeyPath = Invoke-PasswordlessSshSetup -ServerIp $ServerIp -ServerPort $ServerPort -LoginUser $LoginUser -PrivateKeyPath $PrivateKeyPath -PublicKeyPath $PublicKeyPath
+    Write-Note "Re-checking passwordless SSH login..."
+    if (Test-PasswordlessSsh -ServerIp $ServerIp -ServerPort $ServerPort -LoginUser $LoginUser -PrivateKeyPath $PrivateKeyPath) {
+        Write-Note "Passwordless SSH configured successfully."
+        return $resolvedPublicKeyPath
+    }
+
+    Fail "Automatic passwordless SSH setup failed. Verify the remote account password, SSH password authentication, and ~/.ssh/authorized_keys permissions."
+}
+
 $Release = Get-ReleaseMetadata
 $ReleaseTag = $Release.tag_name
 if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
@@ -178,14 +545,55 @@ while ($true) {
 
 $loginUser = Read-Default -Prompt "Enter SSH login username" -DefaultValue "root"
 
+$keySelection = Ensure-LocalSshKeySelection
+$defaultKeyInput = $keySelection.InputPath
+$sshPublicKeyPath = $keySelection.PublicPath
+$allowMissingSshKey = [bool]$keySelection.AllowMissing
+
 while ($true) {
-    $keyInput = Read-Default -Prompt "Enter SSH private key path" -DefaultValue "~\.ssh\id_rsa"
-    $sshKeyPath = Expand-UserPath -PathValue $keyInput
-    if (Test-Path $sshKeyPath) {
+    $keyInput = Read-Default -Prompt "Enter SSH key path (public or private)" -DefaultValue $defaultKeyInput
+    $resolvedKeyInput = Expand-UserPath -PathValue $keyInput
+    if ($resolvedKeyInput.EndsWith('.pub', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $sshPublicKeyPath = $resolvedKeyInput
+        $sshKeyPath = $resolvedKeyInput.Substring(0, $resolvedKeyInput.Length - 4)
+        if ($DryRun -and $allowMissingSshKey) {
+            break
+        }
+        if (-not (Test-Path $sshPublicKeyPath -PathType Leaf)) {
+            Write-Note "Public key not found: $sshPublicKeyPath"
+            continue
+        }
+        if (-not (Test-Path $sshKeyPath -PathType Leaf)) {
+            Write-Note "Private key not found for public key: $sshKeyPath"
+            continue
+        }
         break
     }
-    Write-Note "Private key not found: $sshKeyPath"
+
+    $sshKeyPath = $resolvedKeyInput
+    if ($DryRun -and $allowMissingSshKey) {
+        $sshPublicKeyPath = "$sshKeyPath.pub"
+        break
+    }
+    if (Test-Path $sshKeyPath -PathType Leaf) {
+        $derivedPublicKeyPath = "$sshKeyPath.pub"
+        if (Test-Path $derivedPublicKeyPath -PathType Leaf) {
+            $sshPublicKeyPath = $derivedPublicKeyPath
+        }
+        else {
+            $sshPublicKeyPath = $null
+        }
+        break
+    }
+    Write-Note "SSH key not found: $sshKeyPath"
 }
+
+if ($sshPublicKeyPath) {
+    Write-Note "Using SSH public key: $(Convert-ToUserPath -PathValue $sshPublicKeyPath)"
+}
+Write-Note "Using SSH private key: $(Convert-ToUserPath -PathValue $sshKeyPath)"
+
+$sshPublicKeyPath = Ensure-PasswordlessSsh -DryRun:$DryRun -ServerIp $serverIp -ServerPort $serverPort -LoginUser $loginUser -PrivateKeyPath $sshKeyPath -PublicKeyPath $sshPublicKeyPath
 
 while ($true) {
     $bindChoice = Read-Default -Prompt "Bind services to localhost only? (y/n)" -DefaultValue "y"
@@ -231,6 +639,9 @@ if ($DryRun) {
     Write-Note "  server.ip=$serverIp"
     Write-Note "  server.ssh.port=$serverPort"
     Write-Note "  login.username=$loginUser"
+    if ($sshPublicKeyPath) {
+        Write-Note "  ssh.public_key_path.derived=$sshPublicKeyPath"
+    }
     Write-Note "  ssh.private_key_path=$sshKeyPath"
     Write-Note "  local.address=$localAddress"
     Write-Note "  http.local.address=$httpLocalAddress"

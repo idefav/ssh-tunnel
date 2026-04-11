@@ -86,8 +86,12 @@
                     <h2>安装器行为</h2>
                     <ul>
                         <li>首次安装时会采集 <code>server.ip</code>、<code>server.ssh.port</code>、<code>login.username</code>、<code>ssh.private_key_path</code>。</li>
+                        <li>会自动扫描当前用户 <code>.ssh</code> 目录中的本地 SSH 私钥和公钥，优先用已存在的公钥作为默认输入，并自动推导对应私钥。</li>
+                        <li>如果本机还没有任何 SSH 密钥，安装器会提示自动生成新的密钥对，或直接进入交互式 <code>ssh-keygen</code> 生成流程，生成后自动继续安装。</li>
+                        <li>密钥输入框支持直接改成其他公钥路径或私钥路径；如果输入公钥路径，安装器会校验对应私钥是否存在。</li>
+                        <li>会先用当前选定的私钥检测目标服务器是否已完成 SSH 免密登录；若未完成，会自动尝试将本地公钥写入远程 <code>~/.ssh/authorized_keys</code>，然后再次校验。</li>
                         <li>会询问服务监听范围，并据此生成 <code>local.address</code>、<code>http.local.address</code>、<code>admin.address</code>。</li>
-                        <li>会先检查私钥文件是否存在，并在默认端口冲突时要求输入新端口。</li>
+                        <li>会先检查选中的 SSH 密钥是否存在，并在默认端口冲突时要求输入新端口。</li>
                         <li>会下载最新 Release 的目标资产与 <code>SHA256SUMS</code>，校验成功后再写入磁盘和注册服务。</li>
                         <li>默认配置为 <code>socks5.enable=true</code>、<code>http.enable=false</code>、<code>admin.enable=true</code>、自动更新开启。</li>
                     </ul>

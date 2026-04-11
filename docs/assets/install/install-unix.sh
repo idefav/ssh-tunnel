@@ -87,6 +87,210 @@ expand_path() {
     esac
 }
 
+display_path() {
+    case "$1" in
+        "$HOME")
+            printf '~\n'
+            ;;
+        "$HOME"/*)
+            printf '~/%s\n' "${1#$HOME/}"
+            ;;
+        *)
+            printf '%s\n' "$1"
+            ;;
+    esac
+}
+
+append_line() {
+    existing_lines=$1
+    new_line=$2
+    if [ -n "$existing_lines" ]; then
+        printf '%s\n%s\n' "$existing_lines" "$new_line"
+        return
+    fi
+    printf '%s\n' "$new_line"
+}
+
+contains_line() {
+    existing_lines=$1
+    target_line=$2
+    if [ -z "$existing_lines" ]; then
+        return 1
+    fi
+    printf '%s\n' "$existing_lines" | grep -Fx -- "$target_line" >/dev/null 2>&1
+}
+
+discover_ssh_key_defaults() {
+    ssh_dir="${HOME}/.ssh"
+    key_name_candidates="id_ed25519 id_ed25519_sk id_ecdsa id_ecdsa_sk id_rsa id_dsa identity"
+
+    SSH_KEY_DEFAULT_INPUT=""
+    SSH_KEY_DISCOVERY_LOG=""
+    ssh_seen_inputs=""
+
+    if [ ! -d "$ssh_dir" ]; then
+        return 1
+    fi
+
+    for key_name in $key_name_candidates; do
+        ssh_public_path="${ssh_dir}/${key_name}.pub"
+        ssh_private_path="${ssh_dir}/${key_name}"
+        if [ -f "$ssh_public_path" ] && [ -f "$ssh_private_path" ] && ! contains_line "$ssh_seen_inputs" "$ssh_public_path"; then
+            ssh_seen_inputs=$(append_line "$ssh_seen_inputs" "$ssh_public_path")
+            SSH_KEY_DISCOVERY_LOG=$(append_line "$SSH_KEY_DISCOVERY_LOG" "  - $(display_path "$ssh_public_path") -> $(display_path "$ssh_private_path")")
+            if [ -z "$SSH_KEY_DEFAULT_INPUT" ]; then
+                SSH_KEY_DEFAULT_INPUT=$(display_path "$ssh_public_path")
+            fi
+        fi
+    done
+
+    for ssh_public_path in "$ssh_dir"/*.pub; do
+        [ -e "$ssh_public_path" ] || break
+        ssh_private_path=${ssh_public_path%".pub"}
+        if [ -f "$ssh_private_path" ] && ! contains_line "$ssh_seen_inputs" "$ssh_public_path"; then
+            ssh_seen_inputs=$(append_line "$ssh_seen_inputs" "$ssh_public_path")
+            SSH_KEY_DISCOVERY_LOG=$(append_line "$SSH_KEY_DISCOVERY_LOG" "  - $(display_path "$ssh_public_path") -> $(display_path "$ssh_private_path")")
+            if [ -z "$SSH_KEY_DEFAULT_INPUT" ]; then
+                SSH_KEY_DEFAULT_INPUT=$(display_path "$ssh_public_path")
+            fi
+        fi
+    done
+
+    if [ -n "$SSH_KEY_DEFAULT_INPUT" ]; then
+        return 0
+    fi
+
+    for key_name in $key_name_candidates; do
+        ssh_private_path="${ssh_dir}/${key_name}"
+        if [ -f "$ssh_private_path" ] && ! contains_line "$ssh_seen_inputs" "$ssh_private_path"; then
+            ssh_seen_inputs=$(append_line "$ssh_seen_inputs" "$ssh_private_path")
+            SSH_KEY_DISCOVERY_LOG=$(append_line "$SSH_KEY_DISCOVERY_LOG" "  - $(display_path "$ssh_private_path")")
+            if [ -z "$SSH_KEY_DEFAULT_INPUT" ]; then
+                SSH_KEY_DEFAULT_INPUT=$(display_path "$ssh_private_path")
+            fi
+        fi
+    done
+
+    for ssh_private_path in "$ssh_dir"/*; do
+        [ -e "$ssh_private_path" ] || break
+        [ -f "$ssh_private_path" ] || continue
+        case $(basename "$ssh_private_path") in
+            *.pub|authorized_keys|authorized_keys2|known_hosts|known_hosts.old|config)
+                continue
+                ;;
+        esac
+        if ! contains_line "$ssh_seen_inputs" "$ssh_private_path"; then
+            ssh_seen_inputs=$(append_line "$ssh_seen_inputs" "$ssh_private_path")
+            SSH_KEY_DISCOVERY_LOG=$(append_line "$SSH_KEY_DISCOVERY_LOG" "  - $(display_path "$ssh_private_path")")
+            if [ -z "$SSH_KEY_DEFAULT_INPUT" ]; then
+                SSH_KEY_DEFAULT_INPUT=$(display_path "$ssh_private_path")
+            fi
+        fi
+    done
+
+    [ -n "$SSH_KEY_DEFAULT_INPUT" ]
+}
+
+refresh_ssh_key_defaults() {
+    SSH_KEY_DEFAULT_INPUT="~/.ssh/id_rsa"
+    SSH_KEY_DISCOVERY_LOG=""
+    if discover_ssh_key_defaults; then
+        log "Detected local SSH keys:"
+        printf '%s\n' "$SSH_KEY_DISCOVERY_LOG"
+        return 0
+    fi
+    return 1
+}
+
+suggest_ssh_key_comment() {
+    host_name=$(hostname 2>/dev/null || uname -n 2>/dev/null || printf 'local')
+    printf 'ssh-tunnel@%s\n' "$host_name"
+}
+
+generate_ssh_key_pair_auto() {
+    if ! command -v ssh-keygen >/dev/null 2>&1; then
+        fail "ssh-keygen is required to generate a new SSH key pair"
+    fi
+
+    while :; do
+        key_path_input=$(prompt_default "Enter new SSH private key path" "~/.ssh/id_ed25519")
+        generated_private_key_path=$(expand_path "$key_path_input")
+        generated_public_key_path="${generated_private_key_path}.pub"
+        if [ -e "$generated_private_key_path" ] || [ -e "$generated_public_key_path" ]; then
+            log "Target key path already exists: $(display_path "$generated_private_key_path")"
+            continue
+        fi
+        break
+    done
+
+    generated_key_comment=$(prompt_default "Enter SSH key comment" "$(suggest_ssh_key_comment)")
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "Dry run: would generate a new SSH key pair at $(display_path "$generated_private_key_path")"
+        ALLOW_MISSING_SSH_KEY=1
+        SSH_KEY_DEFAULT_INPUT=$(display_path "$generated_public_key_path")
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$generated_private_key_path")"
+    ssh-keygen -t ed25519 -f "$generated_private_key_path" -N "" -C "$generated_key_comment"
+    SSH_KEY_DEFAULT_INPUT=$(display_path "$generated_public_key_path")
+    log "Generated SSH key pair: $(display_path "$generated_private_key_path")"
+}
+
+generate_ssh_key_pair_interactive() {
+    if ! command -v ssh-keygen >/dev/null 2>&1; then
+        fail "ssh-keygen is required to generate a new SSH key pair"
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "Dry run: would start interactive ssh-keygen and then continue with the generated key."
+        ALLOW_MISSING_SSH_KEY=1
+        SSH_KEY_DEFAULT_INPUT="~/.ssh/id_ed25519.pub"
+        return 0
+    fi
+
+    log "Starting interactive ssh-keygen. Generate a key pair, then return to continue installation."
+    ssh-keygen
+}
+
+ensure_local_ssh_key_available() {
+    if refresh_ssh_key_defaults; then
+        return 0
+    fi
+
+    log "No local SSH key pairs were found in $(display_path "$HOME/.ssh")."
+    while :; do
+        generation_mode=$(prompt_default "Generate a new SSH key pair now? (a=auto, i=interactive, m=manual)" "a")
+        case "$generation_mode" in
+            a|A|auto|AUTO)
+                generate_ssh_key_pair_auto
+                ;;
+            i|I|interactive|INTERACTIVE)
+                generate_ssh_key_pair_interactive
+                ;;
+            m|M|manual|MANUAL)
+                log "Manual mode selected. Enter an existing SSH key path to continue."
+                ALLOW_MISSING_SSH_KEY=0
+                SSH_KEY_DEFAULT_INPUT="~/.ssh/id_ed25519"
+                return 0
+                ;;
+            *)
+                log "Please answer a, i, or m."
+                continue
+                ;;
+        esac
+
+        if [ "$DRY_RUN" -eq 1 ]; then
+            return 0
+        fi
+        if refresh_ssh_key_defaults; then
+            return 0
+        fi
+        log "No usable SSH key pair was found after generation. Please try again."
+    done
+}
+
 prompt_default() {
     prompt_text=$1
     default_value=$2
@@ -227,6 +431,98 @@ write_root_file() {
     cp "$source" "$destination"
 }
 
+resolve_ssh_public_key() {
+    if [ -n "${SSH_PUBLIC_KEY_PATH:-}" ] && [ -f "$SSH_PUBLIC_KEY_PATH" ]; then
+        return 0
+    fi
+
+    derived_public_key_path="${SSH_KEY_PATH}.pub"
+    if [ -f "$derived_public_key_path" ]; then
+        SSH_PUBLIC_KEY_PATH="$derived_public_key_path"
+        return 0
+    fi
+
+    if ! command -v ssh-keygen >/dev/null 2>&1; then
+        return 1
+    fi
+
+    GENERATED_PUBLIC_KEY_PATH="${TEMP_DIR}/generated-authorized-key.pub"
+    if ssh-keygen -y -f "$SSH_KEY_PATH" >"$GENERATED_PUBLIC_KEY_PATH"; then
+        SSH_PUBLIC_KEY_PATH="$GENERATED_PUBLIC_KEY_PATH"
+        return 0
+    fi
+
+    rm -f "$GENERATED_PUBLIC_KEY_PATH"
+    GENERATED_PUBLIC_KEY_PATH=""
+    return 1
+}
+
+check_passwordless_ssh() {
+    if ! command -v ssh >/dev/null 2>&1; then
+        fail "ssh client is required to verify passwordless login"
+    fi
+
+    ssh -p "$SERVER_PORT" \
+        -o BatchMode=yes \
+        -o ConnectTimeout=10 \
+        -o StrictHostKeyChecking=accept-new \
+        -o LogLevel=ERROR \
+        -i "$SSH_KEY_PATH" \
+        "${LOGIN_USER}@${SERVER_IP}" exit >/dev/null 2>&1
+}
+
+configure_passwordless_ssh() {
+    resolve_ssh_public_key || fail "failed to locate or derive a public key for ${SSH_KEY_PATH}; please provide a matching .pub file or install ssh-keygen"
+
+    if [ ! -s "$SSH_PUBLIC_KEY_PATH" ]; then
+        fail "public key is empty: $SSH_PUBLIC_KEY_PATH"
+    fi
+
+    log "Passwordless SSH is not configured. Attempting automatic setup..."
+    log "Public key source: $(display_path "$SSH_PUBLIC_KEY_PATH")"
+
+    if command -v ssh-copy-id >/dev/null 2>&1; then
+        ssh-copy-id \
+            -i "$SSH_PUBLIC_KEY_PATH" \
+            -p "$SERVER_PORT" \
+            -o StrictHostKeyChecking=accept-new \
+            "${LOGIN_USER}@${SERVER_IP}"
+        return
+    fi
+
+    log "ssh-copy-id not found. Falling back to direct authorized_keys update."
+    cat "$SSH_PUBLIC_KEY_PATH" | ssh \
+        -p "$SERVER_PORT" \
+        -o ConnectTimeout=10 \
+        -o StrictHostKeyChecking=accept-new \
+        -o LogLevel=ERROR \
+        "${LOGIN_USER}@${SERVER_IP}" \
+        'umask 077 && mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && pub=$(cat) && (grep -qxF "$pub" ~/.ssh/authorized_keys || printf "%s\n" "$pub" >> ~/.ssh/authorized_keys)'
+}
+
+ensure_passwordless_ssh() {
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "Dry run: would verify passwordless SSH for ${LOGIN_USER}@${SERVER_IP} with $(display_path "$SSH_KEY_PATH") and auto-configure it if missing."
+        return 0
+    fi
+
+    log "Checking passwordless SSH login..."
+    if check_passwordless_ssh; then
+        log "Passwordless SSH is already configured."
+        return 0
+    fi
+
+    configure_passwordless_ssh
+
+    log "Re-checking passwordless SSH login..."
+    if check_passwordless_ssh; then
+        log "Passwordless SSH configured successfully."
+        return 0
+    fi
+
+    fail "automatic passwordless SSH setup failed; please verify the remote account password, SSH password authentication, and ~/.ssh/authorized_keys permissions"
+}
+
 detect_platform() {
     uname_os=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
     case "$uname_os" in
@@ -311,6 +607,11 @@ if has_existing_installation; then
     exit 0
 fi
 
+TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t ssh-tunnel-install)
+GENERATED_PUBLIC_KEY_PATH=""
+ALLOW_MISSING_SSH_KEY=0
+trap 'rm -rf "${TEMP_DIR}"' EXIT HUP INT TERM
+
 log "Installing SSH Tunnel ${RELEASE_TAG}"
 log "Detected platform: ${OS_NAME}/${ARCH_NAME}"
 log "Service mode: ${SERVICE_KIND}"
@@ -326,14 +627,57 @@ done
 
 LOGIN_USER=$(prompt_default "Enter SSH login username" "root")
 
+SSH_PUBLIC_KEY_PATH=""
+SSH_KEY_DEFAULT_INPUT="~/.ssh/id_rsa"
+ensure_local_ssh_key_available
+
 while :; do
-    SSH_KEY_INPUT=$(prompt_default "Enter SSH private key path" "~/.ssh/id_rsa")
-    SSH_KEY_PATH=$(expand_path "$SSH_KEY_INPUT")
-    if [ -f "$SSH_KEY_PATH" ]; then
-        break
-    fi
-    log "Private key not found: $SSH_KEY_PATH"
+    SSH_KEY_INPUT=$(prompt_default "Enter SSH key path (public or private)" "$SSH_KEY_DEFAULT_INPUT")
+    SSH_KEY_RESOLVED=$(expand_path "$SSH_KEY_INPUT")
+    case "$SSH_KEY_RESOLVED" in
+        *.pub)
+            SSH_PUBLIC_KEY_PATH="$SSH_KEY_RESOLVED"
+            SSH_KEY_PATH=${SSH_KEY_RESOLVED%".pub"}
+            if [ "$ALLOW_MISSING_SSH_KEY" -eq 1 ] && [ "$DRY_RUN" -eq 1 ]; then
+                break
+            fi
+            if [ ! -f "$SSH_PUBLIC_KEY_PATH" ]; then
+                log "Public key not found: $SSH_PUBLIC_KEY_PATH"
+                continue
+            fi
+            if [ ! -f "$SSH_KEY_PATH" ]; then
+                log "Private key not found for public key: $SSH_KEY_PATH"
+                continue
+            fi
+            break
+            ;;
+        *)
+            SSH_KEY_PATH="$SSH_KEY_RESOLVED"
+            if [ "$ALLOW_MISSING_SSH_KEY" -eq 1 ] && [ "$DRY_RUN" -eq 1 ]; then
+                SSH_PUBLIC_KEY_PATH="${SSH_KEY_PATH}.pub"
+                break
+            fi
+            if [ -f "$SSH_KEY_PATH" ]; then
+                if [ -f "${SSH_KEY_PATH}.pub" ]; then
+                    SSH_PUBLIC_KEY_PATH="${SSH_KEY_PATH}.pub"
+                else
+                    SSH_PUBLIC_KEY_PATH=""
+                fi
+                break
+            fi
+            log "SSH key not found: $SSH_KEY_PATH"
+            ;;
+    esac
 done
+
+if [ -n "$SSH_PUBLIC_KEY_PATH" ]; then
+    log "Using SSH public key: $(display_path "$SSH_PUBLIC_KEY_PATH")"
+    log "Using SSH private key: $(display_path "$SSH_KEY_PATH")"
+else
+    log "Using SSH private key: $(display_path "$SSH_KEY_PATH")"
+fi
+
+ensure_passwordless_ssh
 
 while :; do
     BIND_CHOICE=$(prompt_default "Bind services to localhost only? (y/n)" "y")
@@ -379,9 +723,6 @@ fi
 DOMAIN_FILE="${STATE_DIR}/domain.txt"
 ADMIN_URL="http://127.0.0.1:${ADMIN_PORT}/view/version"
 
-TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t ssh-tunnel-install)
-trap 'rm -rf "${TEMP_DIR}"' EXIT HUP INT TERM
-
 BINARY_TMP="${TEMP_DIR}/${ASSET_NAME}"
 CHECKSUM_TMP="${TEMP_DIR}/SHA256SUMS"
 CONFIG_TMP="${TEMP_DIR}/config.properties"
@@ -408,6 +749,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
     log "  server.ip=${SERVER_IP}"
     log "  server.ssh.port=${SERVER_PORT}"
     log "  login.username=${LOGIN_USER}"
+    if [ -n "$SSH_PUBLIC_KEY_PATH" ]; then
+        log "  ssh.public_key_path.derived=${SSH_PUBLIC_KEY_PATH}"
+    fi
     log "  ssh.private_key_path=${SSH_KEY_PATH}"
     log "  local.address=${SOCKS_ADDR}"
     log "  http.local.address=${HTTP_ADDR}"

@@ -421,6 +421,23 @@
         let currentSwitchId = '';
         let profileModalMode = 'create';
         let profileModalOriginalId = '';
+        const currentConfigProfileDefaults = {
+            serverIp: {{index .Config "ServerIp"}},
+            serverSshPort: {{index .Config "ServerSshPort"}},
+            loginUser: {{index .Config "LoginUser"}},
+            sshPrivateKeyPath: {{index .Config "SshPrivateKeyPath"}},
+            localAddress: {{index .Config "LocalAddress"}},
+            httpLocalAddress: {{index .Config "HttpLocalAddress"}},
+            retryIntervalSec: {{index .Config "RetryIntervalSec"}},
+            httpBasicUserName: {{index .Config "HttpBasicUserName"}},
+            httpBasicPassword: {{index .Config "HttpBasicPassword"}},
+            httpDomainFilterFilePath: {{index .Config "HttpDomainFilterFilePath"}},
+            enableSocks5: {{if index .Config "EnableSocks5"}}true{{else}}false{{end}},
+            enableHttp: {{if index .Config "EnableHttp"}}true{{else}}false{{end}},
+            enableHttpOverSSH: {{if index .Config "EnableHttpOverSSH"}}true{{else}}false{{end}},
+            httpBasicAuthEnable: {{if index .Config "HttpBasicAuthEnable"}}true{{else}}false{{end}},
+            enableHttpDomainFilter: {{if index .Config "EnableHttpDomainFilter"}}true{{else}}false{{end}}
+        };
 
         document.addEventListener('DOMContentLoaded', function() {
             checkRunningMode();
@@ -616,10 +633,32 @@
             modal.show();
         }
 
+        function applyProfileFormValues(profile, options = {}) {
+            const formProfile = profile || {};
+            const resetId = !!options.resetId;
+
+            document.getElementById('profileId').value = resetId ? '' : (formProfile.profileId || '');
+            document.getElementById('profileServerIp').value = formProfile.serverIp || '';
+            document.getElementById('profileServerSshPort').value = formProfile.serverSshPort || 22;
+            document.getElementById('profileLoginUser').value = formProfile.loginUser || '';
+            document.getElementById('profilePrivateKeyPath').value = formProfile.sshPrivateKeyPath || '';
+            document.getElementById('profileLocalAddress').value = formProfile.localAddress || '';
+            document.getElementById('profileHttpLocalAddress').value = formProfile.httpLocalAddress || '';
+            document.getElementById('profileRetryIntervalSec').value = formProfile.retryIntervalSec || 5;
+            document.getElementById('profileHttpBasicUserName').value = formProfile.httpBasicUserName || '';
+            document.getElementById('profileHttpBasicPassword').value = formProfile.httpBasicPassword || '';
+            document.getElementById('profileHttpDomainFilterFilePath').value = formProfile.httpDomainFilterFilePath || '';
+            document.getElementById('profileEnableSocks5').checked = !!formProfile.enableSocks5;
+            document.getElementById('profileEnableHttp').checked = !!formProfile.enableHttp;
+            document.getElementById('profileEnableHttpOverSSH').checked = !!formProfile.enableHttpOverSSH;
+            document.getElementById('profileHttpBasicAuthEnable').checked = !!formProfile.httpBasicAuthEnable;
+            document.getElementById('profileEnableHttpDomainFilter').checked = !!formProfile.enableHttpDomainFilter;
+        }
+
         function openCreateProfileModal() {
             profileModalMode = 'create';
             profileModalOriginalId = '';
-            clearProfileForm();
+            applyProfileFormValues(currentConfigProfileDefaults, { resetId: true });
             openProfileModal('新增 Profile');
         }
 
@@ -628,22 +667,7 @@
             if (!profile) return;
             profileModalMode = 'edit';
             profileModalOriginalId = profileId;
-            document.getElementById('profileId').value = profileId;
-            document.getElementById('profileServerIp').value = profile.serverIp || '';
-            document.getElementById('profileServerSshPort').value = profile.serverSshPort || 22;
-            document.getElementById('profileLoginUser').value = profile.loginUser || '';
-            document.getElementById('profilePrivateKeyPath').value = profile.sshPrivateKeyPath || '';
-            document.getElementById('profileLocalAddress').value = profile.localAddress || '';
-            document.getElementById('profileHttpLocalAddress').value = profile.httpLocalAddress || '';
-            document.getElementById('profileRetryIntervalSec').value = profile.retryIntervalSec || 5;
-            document.getElementById('profileHttpBasicUserName').value = profile.httpBasicUserName || '';
-            document.getElementById('profileHttpBasicPassword').value = profile.httpBasicPassword || '';
-            document.getElementById('profileHttpDomainFilterFilePath').value = profile.httpDomainFilterFilePath || '';
-            document.getElementById('profileEnableSocks5').checked = !!profile.enableSocks5;
-            document.getElementById('profileEnableHttp').checked = !!profile.enableHttp;
-            document.getElementById('profileEnableHttpOverSSH').checked = !!profile.enableHttpOverSSH;
-            document.getElementById('profileHttpBasicAuthEnable').checked = !!profile.httpBasicAuthEnable;
-            document.getElementById('profileEnableHttpDomainFilter').checked = !!profile.enableHttpDomainFilter;
+            applyProfileFormValues({ profileId, ...profile });
             openProfileModal(`编辑 Profile: ${profileId}`);
         }
 
@@ -653,22 +677,7 @@
             profileModalMode = 'copy';
             profileModalOriginalId = profileId;
 
-            document.getElementById('profileId').value = '';
-            document.getElementById('profileServerIp').value = profile.serverIp || '';
-            document.getElementById('profileServerSshPort').value = profile.serverSshPort || 22;
-            document.getElementById('profileLoginUser').value = profile.loginUser || '';
-            document.getElementById('profilePrivateKeyPath').value = profile.sshPrivateKeyPath || '';
-            document.getElementById('profileLocalAddress').value = profile.localAddress || '';
-            document.getElementById('profileHttpLocalAddress').value = profile.httpLocalAddress || '';
-            document.getElementById('profileRetryIntervalSec').value = profile.retryIntervalSec || 5;
-            document.getElementById('profileHttpBasicUserName').value = profile.httpBasicUserName || '';
-            document.getElementById('profileHttpBasicPassword').value = profile.httpBasicPassword || '';
-            document.getElementById('profileHttpDomainFilterFilePath').value = profile.httpDomainFilterFilePath || '';
-            document.getElementById('profileEnableSocks5').checked = !!profile.enableSocks5;
-            document.getElementById('profileEnableHttp').checked = !!profile.enableHttp;
-            document.getElementById('profileEnableHttpOverSSH').checked = !!profile.enableHttpOverSSH;
-            document.getElementById('profileHttpBasicAuthEnable').checked = !!profile.httpBasicAuthEnable;
-            document.getElementById('profileEnableHttpDomainFilter').checked = !!profile.enableHttpDomainFilter;
+            applyProfileFormValues(profile, { resetId: true });
 
             openProfileModal(`复制 Profile: ${profileId}`);
         }
@@ -819,9 +828,7 @@
         function clearProfileForm() {
             document.getElementById('profileForm').reset();
             document.getElementById('profileId').value = '';
-            document.getElementById('profileServerSshPort').value = 22;
-            document.getElementById('profileRetryIntervalSec').value = 5;
-            document.getElementById('profileEnableSocks5').checked = true;
+            applyProfileFormValues({}, { resetId: true });
             profileModalMode = 'create';
             profileModalOriginalId = '';
         }

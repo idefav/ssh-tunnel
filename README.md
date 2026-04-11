@@ -17,7 +17,7 @@ Open ssh tunnel, start Sock5 port locally by default 1081
 ./ssh-tunnel -s xx.xx.xx.xx
 ```
 
-注意: 需要配置本地服务器到目标服务器的SSH免密登录, 免密登录请参考: [SSH免密登录](https://idefav.github.io/ssh-tunnel/ssh-key-setup.html)
+注意: 首次安装脚本会先检查当前密钥是否已完成 SSH 免密登录，未配置时会自动尝试把本地公钥写入远程服务器；如需手动处理，可参考: [SSH免密登录](https://idefav.github.io/ssh-tunnel/ssh-key-setup.html)
 
 ## one-click install
 
@@ -38,6 +38,8 @@ irm https://idefav.github.io/ssh-tunnel/install | iex
 ```text
 http://127.0.0.1:1083/view/version
 ```
+
+首次安装时，安装器会自动扫描本机 `.ssh` 目录中的 SSH 密钥对，优先选择已存在的本地公钥作为默认输入，并自动推导对应私钥；如果本机还没有任何 SSH 密钥，脚本会提示自动生成或进入交互式 `ssh-keygen` 生成。随后在写入服务配置前，脚本会先检查该密钥是否已经完成 SSH 免密登录，若未配置则自动尝试完成配置。你也可以手动改成其他公钥或私钥路径。
 
 ## commands
 
