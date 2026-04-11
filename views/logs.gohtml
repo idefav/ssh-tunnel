@@ -7,10 +7,14 @@
                 <input class="form-check-input" type="checkbox" id="onlyNewLogs">
                 <label class="form-check-label" for="onlyNewLogs">仅显示新日志</label>
             </div>
+            <div class="form-text">
+                默认先加载最近 1000 行历史，再继续实时追踪。勾选后仅追踪新日志。
+            </div>
         </div>
 
         <div class="d-flex justify-content-between mb-3">
-            <button id="connectBtn" class="btn btn-primary">连接</button>            <div>
+            <button id="connectBtn" class="btn btn-primary">连接</button>
+            <div>
                 <button id="clearBtn" class="btn btn-secondary me-2">清除显示</button>
                 <button id="deleteLogsBtn" class="btn btn-warning">清理日志内容</button>
             </div>
@@ -25,8 +29,15 @@
                 <pre id="logOutput" class="m-0 p-3" style="height: 500px; overflow-y: auto; background-color: #f8f9fa; font-size: 0.85rem;"></pre>
             </div>
         </div>
-    </div>    <script>
+    </div>
+    <script>
+        const MAX_RENDERED_LINES = 2000;
+        const HISTORY_TAIL_LINES = 1000;
+        const SCROLL_BOTTOM_THRESHOLD = 24;
+
         let eventSource = null;
+        let pendingLines = [];
+        let flushScheduled = false;
         const logOutput = document.getElementById('logOutput');
         const connectBtn = document.getElementById('connectBtn');
         const clearBtn = document.getElementById('clearBtn');
@@ -34,23 +45,56 @@
         const onlyNewLogs = document.getElementById('onlyNewLogs');
         const connectionStatus = document.getElementById('connectionStatus');
 
-        // 自动滚动到底部
-        function scrollToBottom() {
-            logOutput.scrollTop = logOutput.scrollHeight;
+        function isNearBottom() {
+            return logOutput.scrollHeight - logOutput.scrollTop - logOutput.clientHeight <= SCROLL_BOTTOM_THRESHOLD;
         }
 
-        // 添加日志行
-        function addLogLine(text) {
-            const line = document.createElement('div');
-            line.textContent = text;
-            logOutput.appendChild(line);
-            scrollToBottom();
+        function trimRenderedLines() {
+            while (logOutput.childElementCount > MAX_RENDERED_LINES) {
+                logOutput.removeChild(logOutput.firstElementChild);
+            }
         }
 
-        // 清除显示的日志
+        function flushPendingLines() {
+            flushScheduled = false;
+            if (pendingLines.length === 0) {
+                return;
+            }
+
+            const shouldStickToBottom = isNearBottom();
+            const fragment = document.createDocumentFragment();
+
+            for (const text of pendingLines) {
+                const line = document.createElement('div');
+                line.textContent = text;
+                fragment.appendChild(line);
+            }
+
+            pendingLines = [];
+            logOutput.appendChild(fragment);
+            trimRenderedLines();
+
+            if (shouldStickToBottom) {
+                logOutput.scrollTop = logOutput.scrollHeight;
+            }
+        }
+
+        function queueLogLine(text) {
+            pendingLines.push(text);
+            if (flushScheduled) {
+                return;
+            }
+
+            flushScheduled = true;
+            requestAnimationFrame(flushPendingLines);
+        }
+
         clearBtn.addEventListener('click', () => {
+            pendingLines = [];
+            flushScheduled = false;
             logOutput.innerHTML = '';
-        });        // 清理日志文件内容
+        });
+
         if (deleteLogsBtn) {
             deleteLogsBtn.addEventListener('click', async () => {
                 if (!confirm('确定要清理日志文件内容吗？此操作会清空日志文件，但不会删除文件本身！')) {
@@ -71,8 +115,10 @@
                     if (response.ok) {
                         const result = await response.json();
                         alert(result.message || '日志文件内容已成功清理');
+                        pendingLines = [];
+                        flushScheduled = false;
                         logOutput.innerHTML = '';
-                        addLogLine(`[${result.timestamp}] 日志文件内容已清理`);
+                        queueLogLine(`[${result.timestamp}] 日志文件内容已清理`);
                     } else {
                         const errorText = await response.text();
                         alert('清理日志文件内容失败: ' + errorText);
@@ -88,10 +134,16 @@
             console.error('找不到deleteLogsBtn元素');
         }
 
-        // 连接或断开SSE
+        function buildLogsUrl() {
+            if (onlyNewLogs.checked) {
+                return '/admin/logs?only_new=true';
+            }
+
+            return `/admin/logs?tail_lines=${HISTORY_TAIL_LINES}`;
+        }
+
         connectBtn.addEventListener('click', () => {
             if (eventSource) {
-                // 断开连接
                 eventSource.close();
                 eventSource = null;
                 connectBtn.textContent = '连接';
@@ -100,11 +152,7 @@
                 return;
             }
 
-            // 建立连接
-            const onlyNew = onlyNewLogs.checked;
-            const url = `/admin/logs${onlyNew ? '?only_new=true' : ''}`;
-
-            eventSource = new EventSource(url);
+            eventSource = new EventSource(buildLogsUrl());
 
             eventSource.onopen = function() {
                 connectionStatus.textContent = '已连接';
@@ -113,18 +161,19 @@
             };
 
             eventSource.onmessage = function(event) {
-                addLogLine(event.data);
+                queueLogLine(event.data);
             };
 
-            eventSource.onerror = function(err) {
+            eventSource.onerror = function() {
                 connectionStatus.textContent = '连接错误';
                 connectionStatus.className = 'badge bg-danger';
                 eventSource.close();
                 eventSource = null;
                 connectBtn.textContent = '连接';
-                addLogLine('[系统] SSE连接错误，请重新连接');
+                queueLogLine('[系统] SSE连接错误，请重新连接');
             };
-        });        // 页面加载时自动连接
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
             connectBtn.click();
         });

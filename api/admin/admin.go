@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/constants"
@@ -19,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -50,6 +53,8 @@ type profileSwitchStatus struct {
 }
 
 const (
+	defaultLogTailLines   = 1000
+	maxLogTailLines       = 5000
 	SwitchStatusIdle      = "IDLE"
 	SwitchStatusSwitching = "SWITCHING"
 	SwitchStatusCompleted = "COMPLETED"
@@ -84,35 +89,123 @@ func updateProfileSwitchStatusIfMatch(switchID string, updater func(*profileSwit
 	updater(&profileSwitchState.latest)
 }
 
+func parseTailLines(value string) int {
+	if value == "" {
+		return defaultLogTailLines
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return defaultLogTailLines
+	}
+	if parsed > maxLogTailLines {
+		return maxLogTailLines
+	}
+	return parsed
+}
+
+func splitLogLines(content []byte) []string {
+	if len(content) == 0 {
+		return nil
+	}
+
+	normalized := bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	rawLines := bytes.Split(normalized, []byte("\n"))
+	lines := make([]string, 0, len(rawLines))
+	for _, rawLine := range rawLines {
+		line := strings.TrimRight(string(rawLine), "\r\n")
+		if line == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func readLastLogLines(file *os.File, maxLines int) ([]string, error) {
+	if maxLines <= 0 {
+		return nil, nil
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() == 0 {
+		return nil, nil
+	}
+
+	const chunkSize int64 = 4096
+	var (
+		buffer       []byte
+		offset       = info.Size()
+		newlineCount int
+	)
+
+	for offset > 0 && newlineCount <= maxLines {
+		readSize := chunkSize
+		if offset < readSize {
+			readSize = offset
+		}
+		offset -= readSize
+
+		chunk := make([]byte, readSize)
+		n, readErr := file.ReadAt(chunk, offset)
+		if readErr != nil && readErr != io.EOF {
+			return nil, readErr
+		}
+
+		chunk = chunk[:n]
+		buffer = append(chunk, buffer...)
+		newlineCount += bytes.Count(chunk, []byte{'\n'})
+	}
+
+	lines := splitLogLines(buffer)
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	return lines, nil
+}
+
 // 获取配置键映射（前端配置键 -> 实际配置文件键）
 func getConfigKeyMapping() map[string]string {
 	appConfig := tunnel.DefaultSshTunnel.AppConfig()
 	return map[string]string{
-		"ServerIp":                   appConfig.ServerIp.Key,
-		"ServerSshPort":              appConfig.ServerSshPort.Key,
-		"LoginUser":                  appConfig.LoginUser.Key,
-		"SshPrivateKeyPath":          appConfig.SshPrivateKeyPath.Key,
-		"LocalAddress":               appConfig.LocalAddress.Key,
-		"HttpLocalAddress":           appConfig.HttpLocalAddress.Key,
-		"EnableHttp":                 appConfig.EnableHttp.Key,
-		"EnableSocks5":               appConfig.EnableSocks5.Key,
-		"EnableHttpOverSSH":          appConfig.EnableHttpOverSSH.Key,
-		"HttpBasicAuthEnable":        appConfig.HttpBasicAuthEnable.Key,
-		"HttpBasicUserName":          appConfig.HttpBasicUserName.Key,
-		"HttpBasicPassword":          appConfig.HttpBasicPassword.Key,
-		"EnableHttpDomainFilter":     appConfig.EnableHttpDomainFilter.Key,
-		"HttpDomainFilterFilePath":   appConfig.HttpDomainFilterFilePath.Key,
-		"EnableAdmin":                appConfig.EnableAdmin.Key,
-		"AdminAddress":               appConfig.AdminAddress.Key,
-		"RetryIntervalSec":           appConfig.RetryIntervalSec.Key,
-		"SSHDialTimeoutSec":          appConfig.SSHDialTimeoutSec.Key,
-		"SSHDestDialTimeoutSec":      appConfig.SSHDestDialTimeoutSec.Key,
-		"SSHKeepAliveIntervalSec":    appConfig.SSHKeepAliveIntervalSec.Key,
-		"SSHKeepAliveCountMax":       appConfig.SSHKeepAliveCountMax.Key,
-		"SSHReconnectMaxRetries":     appConfig.SSHReconnectMaxRetries.Key,
-		"SSHReconnectMaxIntervalSec": appConfig.SSHReconnectMaxIntervalSec.Key,
-		"LogFilePath":                appConfig.LogFilePath.Key,
-		"HomeDir":                    appConfig.HomeDir.Key,
+		"ServerIp":                     appConfig.ServerIp.Key,
+		"ServerSshPort":                appConfig.ServerSshPort.Key,
+		"LoginUser":                    appConfig.LoginUser.Key,
+		"SshPrivateKeyPath":            appConfig.SshPrivateKeyPath.Key,
+		"LocalAddress":                 appConfig.LocalAddress.Key,
+		"HttpLocalAddress":             appConfig.HttpLocalAddress.Key,
+		"EnableHttp":                   appConfig.EnableHttp.Key,
+		"EnableSocks5":                 appConfig.EnableSocks5.Key,
+		"EnableHttpOverSSH":            appConfig.EnableHttpOverSSH.Key,
+		"HttpBasicAuthEnable":          appConfig.HttpBasicAuthEnable.Key,
+		"HttpBasicUserName":            appConfig.HttpBasicUserName.Key,
+		"HttpBasicPassword":            appConfig.HttpBasicPassword.Key,
+		"EnableHttpDomainFilter":       appConfig.EnableHttpDomainFilter.Key,
+		"HttpDomainFilterFilePath":     appConfig.HttpDomainFilterFilePath.Key,
+		"EnableAdmin":                  appConfig.EnableAdmin.Key,
+		"AdminAddress":                 appConfig.AdminAddress.Key,
+		"RetryIntervalSec":             appConfig.RetryIntervalSec.Key,
+		"SSHDialTimeoutSec":            appConfig.SSHDialTimeoutSec.Key,
+		"SSHDestDialTimeoutSec":        appConfig.SSHDestDialTimeoutSec.Key,
+		"SSHKeepAliveIntervalSec":      appConfig.SSHKeepAliveIntervalSec.Key,
+		"SSHKeepAliveCountMax":         appConfig.SSHKeepAliveCountMax.Key,
+		"SSHReconnectMaxRetries":       appConfig.SSHReconnectMaxRetries.Key,
+		"SSHReconnectMaxIntervalSec":   appConfig.SSHReconnectMaxIntervalSec.Key,
+		"SSHPoolSize":                  appConfig.SSHPoolSize.Key,
+		"SSHPoolReplenishIntervalSec":  appConfig.SSHPoolReplenishIntervalSec.Key,
+		"SSHPoolBalanceStrategy":       appConfig.SSHPoolBalanceStrategy.Key,
+		"SSHProbeURL":                  appConfig.SSHProbeURL.Key,
+		"SSHProbeURLs":                 appConfig.SSHProbeURLs.Key,
+		"SSHProbeTimeoutSec":           appConfig.SSHProbeTimeoutSec.Key,
+		"SSHProbeFailureThreshold":     appConfig.SSHProbeFailureThreshold.Key,
+		"SSHSuspectCooldownSec":        appConfig.SSHSuspectCooldownSec.Key,
+		"ProxyRetryMaxAttempts":        appConfig.ProxyRetryMaxAttempts.Key,
+		"ProxyRetryInitialBufferBytes": appConfig.ProxyRetryInitialBufferBytes.Key,
+		"LogFilePath":                  appConfig.LogFilePath.Key,
+		"HomeDir":                      appConfig.HomeDir.Key,
 	}
 }
 
@@ -135,7 +228,7 @@ func monitorProfileSwitchResult(switchID string, timeout time.Duration, tun *tun
 	deadline := time.Now().Add(timeout)
 
 	for {
-		if tun.PeekSSHClient() != nil {
+		if tun.HasHealthySSHMemberAfter(startedAt) {
 			updateProfileSwitchStatusIfMatch(switchID, func(status *profileSwitchStatus) {
 				status.Status = SwitchStatusCompleted
 				status.Message = "SSH重连成功"
@@ -160,14 +253,17 @@ func monitorProfileSwitchResult(switchID string, timeout time.Duration, tun *tun
 }
 
 func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
+	wg.Add(1)
 	safe.GO(func() {
+		defer wg.Done()
+
 		var tunnel = &tunnel.DefaultSshTunnel
 
 		if !config.EnableAdmin.GetValue() || config.AdminAddress.GetValue() == "" {
 			return
 		}
-		connCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		connCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
 		adminRouter := mux.NewRouter()
 
 		adminRouter.HandleFunc("/admin/logs", func(writer http.ResponseWriter, request *http.Request) {
@@ -200,6 +296,10 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 			// 获取客户端请求参数，是否只要最新的日志
 			onlyNew := request.URL.Query().Get("only_new") == "true"
+			tailLines := 0
+			if !onlyNew {
+				tailLines = parseTailLines(request.URL.Query().Get("tail_lines"))
+			}
 
 			// 连接确认消息
 			fmt.Fprintf(writer, "data: 已连接到日志流\n\n")
@@ -225,32 +325,30 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				file.Seek(fileInfo.Size(), 0)
 			}
 
-			// 创建一个buffered reader
-			reader := bufio.NewReader(file)
-
 			// 检测客户端连接是否断开
 			ctx := request.Context()
 
-			// 先读取现有内容
-			if !onlyNew {
-				for {
-					line, err := reader.ReadString('\n')
-					if err != nil {
-						if err != io.EOF {
-							fmt.Fprintf(writer, "data: 读取日志文件错误: %s\n\n", err.Error())
-							flusher.Flush()
-						}
-						break
-					}
-
-					// 去除换行符
-					line = strings.TrimRight(line, "\r\n")
-					if line != "" {
-						fmt.Fprintf(writer, "data: %s\n\n", line)
-						flusher.Flush()
-					}
+			// 先读取最近的历史日志，再继续追踪新增日志
+			if tailLines > 0 {
+				lines, err := readLastLogLines(file, tailLines)
+				if err != nil {
+					fmt.Fprintf(writer, "data: 读取日志文件错误: %s\n\n", err.Error())
+					flusher.Flush()
+					return
+				}
+				for _, line := range lines {
+					fmt.Fprintf(writer, "data: %s\n\n", line)
+				}
+				flusher.Flush()
+				if _, err := file.Seek(0, io.SeekEnd); err != nil {
+					fmt.Fprintf(writer, "data: 无法定位到日志文件末尾: %s\n\n", err.Error())
+					flusher.Flush()
+					return
 				}
 			}
+
+			// 创建一个buffered reader
+			reader := bufio.NewReader(file)
 
 			// 持续监控日志文件变化
 			ticker := time.NewTicker(1 * time.Second)
@@ -400,6 +498,9 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				return
 			}
 
+			// Reload profile-based domain routing
+			tunnel.ReloadProfileRouting(tunnel.AppConfig())
+
 			response := map[string]interface{}{
 				"success": true,
 				"data":    store,
@@ -472,6 +573,9 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			safe.GO(func() {
 				monitorProfileSwitchResult(switchID, 30*time.Second, tunnel)
 			})
+
+			// Reload profile routing after switch
+			tunnel.ReloadProfileRouting(tunnel.AppConfig())
 
 			response := map[string]interface{}{
 				"success":  true,
@@ -546,6 +650,9 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				respondWithError(writer, fmt.Sprintf("删除profile失败: %v", err), http.StatusBadRequest)
 				return
 			}
+
+			// Reload profile-based domain routing (stops deleted profile's tunnel)
+			tunnel.ReloadProfileRouting(tunnel.AppConfig())
 
 			response := map[string]interface{}{
 				"success": true,
@@ -680,13 +787,79 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				"connectionCount":              sshStats.ConnectionCount,
 				"reconnectCount":               sshStats.ReconnectCount,
 				"consecutiveReconnectFailures": sshStats.ConsecutiveReconnectFailures,
+				"sshHealthy":                   sshStats.SSHHealthy,
+				"sshClientGeneration":          sshStats.SSHClientGeneration,
+				"sshDialTimeoutStreak":         sshStats.SSHDialTimeoutStreak,
+				"lastSSHFailureClass":          sshStats.LastSSHFailureClass,
+				"poolSize":                     sshStats.PoolSize,
+				"healthyCount":                 sshStats.HealthyCount,
+				"suspectCount":                 sshStats.SuspectCount,
+				"probingCount":                 sshStats.ProbingCount,
+				"reconnectingCount":            sshStats.ReconnectingCount,
+				"evictedCount":                 sshStats.EvictedCount,
+				"poolMembers":                  sshStats.PoolMembers,
 				"lastReconnectError":           sshStats.LastReconnectError,
 				"lastReconnectAt":              formatOptionalTime(sshStats.LastReconnectAt),
 				"lastReconnectFailureAt":       formatOptionalTime(sshStats.LastReconnectFailureAt),
 				"acceptErrors":                 listenerStats.AcceptErrors,
 				"listenerRestarts":             listenerStats.ListenerRestarts,
 			}
+
+			// Include active profile ID and profile tunnel pool members
+			if store, storeErr := cfg.ListProfiles(tunnel.AppConfig()); storeErr == nil {
+				activeID := store.ActiveProfileID
+				if activeID == "" {
+					activeID = cfg.DEFAULT_PROFILE_ID
+				}
+				response["activeProfileId"] = activeID
+			}
+			if ptm := tunnel.GetProfileTunnelMgr(); ptm != nil {
+				profileMembers := ptm.SnapshotAllPools()
+				if len(profileMembers) > 0 {
+					response["profilePoolMembers"] = profileMembers
+				}
+				response["profileTunnelIds"] = ptm.ActiveProfileIDs()
+			}
+
 			mbytes, _ := json.Marshal(response)
+			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/probe-member", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			memberIDStr := request.URL.Query().Get("id")
+			if memberIDStr == "" {
+				respondWithError(writer, "缺少参数id", http.StatusBadRequest)
+				return
+			}
+			memberID, err := strconv.ParseUint(memberIDStr, 10, 64)
+			if err != nil {
+				respondWithError(writer, "参数id无效", http.StatusBadRequest)
+				return
+			}
+			ctx := context.Background()
+			// Try main tunnel first
+			found, probeErr := tunnel.ProbeMemberByID(ctx, memberID)
+			// If not found in main tunnel, try profile tunnels
+			if !found {
+				if ptm := tunnel.GetProfileTunnelMgr(); ptm != nil {
+					found, probeErr = ptm.ProbeMemberByID(ctx, memberID)
+				}
+			}
+			if !found {
+				respondWithError(writer, fmt.Sprintf("未找到成员#%d", memberID), http.StatusNotFound)
+				return
+			}
+			resp := map[string]interface{}{"success": true, "memberId": memberID}
+			if probeErr != nil {
+				resp["success"] = false
+				resp["error"] = probeErr.Error()
+			}
+			mbytes, _ := json.Marshal(resp)
 			writer.Write(mbytes)
 		})
 
@@ -748,6 +921,10 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				"connectionCount":              sshStats.ConnectionCount,
 				"reconnectCount":               sshStats.ReconnectCount,
 				"consecutiveReconnectFailures": sshStats.ConsecutiveReconnectFailures,
+				"sshHealthy":                   sshStats.SSHHealthy,
+				"sshClientGeneration":          sshStats.SSHClientGeneration,
+				"sshDialTimeoutStreak":         sshStats.SSHDialTimeoutStreak,
+				"lastSSHFailureClass":          sshStats.LastSSHFailureClass,
 				"lastReconnectError":           sshStats.LastReconnectError,
 				"lastReconnectAt":              formatOptionalTime(sshStats.LastReconnectAt),
 				"lastReconnectFailureAt":       formatOptionalTime(sshStats.LastReconnectFailureAt),
@@ -833,15 +1010,26 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			}
 
 			type requestItem struct {
-				ID        uint64 `json:"id"`
-				Host      string `json:"host"`
-				Port      string `json:"port"`
-				Protocol  string `json:"protocol"`
-				Status    string `json:"status"`
-				StartTime string `json:"startTime"`
-				Duration  string `json:"duration"`
-				Error     string `json:"error,omitempty"`
-				ViaSSH    bool   `json:"viaSSH"`
+				ID                  uint64   `json:"id"`
+				Host                string   `json:"host"`
+				Port                string   `json:"port"`
+				Protocol            string   `json:"protocol"`
+				Status              string   `json:"status"`
+				Phase               string   `json:"phase,omitempty"`
+				StartTime           string   `json:"startTime"`
+				Duration            string   `json:"duration"`
+				Error               string   `json:"error,omitempty"`
+				ViaSSH              bool     `json:"viaSSH"`
+				FailureClass        string   `json:"failureClass,omitempty"`
+				DialDurationMs      int64    `json:"dialDurationMs,omitempty"`
+				ReconnectTriggered  bool     `json:"reconnectTriggered,omitempty"`
+				SSHClientGeneration uint64   `json:"sshClientGeneration,omitempty"`
+				SSHMemberID         uint64   `json:"sshMemberId,omitempty"`
+				ProfileID           string   `json:"profileId,omitempty"`
+				RetryCount          int      `json:"retryCount,omitempty"`
+				RetryReason         string   `json:"retryReason,omitempty"`
+				RetryMembers        []uint64 `json:"retryMembers,omitempty"`
+				BalanceStrategy     string   `json:"balanceStrategy,omitempty"`
 			}
 
 			formatDuration := func(d time.Duration) string {
@@ -860,15 +1048,26 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 					dur = formatDuration(time.Since(r.StartTime))
 				}
 				items = append(items, requestItem{
-					ID:        r.ID,
-					Host:      r.Host,
-					Port:      r.Port,
-					Protocol:  r.Protocol,
-					Status:    string(r.Status),
-					StartTime: r.StartTime.Format("15:04:05"),
-					Duration:  dur,
-					Error:     r.Error,
-					ViaSSH:    r.ViaSSH,
+					ID:                  r.ID,
+					Host:                r.Host,
+					Port:                r.Port,
+					Protocol:            r.Protocol,
+					Status:              string(r.Status),
+					Phase:               r.Phase,
+					StartTime:           r.StartTime.Format("15:04:05"),
+					Duration:            dur,
+					Error:               r.Error,
+					ViaSSH:              r.ViaSSH,
+					FailureClass:        r.FailureClass,
+					DialDurationMs:      r.DialDurationMs,
+					ReconnectTriggered:  r.ReconnectTriggered,
+					SSHClientGeneration: r.SSHClientGeneration,
+					SSHMemberID:         r.SSHMemberID,
+					ProfileID:           r.ProfileID,
+					RetryCount:          r.RetryCount,
+					RetryReason:         r.RetryReason,
+					RetryMembers:        r.RetryMembers,
+					BalanceStrategy:     r.BalanceStrategy,
 				})
 			}
 
@@ -1121,6 +1320,16 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				{"key": appConfig.SSHKeepAliveCountMax.Key, "type": "int", "description": "SSH保活最大连续失败次数", "category": "高级"},
 				{"key": appConfig.SSHReconnectMaxRetries.Key, "type": "int", "description": "SSH重连最大重试次数", "category": "高级"},
 				{"key": appConfig.SSHReconnectMaxIntervalSec.Key, "type": "int", "description": "SSH重连最大退避间隔(秒)", "category": "高级"},
+				{"key": appConfig.SSHPoolSize.Key, "type": "int", "description": "SSH连接池大小", "category": "SSH"},
+				{"key": appConfig.SSHPoolReplenishIntervalSec.Key, "type": "int", "description": "SSH连接池补充间隔(秒)", "category": "SSH"},
+				{"key": appConfig.SSHPoolBalanceStrategy.Key, "type": "string", "description": "SSH连接池负载均衡策略(least_active/round_robin/random)", "category": "SSH"},
+				{"key": appConfig.SSHProbeURL.Key, "type": "string", "description": "SSH主动探测地址(兼容旧配置)", "category": "SSH"},
+				{"key": appConfig.SSHProbeURLs.Key, "type": "string", "description": "SSH主动探测地址列表(逗号分隔)", "category": "SSH"},
+				{"key": appConfig.SSHProbeTimeoutSec.Key, "type": "int", "description": "SSH主动探测超时(秒)", "category": "SSH"},
+				{"key": appConfig.SSHProbeFailureThreshold.Key, "type": "int", "description": "SSH主动探测失败阈值", "category": "SSH"},
+				{"key": appConfig.SSHSuspectCooldownSec.Key, "type": "int", "description": "SSH可疑连接冷却时间(秒)", "category": "SSH"},
+				{"key": appConfig.ProxyRetryMaxAttempts.Key, "type": "int", "description": "代理请求失败额外重试次数", "category": "代理"},
+				{"key": appConfig.ProxyRetryInitialBufferBytes.Key, "type": "int", "description": "代理早期重试初始缓存大小(字节)", "category": "代理"},
 				{"key": appConfig.LogFilePath.Key, "type": "string", "description": "日志文件路径", "category": "高级"},
 				{"key": appConfig.HomeDir.Key, "type": "string", "description": "运行状态目录", "category": "高级"},
 				{"key": appConfig.AutoUpdateEnabled.Key, "type": "bool", "description": "启用自动更新检查", "category": "更新"},
@@ -1291,15 +1500,22 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			Handler: adminRouter,
 		}
 
+		safe.GO(func() {
+			<-connCtx.Done()
+
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			if err := server.Shutdown(shutdownCtx); err != nil && err != http.ErrServerClosed {
+				log.Printf("Admin server shutdown error: %v", err)
+			}
+		})
+
+		log.Printf("Admin server listening on %s", config.AdminAddress.GetValue())
 		err := server.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			log.Printf("Admin server error: %v", err)
 		}
-		defer wg.Done()
-		wg.Add(1)
-		<-connCtx.Done()
-		server.Shutdown(connCtx)
-		log.Println("启动Admin Server Success at", ":1083")
 	})
 }
 
@@ -1590,6 +1806,16 @@ func cleanupDuplicateConfigs() error {
 		appConfig.SSHKeepAliveCountMax.Key,
 		appConfig.SSHReconnectMaxRetries.Key,
 		appConfig.SSHReconnectMaxIntervalSec.Key,
+		appConfig.SSHPoolSize.Key,
+		appConfig.SSHPoolReplenishIntervalSec.Key,
+		appConfig.SSHPoolBalanceStrategy.Key,
+		appConfig.SSHProbeURL.Key,
+		appConfig.SSHProbeURLs.Key,
+		appConfig.SSHProbeTimeoutSec.Key,
+		appConfig.SSHProbeFailureThreshold.Key,
+		appConfig.SSHSuspectCooldownSec.Key,
+		appConfig.ProxyRetryMaxAttempts.Key,
+		appConfig.ProxyRetryInitialBufferBytes.Key,
 		appConfig.LogFilePath.Key,
 		appConfig.AutoUpdateEnabled.Key,
 		appConfig.AutoUpdateOwner.Key,

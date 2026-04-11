@@ -15,22 +15,30 @@ const (
 	DEFAULT_PROFILE_ID    = "default"
 )
 
+// DomainRoute defines a routing rule that maps domain/IP patterns to this profile.
+type DomainRoute struct {
+	Pattern string `json:"pattern"` // e.g. "google.com", "*.internal.corp", "192.168.*", "10.0.0.0/8"
+	Type    string `json:"type"`    // "domain", "ip", "cidr"
+}
+
 type SSHProfile struct {
-	ServerIp                 string `json:"serverIp"`
-	ServerSshPort            int    `json:"serverSshPort"`
-	LoginUser                string `json:"loginUser"`
-	SshPrivateKeyPath        string `json:"sshPrivateKeyPath"`
-	LocalAddress             string `json:"localAddress"`
-	HttpLocalAddress         string `json:"httpLocalAddress"`
-	EnableHttp               bool   `json:"enableHttp"`
-	EnableSocks5             bool   `json:"enableSocks5"`
-	EnableHttpOverSSH        bool   `json:"enableHttpOverSSH"`
-	HttpBasicAuthEnable      bool   `json:"httpBasicAuthEnable"`
-	HttpBasicUserName        string `json:"httpBasicUserName"`
-	HttpBasicPassword        string `json:"httpBasicPassword"`
-	EnableHttpDomainFilter   bool   `json:"enableHttpDomainFilter"`
-	HttpDomainFilterFilePath string `json:"httpDomainFilterFilePath"`
-	RetryIntervalSec         int    `json:"retryIntervalSec"`
+	ServerIp                 string        `json:"serverIp"`
+	ServerSshPort            int           `json:"serverSshPort"`
+	LoginUser                string        `json:"loginUser"`
+	SshPrivateKeyPath        string        `json:"sshPrivateKeyPath"`
+	LocalAddress             string        `json:"localAddress"`
+	HttpLocalAddress         string        `json:"httpLocalAddress"`
+	EnableHttp               bool          `json:"enableHttp"`
+	EnableSocks5             bool          `json:"enableSocks5"`
+	EnableHttpOverSSH        bool          `json:"enableHttpOverSSH"`
+	HttpBasicAuthEnable      bool          `json:"httpBasicAuthEnable"`
+	HttpBasicUserName        string        `json:"httpBasicUserName"`
+	HttpBasicPassword        string        `json:"httpBasicPassword"`
+	EnableHttpDomainFilter   bool          `json:"enableHttpDomainFilter"`
+	HttpDomainFilterFilePath string        `json:"httpDomainFilterFilePath"`
+	RetryIntervalSec         int           `json:"retryIntervalSec"`
+	DomainRoutes             []DomainRoute `json:"domainRoutes,omitempty"`
+	SSHPoolSize              int           `json:"sshPoolSize,omitempty"`
 }
 
 type ProfileStore struct {
@@ -259,7 +267,6 @@ func tryLoadProfileStoreFromFile(filePath string) (ProfileStore, bool, error) {
 		store.Profiles = make(map[string]SSHProfile)
 	}
 
-	log.Printf("已从profiles文件加载配置: %s", filePath)
 	return store, true, nil
 }
 

@@ -8,6 +8,15 @@
 
     <title>SSH隧道代理工具</title>
 
+    <!-- Favicon & PWA -->
+    <link rel="icon" type="image/svg+xml" href="/resources/icon.svg">
+    <link rel="manifest" href="/resources/manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SSH-Tunnel">
+    <link rel="apple-touch-icon" href="/resources/icon.svg">
+
     <!-- Bootstrap core CSS -->
     <link href="/resources/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
@@ -364,6 +373,11 @@
         // 滚动时检查
         $(window).on('scroll resize', checkAnimations);
     });
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/resources/sw.js').catch(function(){});
+}
 </script>
 </body>
 </html>

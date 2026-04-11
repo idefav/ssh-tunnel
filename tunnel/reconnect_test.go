@@ -85,11 +85,33 @@ func TestReconnectSSHWithSourceSuccessResetsFailureState(t *testing.T) {
 	if !stats.LastReconnectFailureAt.IsZero() {
 		t.Fatal("expected last reconnect failure time to be cleared after success")
 	}
+	if stats.ReconnectCount != 0 {
+		t.Fatalf("expected initial pool member creation not to count as reconnect, got %d", stats.ReconnectCount)
+	}
+}
+
+func TestReconnectSSHWithSourceCountsRecoveryOnce(t *testing.T) {
+	tunnel := newTestTunnel()
+	tunnel.keepAlive = KeepAliveConfig{}
+	tunnel.sshConnectedOnce = true
+	tunnel.reconnectRecoveryPending = true
+	tunnel.sshDialFn = func() (*ssh.Client, error) {
+		return &ssh.Client{}, nil
+	}
+
+	tunnel.ReconnectSSHWithSource(context.Background(), "test")
+	tunnel.ReconnectSSHWithSource(context.Background(), "test")
+
+	stats := tunnel.SnapshotSSHConnectionStats()
+	if stats.ReconnectCount != 1 {
+		t.Fatalf("expected one reconnect recovery event, got %d", stats.ReconnectCount)
+	}
 }
 
 func TestReconnectSSHWithSourceSingleFlight(t *testing.T) {
 	tunnel := newTestTunnel()
 	tunnel.keepAlive = KeepAliveConfig{}
+	tunnel.sshPoolSize = 1
 
 	var attempts atomic.Int32
 	tunnel.sshDialFn = func() (*ssh.Client, error) {
@@ -120,7 +142,9 @@ func TestInvalidateSSHClientIfMatchKeepsNewClient(t *testing.T) {
 	tunnel := newTestTunnel()
 	oldClient := &ssh.Client{}
 	newClient := &ssh.Client{}
-	tunnel.client = newClient
+	tunnel.sshPool = []*SSHPoolMember{
+		{ID: 1, Generation: 1, State: sshMemberHealthy, Client: newClient},
+	}
 
 	if tunnel.invalidateSSHClientIfMatch(oldClient, "old client failure") {
 		t.Fatal("expected invalidate to fail for non-current client")

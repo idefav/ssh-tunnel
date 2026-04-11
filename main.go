@@ -29,6 +29,17 @@ import (
 
 var started atomic.Bool
 
+func applyExplicitFlagOverrides(vConfig *viper.Viper, flagSet *pflag.FlagSet, config *cfg.AppConfig) {
+	if vConfig == nil || flagSet == nil || config == nil {
+		return
+	}
+
+	flagSet.Visit(func(f *pflag.Flag) {
+		vConfig.Set(f.Name, f.Value.String())
+	})
+	config.Update()
+}
+
 func main() {
 	for {
 		err := safe.SafeCallWithReturnRecover(runOnce)
@@ -45,6 +56,17 @@ func main() {
 }
 
 func runOnce() error {
+	configPath := ""
+	filteredArgs := []string{os.Args[0]}
+	for i := 1; i < len(os.Args); i++ {
+		if strings.HasPrefix(os.Args[i], "--config=") {
+			configPath = strings.TrimPrefix(os.Args[i], "--config=")
+			log.Println("从命令行参数获取配置文件路径:", configPath)
+			continue
+		}
+		filteredArgs = append(filteredArgs, os.Args[i])
+	}
+
 	u, err := user.Current()
 	if err != nil {
 		homeDir := os.Getenv("USERPROFILE")
@@ -65,11 +87,18 @@ func runOnce() error {
 	vConfig.AddConfigPath(".")
 	vConfig.AddConfigPath(path.Join(u.HomeDir, ".ssh-tunnel"))
 
-	// 设置操作系统特定的配置
-	os_config.SetConfig(vConfig)
-
-	vConfig.SetConfigName("config")
-	vConfig.SetConfigType("properties")
+	// 如果显式指定配置文件，则优先使用该路径
+	exists, _ := PathExists(configPath)
+	if configPath != "" && exists {
+		log.Println("使用指定的配置文件:", configPath)
+		vConfig.SetConfigFile(configPath)
+		vConfig.SetConfigType("properties")
+	} else {
+		// 设置操作系统特定的默认配置查找路径
+		os_config.SetConfig(vConfig)
+		vConfig.SetConfigName("config")
+		vConfig.SetConfigType("properties")
+	}
 
 	// 默认值设置
 	vConfig.SetDefault(config.HomeDir.GetKey(), config.HomeDir.GetDefaultValue())
@@ -92,6 +121,16 @@ func runOnce() error {
 	vConfig.SetDefault(config.SSHKeepAliveCountMax.GetKey(), config.SSHKeepAliveCountMax.GetDefaultValue())
 	vConfig.SetDefault(config.SSHReconnectMaxRetries.GetKey(), config.SSHReconnectMaxRetries.GetDefaultValue())
 	vConfig.SetDefault(config.SSHReconnectMaxIntervalSec.GetKey(), config.SSHReconnectMaxIntervalSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHPoolSize.GetKey(), config.SSHPoolSize.GetDefaultValue())
+	vConfig.SetDefault(config.SSHPoolReplenishIntervalSec.GetKey(), config.SSHPoolReplenishIntervalSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHPoolBalanceStrategy.GetKey(), config.SSHPoolBalanceStrategy.GetDefaultValue())
+	vConfig.SetDefault(config.SSHProbeURL.GetKey(), config.SSHProbeURL.GetDefaultValue())
+	vConfig.SetDefault(config.SSHProbeURLs.GetKey(), config.SSHProbeURLs.GetDefaultValue())
+	vConfig.SetDefault(config.SSHProbeTimeoutSec.GetKey(), config.SSHProbeTimeoutSec.GetDefaultValue())
+	vConfig.SetDefault(config.SSHProbeFailureThreshold.GetKey(), config.SSHProbeFailureThreshold.GetDefaultValue())
+	vConfig.SetDefault(config.SSHSuspectCooldownSec.GetKey(), config.SSHSuspectCooldownSec.GetDefaultValue())
+	vConfig.SetDefault(config.ProxyRetryMaxAttempts.GetKey(), config.ProxyRetryMaxAttempts.GetDefaultValue())
+	vConfig.SetDefault(config.ProxyRetryInitialBufferBytes.GetKey(), config.ProxyRetryInitialBufferBytes.GetDefaultValue())
 	vConfig.SetDefault(config.LogFilePath.GetKey(), config.LogFilePath.GetDefaultValue())
 
 	// 自动更新默认值
@@ -119,6 +158,55 @@ func runOnce() error {
 	// 设置全局配置实例
 	cfg.SetConfigInstance(vConfig)
 
+	// 命令行处理
+	goFlagSet := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flagSet := pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
+	flagSet.AddGoFlagSet(goFlagSet)
+	flagSet.SetNormalizeFunc(wordSepNormailzeFunc)
+	flagSet.String(config.HomeDir.GetKey(), config.HomeDir.GetDefaultValue(), config.HomeDir.GetDescription())
+	flagSet.StringP(config.ServerIp.GetKey(), config.ServerIp.GetShorthand(), config.ServerIp.GetDefaultValue(), config.ServerIp.GetDescription())
+	flagSet.IntP(config.ServerSshPort.GetKey(), config.ServerSshPort.GetShorthand(), config.ServerSshPort.GetDefaultValue(), config.ServerSshPort.GetDescription())
+	flagSet.String(config.SshPrivateKeyPath.GetKey(), config.SshPrivateKeyPath.GetDefaultValue(), config.SshPrivateKeyPath.GetDescription())
+	flagSet.StringP(config.LoginUser.GetKey(), config.LoginUser.GetShorthand(), config.LoginUser.GetDefaultValue(), config.LoginUser.GetDescription())
+	flagSet.StringP(config.LocalAddress.GetKey(), config.LocalAddress.GetShorthand(), config.LocalAddress.GetDefaultValue(), config.LocalAddress.GetDescription())
+	flagSet.String(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue(), config.HttpLocalAddress.GetDescription())
+	flagSet.Bool(config.HttpBasicAuthEnable.GetKey(), config.HttpBasicAuthEnable.GetDefaultValue(), config.HttpBasicAuthEnable.GetDescription())
+	flagSet.String(config.HttpBasicUserName.GetKey(), config.HttpBasicUserName.GetDefaultValue(), config.HttpBasicUserName.GetDescription())
+	flagSet.String(config.HttpBasicPassword.GetKey(), config.HttpBasicPassword.GetDefaultValue(), config.HttpBasicPassword.GetDescription())
+	flagSet.Bool(config.EnableHttp.GetKey(), config.EnableHttp.GetDefaultValue(), config.EnableHttp.GetDescription())
+	flagSet.Bool(config.EnableSocks5.GetKey(), config.EnableSocks5.GetDefaultValue(), config.EnableSocks5.GetDescription())
+	flagSet.Bool(config.EnableHttpOverSSH.GetKey(), config.EnableHttpOverSSH.GetDefaultValue(), config.EnableHttpOverSSH.GetDescription())
+	flagSet.Bool(config.EnableHttpDomainFilter.GetKey(), config.EnableHttpDomainFilter.GetDefaultValue(), config.EnableHttpDomainFilter.GetDescription())
+	flagSet.String(config.HttpDomainFilterFilePath.GetKey(), config.HttpDomainFilterFilePath.GetDefaultValue(), config.HttpDomainFilterFilePath.GetDescription())
+	flagSet.Bool(config.EnableAdmin.GetKey(), config.EnableAdmin.GetDefaultValue(), config.EnableAdmin.GetDescription())
+	flagSet.String(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue(), config.AdminAddress.GetDescription())
+	flagSet.Int(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue(), config.RetryIntervalSec.GetDescription())
+	flagSet.Int(config.SSHDialTimeoutSec.GetKey(), config.SSHDialTimeoutSec.GetDefaultValue(), config.SSHDialTimeoutSec.GetDescription())
+	flagSet.Int(config.SSHDestDialTimeoutSec.GetKey(), config.SSHDestDialTimeoutSec.GetDefaultValue(), config.SSHDestDialTimeoutSec.GetDescription())
+	flagSet.Int(config.SSHKeepAliveIntervalSec.GetKey(), config.SSHKeepAliveIntervalSec.GetDefaultValue(), config.SSHKeepAliveIntervalSec.GetDescription())
+	flagSet.Int(config.SSHKeepAliveCountMax.GetKey(), config.SSHKeepAliveCountMax.GetDefaultValue(), config.SSHKeepAliveCountMax.GetDescription())
+	flagSet.Int(config.SSHReconnectMaxRetries.GetKey(), config.SSHReconnectMaxRetries.GetDefaultValue(), config.SSHReconnectMaxRetries.GetDescription())
+	flagSet.Int(config.SSHReconnectMaxIntervalSec.GetKey(), config.SSHReconnectMaxIntervalSec.GetDefaultValue(), config.SSHReconnectMaxIntervalSec.GetDescription())
+	flagSet.Int(config.SSHPoolSize.GetKey(), config.SSHPoolSize.GetDefaultValue(), config.SSHPoolSize.GetDescription())
+	flagSet.Int(config.SSHPoolReplenishIntervalSec.GetKey(), config.SSHPoolReplenishIntervalSec.GetDefaultValue(), config.SSHPoolReplenishIntervalSec.GetDescription())
+	flagSet.String(config.SSHPoolBalanceStrategy.GetKey(), config.SSHPoolBalanceStrategy.GetDefaultValue(), config.SSHPoolBalanceStrategy.GetDescription())
+	flagSet.String(config.SSHProbeURL.GetKey(), config.SSHProbeURL.GetDefaultValue(), config.SSHProbeURL.GetDescription())
+	flagSet.String(config.SSHProbeURLs.GetKey(), config.SSHProbeURLs.GetDefaultValue(), config.SSHProbeURLs.GetDescription())
+	flagSet.Int(config.SSHProbeTimeoutSec.GetKey(), config.SSHProbeTimeoutSec.GetDefaultValue(), config.SSHProbeTimeoutSec.GetDescription())
+	flagSet.Int(config.SSHProbeFailureThreshold.GetKey(), config.SSHProbeFailureThreshold.GetDefaultValue(), config.SSHProbeFailureThreshold.GetDescription())
+	flagSet.Int(config.SSHSuspectCooldownSec.GetKey(), config.SSHSuspectCooldownSec.GetDefaultValue(), config.SSHSuspectCooldownSec.GetDescription())
+	flagSet.Int(config.ProxyRetryMaxAttempts.GetKey(), config.ProxyRetryMaxAttempts.GetDefaultValue(), config.ProxyRetryMaxAttempts.GetDescription())
+	flagSet.Int(config.ProxyRetryInitialBufferBytes.GetKey(), config.ProxyRetryInitialBufferBytes.GetDefaultValue(), config.ProxyRetryInitialBufferBytes.GetDescription())
+	flagSet.String(config.LogFilePath.GetKey(), config.LogFilePath.GetDefaultValue(), config.LogFilePath.GetDescription())
+
+	if err := flagSet.Parse(filteredArgs[1:]); err != nil {
+		return err
+	}
+
+	if err := vConfig.BindPFlags(flagSet); err != nil {
+		return err
+	}
+
 	// 保存配置文件路径到常量
 	constants.ConfigFilePath = vConfig.ConfigFileUsed()
 
@@ -128,6 +216,7 @@ func runOnce() error {
 	if err := cfg.EnsureAndApplyActiveProfile(config); err != nil {
 		log.Printf("apply active profile failed: %v", err)
 	}
+	applyExplicitFlagOverrides(vConfig, flagSet, config)
 	if _, err := updater.SyncRuntimeState(config.HomeDir.GetValue(), buildinfo.CurrentVersion()); err != nil {
 		log.Printf("sync update runtime state failed: %v", err)
 	}
@@ -146,39 +235,8 @@ func runOnce() error {
 		if err := cfg.EnsureAndApplyActiveProfile(config); err != nil {
 			log.Printf("apply active profile on reload failed: %v", err)
 		}
+		applyExplicitFlagOverrides(vConfig, flagSet, config)
 	})
-
-	// 命令行处理
-	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
-	pflag.CommandLine.SetNormalizeFunc(wordSepNormailzeFunc)
-	pflag.String(config.HomeDir.GetKey(), config.HomeDir.GetDefaultValue(), config.HomeDir.GetDescription())
-	pflag.StringP(config.ServerIp.GetKey(), config.ServerIp.GetShorthand(), config.ServerIp.GetDefaultValue(), config.ServerIp.GetDescription())
-	pflag.IntP(config.ServerSshPort.GetKey(), config.ServerSshPort.GetShorthand(), config.ServerSshPort.GetDefaultValue(), config.ServerSshPort.GetDescription())
-	pflag.String(config.SshPrivateKeyPath.GetKey(), config.SshPrivateKeyPath.GetDefaultValue(), config.SshPrivateKeyPath.GetDescription())
-	pflag.StringP(config.LoginUser.GetKey(), config.LoginUser.GetShorthand(), config.LoginUser.GetDefaultValue(), config.LoginUser.GetDescription())
-	pflag.StringP(config.LocalAddress.GetKey(), config.LocalAddress.GetShorthand(), config.LocalAddress.GetDefaultValue(), config.LocalAddress.GetDescription())
-	pflag.String(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue(), config.HttpLocalAddress.GetDescription())
-	pflag.Bool(config.HttpBasicAuthEnable.GetKey(), config.HttpBasicAuthEnable.GetDefaultValue(), config.HttpBasicAuthEnable.GetDescription())
-	pflag.String(config.HttpBasicUserName.GetKey(), config.HttpBasicUserName.GetDefaultValue(), config.HttpBasicUserName.GetDescription())
-	pflag.String(config.HttpBasicPassword.GetKey(), config.HttpBasicPassword.GetDefaultValue(), config.HttpBasicPassword.GetDescription())
-	pflag.Bool(config.EnableHttp.GetKey(), config.EnableHttp.GetDefaultValue(), config.EnableHttp.GetDescription())
-	pflag.Bool(config.EnableSocks5.GetKey(), config.EnableSocks5.GetDefaultValue(), config.EnableSocks5.GetDescription())
-	pflag.Bool(config.EnableHttpOverSSH.GetKey(), config.EnableHttpOverSSH.GetDefaultValue(), config.EnableHttpOverSSH.GetDescription())
-	pflag.Bool(config.EnableHttpDomainFilter.GetKey(), config.EnableHttpDomainFilter.GetDefaultValue(), config.EnableHttpDomainFilter.GetDescription())
-	pflag.String(config.HttpDomainFilterFilePath.GetKey(), config.HttpDomainFilterFilePath.GetDefaultValue(), config.HttpDomainFilterFilePath.GetDescription())
-	pflag.Bool(config.EnableAdmin.GetKey(), config.EnableAdmin.GetDefaultValue(), config.EnableAdmin.GetDescription())
-	pflag.String(config.AdminAddress.GetKey(), config.AdminAddress.GetDefaultValue(), config.AdminAddress.GetDescription())
-	pflag.Int(config.RetryIntervalSec.GetKey(), config.RetryIntervalSec.GetDefaultValue(), config.RetryIntervalSec.GetDescription())
-	pflag.Int(config.SSHDialTimeoutSec.GetKey(), config.SSHDialTimeoutSec.GetDefaultValue(), config.SSHDialTimeoutSec.GetDescription())
-	pflag.Int(config.SSHDestDialTimeoutSec.GetKey(), config.SSHDestDialTimeoutSec.GetDefaultValue(), config.SSHDestDialTimeoutSec.GetDescription())
-	pflag.Int(config.SSHKeepAliveIntervalSec.GetKey(), config.SSHKeepAliveIntervalSec.GetDefaultValue(), config.SSHKeepAliveIntervalSec.GetDescription())
-	pflag.Int(config.SSHKeepAliveCountMax.GetKey(), config.SSHKeepAliveCountMax.GetDefaultValue(), config.SSHKeepAliveCountMax.GetDescription())
-	pflag.Int(config.SSHReconnectMaxRetries.GetKey(), config.SSHReconnectMaxRetries.GetDefaultValue(), config.SSHReconnectMaxRetries.GetDescription())
-	pflag.Int(config.SSHReconnectMaxIntervalSec.GetKey(), config.SSHReconnectMaxIntervalSec.GetDefaultValue(), config.SSHReconnectMaxIntervalSec.GetDescription())
-
-	pflag.Parse()
-
-	vConfig.BindPFlags(pflag.CommandLine)
 
 	// 非服务管理器模式下，读取配置文件后，覆盖配置项的值
 	if service.Interactive() {

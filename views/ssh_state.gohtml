@@ -122,6 +122,31 @@
                 <div class="small text-muted mb-1">最近重连错误</div>
                 <div id="sshLastReconnectError" class="text-break">{{.LastReconnectError}}</div>
             </div>
+            <div class="mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">SSH 连接池成员</h6>
+                    <small id="sshPoolSummary" class="text-muted">等待数据...</small>
+                </div>
+                <div class="table-responsive border rounded">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                        <tr>
+                            <th style="width:80px;">成员</th>
+                            <th style="width:100px;">Profile</th>
+                            <th style="width:160px;">SSH地址</th>
+                            <th style="width:90px;">状态</th>
+                            <th style="width:90px;">活跃通道</th>
+                            <th style="width:110px;">代次</th>
+                            <th>最近探测 / 错误</th>
+                            <th style="width:70px;">操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="sshPoolMembersBody">
+                        <tr><td colspan="8" class="text-center text-muted py-3">等待连接池数据...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             <div class="d-flex justify-content-center mt-3 gap-2">
                 <button id="testSshQuality" type="button" class="btn btn-outline-primary">
                     <i class="bi bi-speedometer2 me-1"></i>测试延迟和速度
@@ -184,12 +209,15 @@
                             <th style="width: 75px;">协议</th>
                             <th style="width: 85px;">状态</th>
                             <th style="width: 50px; text-align: center;">SSH</th>
+                            <th style="width: 70px;">成员</th>
+                            <th style="width: 90px;">Profile</th>
+                            <th style="width: 95px;">重试</th>
                             <th style="width: 80px; text-align: right;">耗时</th>
                         </tr>
                     </thead>
                     <tbody id="requestTableBody">
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-4">等待请求数据...</td>
+                            <td colspan="10" class="text-center text-muted py-4">等待请求数据...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -298,6 +326,8 @@
             const lastReconnectAtEl = document.getElementById("sshLastReconnectAt");
             const lastReconnectFailureAtEl = document.getElementById("sshLastReconnectFailureAt");
             const lastReconnectErrorEl = document.getElementById("sshLastReconnectError");
+            const sshPoolSummaryEl = document.getElementById("sshPoolSummary");
+            const sshPoolMembersBodyEl = document.getElementById("sshPoolMembersBody");
             const exitIPEl = document.getElementById("sshExitIP");
             const exitStatusEl = document.getElementById("sshExitStatus");
             const exitUpdatedAtEl = document.getElementById("sshExitUpdatedAt");
@@ -317,6 +347,7 @@
             let refreshPaused = false;
             let refreshTimer = null;
             let exitInfoTimer = null;
+            let cachedActiveProfileId = "default";
             const exitInfoIntervalMs = 60000;
 
             // Speed test modal elements
@@ -473,7 +504,106 @@
                 drawLine(downloadHistory, downloadColor);
             }
 
+            function escapeHtml(value) {
+                return (value || "").toString()
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+
+            function poolStateBadge(state) {
+                const styles = {
+                    "healthy": "background:#dcfce7;color:#16a34a;",
+                    "suspect": "background:#fef3c7;color:#b45309;",
+                    "probing": "background:#dbeafe;color:#1d4ed8;",
+                    "reconnecting": "background:#e0e7ff;color:#4338ca;",
+                    "evicted": "background:#fee2e2;color:#dc2626;"
+                };
+                const labels = {
+                    "healthy": "健康",
+                    "suspect": "可疑",
+                    "probing": "探测中",
+                    "reconnecting": "重连中",
+                    "evicted": "已摘除"
+                };
+                return '<span class="badge" style="' + (styles[state] || "background:#f1f5f9;color:#64748b;") + 'font-weight:500;">' + (labels[state] || state || "--") + '</span>';
+            }
+
+            window.probeMember = function(memberId, btn) {
+                if (btn.disabled) return;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+                $.post("/admin/ssh/probe-member?id=" + memberId)
+                    .done(function(resp) {
+                        if (resp && resp.success) {
+                            btn.innerHTML = '<i class="bi bi-check-lg text-success"></i>';
+                        } else {
+                            btn.innerHTML = '<i class="bi bi-x-lg text-danger"></i>';
+                            btn.title = (resp && resp.error) || "探测失败";
+                        }
+                    })
+                    .fail(function(xhr) {
+                        btn.innerHTML = '<i class="bi bi-x-lg text-danger"></i>';
+                        try { btn.title = JSON.parse(xhr.responseText).error || "请求失败"; } catch(e) { btn.title = "请求失败"; }
+                    })
+                    .always(function() {
+                        setTimeout(function() {
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-activity"></i>';
+                            btn.title = "手动探测";
+                        }, 2000);
+                    });
+            }
+
+            function renderPoolMembers(data) {
+                if (sshPoolSummaryEl) {
+                    sshPoolSummaryEl.textContent = "健康 " + (data.healthyCount || 0) +
+                        " / 可疑 " + (data.suspectCount || 0) +
+                        " / 探测 " + (data.probingCount || 0) +
+                        " / 摘除 " + (data.evictedCount || 0);
+                    const profileIds = data.profileTunnelIds || [];
+                    if (profileIds.length > 0) {
+                        sshPoolSummaryEl.textContent += " | 路由Profile: " + profileIds.join(", ");
+                    }
+                }
+                if (!sshPoolMembersBodyEl) return;
+                // Merge main pool members and profile pool members
+                const activeProfileId = data.activeProfileId || "default";
+                let members = (data.poolMembers || []).map(m => Object.assign({}, m, {profileId: m.profileId || activeProfileId, isActive: true}));
+                const profileMembers = (data.profilePoolMembers || []).map(m => Object.assign({}, m, {isActive: false}));
+                members = members.concat(profileMembers);
+                if (!members.length) {
+                    sshPoolMembersBodyEl.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">暂无连接池成员</td></tr>';
+                    return;
+                }
+                let html = "";
+                for (const member of members) {
+                    const probe = member.lastProbeResult ? ("探测: " + member.lastProbeResult) : "探测: --";
+                    const error = member.lastError ? (" / " + member.lastError) : "";
+                    const profileLabel = member.profileId || activeProfileId;
+                    html += "<tr>";
+                    const badgeClass = member.isActive ? "bg-success" : "bg-info text-dark";
+                    const sshAddr = member.user && member.serverAddress ? (member.user + '@' + member.serverAddress) : (member.serverAddress || '--');
+                    html += '<td>#' + member.id + '</td>';
+                    html += '<td><span class="badge ' + badgeClass + '">' + escapeHtml(profileLabel) + '</span></td>';
+                    html += '<td class="small text-muted">' + escapeHtml(sshAddr) + '</td>';
+                    html += '<td>' + poolStateBadge(member.state) + '</td>';
+                    html += '<td>' + (member.activeChannels || 0) + '</td>';
+                    html += '<td>' + (member.generation || 0) + '</td>';
+                    html += '<td class="text-break small text-muted">' + escapeHtml(probe + error) + '</td>';
+                    const canProbe = member.state === 'healthy' || member.state === 'suspect';
+                    html += '<td>' + (canProbe ? '<button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="probeMember(' + member.id + ', this)" title="手动探测"><i class="bi bi-activity"></i></button>' : '--') + '</td>';
+                    html += "</tr>";
+                }
+                sshPoolMembersBodyEl.innerHTML = html;
+            }
+
             function updateMetricsUI(data) {
+                if (data.activeProfileId) {
+                    cachedActiveProfileId = data.activeProfileId;
+                }
                 uploadSpeedEl.textContent = data.uploadSpeed || "0 B/s";
                 downloadSpeedEl.textContent = data.downloadSpeed || "0 B/s";
                 const upTotal = formatBytes(data.uploadBytesTotal || 0);
@@ -500,6 +630,7 @@
                 if (lastReconnectErrorEl) {
                     lastReconnectErrorEl.textContent = data.lastReconnectError || "--";
                 }
+                renderPoolMembers(data);
                 pushHistory(data.uploadBps || 0, data.downloadBps || 0);
                 drawSpeedChart();
             }
@@ -729,7 +860,7 @@
 
             function renderRequestTable(requests) {
                 if (!requests || requests.length === 0) {
-                    requestTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">暂无请求记录</td></tr>';
+                    requestTableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">暂无请求记录</td></tr>';
                     return;
                 }
                 let html = "";
@@ -744,6 +875,13 @@
                     html += '<td>' + protocolBadge(r.protocol) + '</td>';
                     html += '<td>' + statusBadge(r.status) + '</td>';
                     html += '<td class="text-center">' + sshIcon + '</td>';
+                    html += '<td style="color:#64748b;">' + (r.sshMemberId ? ("#" + r.sshMemberId) : "--") + '</td>';
+                    const reqProfile = r.profileId || cachedActiveProfileId || '--';
+                    const reqProfileBadge = r.profileId ? 'bg-info text-dark' : 'bg-success';
+                    html += '<td><span class="badge ' + reqProfileBadge + '" style="font-size:0.7rem;">' + escapeHtml(reqProfile) + '</span></td>';
+                    const retryText = r.retryCount ? (r.retryCount + '次') : '--';
+                    const retryTitle = r.retryReason ? (' title="' + r.retryReason.replace(/"/g, '&quot;') + '"') : '';
+                    html += '<td style="color:#64748b;"' + retryTitle + '>' + retryText + '</td>';
                     html += '<td class="text-end" style="color:#64748b;font-variant-numeric:tabular-nums;">' + (r.duration || '--') + '</td>';
                     html += '</tr>';
                 }

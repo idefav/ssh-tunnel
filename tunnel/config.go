@@ -56,10 +56,17 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 	}
 
 	safe.GO(func() {
-		sigc := make(chan os.Signal, 1)
+		sigc := make(chan os.Signal, 2)
 		signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
-		log.Printf("received %v - initiating shutdown", <-sigc)
+		defer signal.Stop(sigc)
+
+		firstSignal := <-sigc
+		log.Printf("received %v - initiating shutdown", firstSignal)
 		cancel()
+
+		forcedSignal := <-sigc
+		log.Printf("received %v during shutdown - forcing exit", forcedSignal)
+		os.Exit(1)
 	})
 
 	log.Printf("%s starting", path.Base(os.Args[0]))
@@ -80,7 +87,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 		})
 	}
 
-	// need open ssh tunnel
+	// maintain SSH pool
 	if DefaultSshTunnel.enableSocks5 || DefaultSshTunnel.enableHttpOverSSH {
 		safe.GO(func() {
 			connCtx, cancel := context.WithCancel(ctx)
@@ -93,26 +100,24 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 					return
 				}
 
-				if DefaultSshTunnel.currentSSHClient() != nil {
-					time.Sleep(200 * time.Millisecond)
-					continue
-				}
-
-				DefaultSshTunnel.ReconnectSSHWithSource(connCtx, "bootstrap-loop")
-
-				retryInterval := DefaultSshTunnel.retryInterval
-				if retryInterval <= 0 {
-					retryInterval = time.Second
-				}
 				select {
 				case <-connCtx.Done():
 					return
-				case <-time.After(retryInterval):
+				default:
+				}
+				DefaultSshTunnel.ensurePool(connCtx, "bootstrap-loop")
+				select {
+				case <-connCtx.Done():
+					return
+				case <-time.After(DefaultSshTunnel.configuredReplenishInterval()):
 				}
 			}
 
 		})
 	}
+
+	// Initialize profile-based domain routing
+	initProfileRouting(ctx, config)
 
 	return nil
 }
@@ -148,6 +153,16 @@ func (t *Tunnel) RefreshRuntimeConfigFromAppConfig() error {
 	t.sshDestTimeout = time.Duration(config.SSHDestDialTimeoutSec.GetValue()) * time.Second
 	t.reconnectMaxRetries = config.SSHReconnectMaxRetries.GetValue()
 	t.reconnectMaxInterval = time.Duration(config.SSHReconnectMaxIntervalSec.GetValue()) * time.Second
+	t.sshPoolSize = config.SSHPoolSize.GetValue()
+	t.sshPoolReplenishInterval = time.Duration(config.SSHPoolReplenishIntervalSec.GetValue()) * time.Second
+	t.sshPoolBalanceStrategy = config.SSHPoolBalanceStrategy.GetValue()
+	t.sshProbeURL = config.SSHProbeURL.GetValue()
+	t.sshProbeURLs = config.SSHProbeURLs.GetValue()
+	t.sshProbeTimeout = time.Duration(config.SSHProbeTimeoutSec.GetValue()) * time.Second
+	t.sshProbeFailureThreshold = uint64(config.SSHProbeFailureThreshold.GetValue())
+	t.sshSuspectCooldown = time.Duration(config.SSHSuspectCooldownSec.GetValue()) * time.Second
+	t.proxyRetryMaxAttempts = config.ProxyRetryMaxAttempts.GetValue()
+	t.proxyRetryInitialBufferBytes = config.ProxyRetryInitialBufferBytes.GetValue()
 	t.hostKeys = ssh.InsecureIgnoreHostKey()
 
 	if t.enableSocks5 || t.enableHttpOverSSH {
@@ -241,4 +256,54 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 
 		}
 	}
+}
+
+// initProfileRouting sets up the route matcher and starts profile tunnels for profiles with DomainRoutes.
+func initProfileRouting(ctx context.Context, config *cfg.AppConfig) {
+	matcher := NewRouteMatcher()
+	mgr := NewProfileTunnelManager(matcher)
+	DefaultSshTunnel.routeMatcher = matcher
+	DefaultSshTunnel.profileTunnelMgr = mgr
+
+	store, err := cfg.ListProfiles(config)
+	if err != nil {
+		log.Printf("加载profiles失败(跳过域名路由初始化): %v", err)
+		return
+	}
+
+	if len(store.Profiles) == 0 {
+		return
+	}
+
+	// Load routes from all profiles (excluding active profile)
+	matcher.LoadRoutes(store.Profiles, store.ActiveProfileID)
+
+	// Start tunnels for profiles with DomainRoutes (excluding active profile)
+	for id, profile := range store.Profiles {
+		if len(profile.DomainRoutes) > 0 && id != store.ActiveProfileID {
+			if err := mgr.StartProfileTunnel(ctx, id, profile); err != nil {
+				log.Printf("启动Profile隧道失败(profileId=%s): %v", id, err)
+			}
+		}
+	}
+}
+
+// ReloadProfileRouting reloads routing rules and restarts profile tunnels as needed.
+// Called when profiles are updated via admin API.
+func (t *Tunnel) ReloadProfileRouting(config *cfg.AppConfig) {
+	if t.routeMatcher == nil || t.profileTunnelMgr == nil {
+		return
+	}
+
+	store, err := cfg.ListProfiles(config)
+	if err != nil {
+		log.Printf("重载Profile路由失败: %v", err)
+		return
+	}
+
+	ctx := t.reconnectContext(context.Background())
+	t.profileTunnelMgr.ReloadProfiles(ctx, store.Profiles, store.ActiveProfileID)
+
+	// Clear domain match cache on the main tunnel
+	t.SetDomainMatchCache(make(map[string]bool))
 }

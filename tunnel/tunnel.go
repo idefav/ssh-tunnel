@@ -101,6 +101,32 @@ type Tunnel struct {
 	exitInfoMu        sync.RWMutex
 	exitInfoRefreshMu sync.Mutex
 	lastExitIPInfo    ExitIPInfo
+
+	sshHealthMutex         sync.Mutex
+	sshClientGeneration    uint64
+	sshDialTimeoutWindowAt time.Time
+	sshDialTimeoutStreak   uint64
+	lastSSHFailureClass    string
+
+	sshPoolMu                    sync.Mutex
+	sshPool                      []*SSHPoolMember
+	sshPoolEvicted               []*SSHPoolMember
+	sshPoolSize                  int
+	sshPoolReplenishInterval     time.Duration
+	sshPoolBalanceStrategy       string
+	sshProbeURL                  string
+	sshProbeURLs                 string
+	sshProbeTimeout              time.Duration
+	sshProbeFailureThreshold     uint64
+	sshSuspectCooldown           time.Duration
+	proxyRetryMaxAttempts        int
+	proxyRetryInitialBufferBytes int
+	reconnectRecoveryPending     bool
+
+	// Profile-based domain routing
+	routeMatcher      *RouteMatcher
+	profileTunnelMgr  *ProfileTunnelManager
+	profileID         string // profileID for this tunnel instance (empty for main tunnel)
 }
 
 type ProxyMetrics struct {
@@ -112,12 +138,23 @@ type ProxyMetrics struct {
 }
 
 type SSHConnectionStats struct {
-	ConnectionCount              int       `json:"connectionCount"`
-	ReconnectCount               uint64    `json:"reconnectCount"`
-	ConsecutiveReconnectFailures uint64    `json:"consecutiveReconnectFailures"`
-	LastReconnectError           string    `json:"lastReconnectError,omitempty"`
-	LastReconnectAt              time.Time `json:"lastReconnectAt,omitempty"`
-	LastReconnectFailureAt       time.Time `json:"lastReconnectFailureAt,omitempty"`
+	ConnectionCount              int               `json:"connectionCount"`
+	ReconnectCount               uint64            `json:"reconnectCount"`
+	ConsecutiveReconnectFailures uint64            `json:"consecutiveReconnectFailures"`
+	LastReconnectError           string            `json:"lastReconnectError,omitempty"`
+	LastReconnectAt              time.Time         `json:"lastReconnectAt,omitempty"`
+	LastReconnectFailureAt       time.Time         `json:"lastReconnectFailureAt,omitempty"`
+	SSHHealthy                   bool              `json:"sshHealthy"`
+	SSHClientGeneration          uint64            `json:"sshClientGeneration"`
+	SSHDialTimeoutStreak         uint64            `json:"sshDialTimeoutStreak"`
+	LastSSHFailureClass          string            `json:"lastSSHFailureClass,omitempty"`
+	PoolSize                     int               `json:"poolSize"`
+	HealthyCount                 int               `json:"healthyCount"`
+	SuspectCount                 int               `json:"suspectCount"`
+	ProbingCount                 int               `json:"probingCount"`
+	ReconnectingCount            int               `json:"reconnectingCount"`
+	EvictedCount                 int               `json:"evictedCount"`
+	PoolMembers                  []SSHPoolSnapshot `json:"poolMembers,omitempty"`
 }
 
 type ListenerStats struct {
@@ -139,73 +176,106 @@ type ExitIPInfo struct {
 }
 
 type destinationConn struct {
-	conn      net.Conn
-	sshClient *ssh.Client
-	viaSSH    bool
+	conn        net.Conn
+	sshClient   *ssh.Client
+	sshMemberID uint64
+	profileID   string
+	viaSSH      bool
+	generation  uint64
+	retryInfo   SSHRetryInfo
 }
 
-func (t *Tunnel) currentSSHClient() *ssh.Client {
-	t.reconnectMutex.Lock()
-	defer t.reconnectMutex.Unlock()
-	return t.client
+const (
+	requestPhaseDial         = "dial"
+	requestPhaseProxying     = "proxying"
+	requestPhaseInitialWrite = "initial_write"
+
+	failureClassSSHTransportDead  = "ssh_transport_dead"
+	failureClassSSHChannelTimeout = "ssh_channel_timeout"
+	failureClassDestTimeout       = "dest_timeout"
+	failureClassDestReset         = "dest_reset"
+	failureClassClientClosed      = "client_closed"
+	failureClassUnknown           = "unknown"
+
+	sshDialTimeoutWindow = 5 * time.Second
+	sshDialTimeoutLimit  = 3
+)
+
+func (t *Tunnel) nextSSHGeneration() uint64 {
+	t.sshHealthMutex.Lock()
+	defer t.sshHealthMutex.Unlock()
+	t.sshClientGeneration++
+	return t.sshClientGeneration
 }
 
-func (t *Tunnel) invalidateSSHClient(reason string) {
-	t.reconnectMutex.Lock()
-	client := t.client
-	t.client = nil
-	t.reconnectMutex.Unlock()
+func (t *Tunnel) resetSSHFailureState() {
+	t.sshHealthMutex.Lock()
+	t.sshDialTimeoutWindowAt = time.Time{}
+	t.sshDialTimeoutStreak = 0
+	t.lastSSHFailureClass = ""
+	t.sshHealthMutex.Unlock()
+}
 
-	if client != nil {
-		closeSSHClient(client)
-		t.resetExitIPInfo()
-		if reason != "" {
-			log.Printf("SSH client invalidated: %s", reason)
+func (t *Tunnel) classifyDialError(err error, viaSSH bool) string {
+	if err == nil {
+		return ""
+	}
+	if isSSHReconnectError(err) {
+		return failureClassSSHTransportDead
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		if viaSSH {
+			return failureClassSSHChannelTimeout
 		}
+		return failureClassDestTimeout
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		if viaSSH {
+			return failureClassSSHChannelTimeout
+		}
+		return failureClassDestTimeout
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "reset by peer"), strings.Contains(msg, "connection reset"):
+		return failureClassDestReset
+	case strings.Contains(msg, "client disconnected"), strings.Contains(msg, "use of closed network connection"):
+		return failureClassClientClosed
+	default:
+		return failureClassUnknown
 	}
 }
 
-func (t *Tunnel) invalidateSSHClientIfMatch(expected *ssh.Client, reason string) bool {
-	if expected == nil {
-		return false
-	}
-
-	t.reconnectMutex.Lock()
-	if t.client != expected {
-		t.reconnectMutex.Unlock()
-		return false
-	}
-	t.client = nil
-	t.reconnectMutex.Unlock()
-
-	closeSSHClient(expected)
-	t.resetExitIPInfo()
-	if reason != "" {
-		log.Printf("SSH client invalidated: %s", reason)
-	}
-	return true
+func (t *Tunnel) recordSSHDialSuccess() {
+	t.resetSSHFailureState()
 }
 
-func (t *Tunnel) GetSSHClient() *ssh.Client {
-	t.reconnectMutex.Lock()
-	client := t.client
-	t.reconnectMutex.Unlock()
+func (t *Tunnel) recordSSHDialFailure(err error) (string, bool) {
+	class := t.classifyDialError(err, true)
+	t.sshHealthMutex.Lock()
+	defer t.sshHealthMutex.Unlock()
 
-	if client != nil {
-		return client
+	t.lastSSHFailureClass = class
+	if class != failureClassSSHChannelTimeout {
+		t.sshDialTimeoutWindowAt = time.Time{}
+		t.sshDialTimeoutStreak = 0
+		return class, false
 	}
 
-	t.ReconnectSSHWithSource(t.reconnectContext(nil), "get-ssh-client")
-
-	t.reconnectMutex.Lock()
-	defer t.reconnectMutex.Unlock()
-	return t.client
+	now := time.Now()
+	if t.sshDialTimeoutWindowAt.IsZero() || now.Sub(t.sshDialTimeoutWindowAt) > sshDialTimeoutWindow {
+		t.sshDialTimeoutWindowAt = now
+		t.sshDialTimeoutStreak = 1
+	} else {
+		t.sshDialTimeoutStreak++
+	}
+	return class, t.sshDialTimeoutStreak >= sshDialTimeoutLimit
 }
 
-func (t *Tunnel) PeekSSHClient() *ssh.Client {
-	t.reconnectMutex.Lock()
-	defer t.reconnectMutex.Unlock()
-	return t.client
+func (t *Tunnel) snapshotSSHHealth() (generation uint64, timeoutStreak uint64, lastFailureClass string) {
+	t.sshHealthMutex.Lock()
+	defer t.sshHealthMutex.Unlock()
+	return t.sshClientGeneration, t.sshDialTimeoutStreak, t.lastSSHFailureClass
 }
 
 func (t *Tunnel) SetTunnelContext(ctx context.Context) {
@@ -229,7 +299,7 @@ func (t *Tunnel) reconnectContext(ctx context.Context) context.Context {
 }
 
 func (t *Tunnel) DisconnectSSHClient() {
-	t.invalidateSSHClient("manual disconnect")
+	t.DisconnectSSHPool("manual disconnect")
 }
 
 func (t *Tunnel) AppConfig() *cfg.AppConfig {
@@ -264,6 +334,14 @@ func (t *Tunnel) SetDomainMatchCache(domainMatchCache map[string]bool) {
 	t.domainMutex.Unlock()
 }
 
+func (t *Tunnel) GetRouteMatcher() *RouteMatcher {
+	return t.routeMatcher
+}
+
+func (t *Tunnel) GetProfileTunnelMgr() *ProfileTunnelManager {
+	return t.profileTunnelMgr
+}
+
 func (t *Tunnel) GetRequestTracker() *ProxyRequestTracker {
 	t.requestTrackerOnce.Do(func() {
 		t.requestTracker = NewProxyRequestTracker(50)
@@ -294,9 +372,6 @@ func (t *Tunnel) addProxyDownloadBytes(n int64) {
 }
 
 func (t *Tunnel) copyProxyData(destination io.WriteCloser, source io.ReadCloser, upload bool) {
-	defer destination.Close()
-	defer source.Close()
-
 	n, err := io.Copy(destination, source)
 	if upload {
 		t.addProxyUploadBytes(n)
@@ -304,8 +379,202 @@ func (t *Tunnel) copyProxyData(destination io.WriteCloser, source io.ReadCloser,
 		t.addProxyDownloadBytes(n)
 	}
 
+	closeWrite(destination)
 	if err != nil && !isIgnorableProxyErr(err) {
 		log.Printf("proxy copy failed: %v", err)
+	}
+}
+
+type closeWriter interface {
+	CloseWrite() error
+}
+
+func closeWrite(c io.Closer) {
+	if c == nil {
+		return
+	}
+	if cw, ok := c.(closeWriter); ok {
+		_ = cw.CloseWrite()
+		return
+	}
+	_ = c.Close()
+}
+
+func closeConn(c io.Closer) {
+	if c == nil {
+		return
+	}
+	_ = c.Close()
+}
+
+func (t *Tunnel) proxyBidirectional(left io.ReadWriteCloser, right io.ReadWriteCloser, req *ProxyRequest) {
+	done := make(chan struct{}, 2)
+	safe.GO(func() {
+		t.copyProxyData(left, right, true)
+		done <- struct{}{}
+	})
+	safe.GO(func() {
+		t.copyProxyData(right, left, false)
+		done <- struct{}{}
+	})
+	<-done
+	<-done
+	closeConn(left)
+	closeConn(right)
+	if req != nil {
+		t.GetRequestTracker().MarkCompleted(req)
+	}
+}
+
+type prefixReadConn struct {
+	net.Conn
+	prefix []byte
+}
+
+func (c *prefixReadConn) Read(p []byte) (int, error) {
+	if len(c.prefix) == 0 {
+		return c.Conn.Read(p)
+	}
+	n := copy(p, c.prefix)
+	c.prefix = c.prefix[n:]
+	return n, nil
+}
+
+func writeFull(conn net.Conn, data []byte) (int, error) {
+	total := 0
+	for total < len(data) {
+		n, err := conn.Write(data[total:])
+		total += n
+		if err != nil {
+			return total, err
+		}
+		if n == 0 {
+			return total, io.ErrShortWrite
+		}
+	}
+	return total, nil
+}
+
+func isTargetTLSPort(target string) bool {
+	_, port, err := net.SplitHostPort(target)
+	return err == nil && port == "443"
+}
+
+func shouldRetryEarlyProxyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "use of closed network connection") ||
+		strings.Contains(msg, "eof")
+}
+
+func (t *Tunnel) proxyBidirectionalWithEarlyRetry(ctx context.Context, client net.Conn, dest destinationConn, target string, req *ProxyRequest, retryState *requestRetryState) {
+	if !dest.viaSSH || retryState == nil || !isTargetTLSPort(target) || t.configuredProxyRetryMaxAttempts() <= 0 {
+		t.proxyBidirectional(dest.conn, client, req)
+		return
+	}
+
+	bufferLimit := t.configuredProxyRetryInitialBufferBytes()
+	if bufferLimit <= 0 {
+		t.proxyBidirectional(dest.conn, client, req)
+		return
+	}
+
+	initial := make([]byte, bufferLimit)
+	_ = client.SetReadDeadline(time.Now().Add(t.proxyHandshakeTimeout()))
+	n, readErr := client.Read(initial)
+	_ = client.SetReadDeadline(time.Time{})
+	if n == 0 {
+		if netErr, ok := readErr.(net.Error); ok && netErr.Timeout() {
+			t.proxyBidirectional(dest.conn, client, req)
+			return
+		}
+		if readErr != nil && !isIgnorableProxyErr(readErr) {
+			t.GetRequestTracker().MarkFailedDetailed(req, requestPhaseInitialWrite, failureClassClientClosed, readErr.Error(), false)
+			closeConn(dest.conn)
+			closeConn(client)
+			return
+		}
+		t.proxyBidirectional(dest.conn, client, req)
+		return
+	}
+	initial = initial[:n]
+
+	tracker := t.GetRequestTracker()
+	for {
+		written, writeErr := writeFull(dest.conn, initial)
+		if writeErr != nil {
+			retryState.recordProxyRetryReason(writeErr)
+			if written == 0 && retryState.canAttempt() {
+				closeConn(dest.conn)
+				retryDest, retryErr := t.getDestConn(target, retryState)
+				if retryErr == nil && retryDest.conn != nil && retryDest.viaSSH {
+					dest = retryDest
+					retryInfo := retryState.info()
+					tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
+					tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+					tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
+					continue
+				}
+				if retryErr != nil {
+					writeErr = retryErr
+					retryState.recordProxyRetryReason(retryErr)
+				}
+			}
+			failureClass := t.classifyDialError(writeErr, dest.viaSSH)
+			tracker.MarkFailedDetailed(req, requestPhaseInitialWrite, failureClass, writeErr.Error(), false)
+			closeConn(dest.conn)
+			closeConn(client)
+			return
+		}
+
+		firstServerByte := make([]byte, 1)
+		_ = dest.conn.SetReadDeadline(time.Now().Add(t.proxyHandshakeTimeout()))
+		serverN, serverErr := dest.conn.Read(firstServerByte)
+		_ = dest.conn.SetReadDeadline(time.Time{})
+		if serverN > 0 {
+			tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
+			tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+			retryInfo := retryState.info()
+			tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
+			t.proxyBidirectional(&prefixReadConn{Conn: dest.conn, prefix: firstServerByte[:serverN]}, client, req)
+			return
+		}
+		if serverErr != nil && shouldRetryEarlyProxyError(serverErr) && retryState.canAttempt() {
+			retryState.recordProxyRetryReason(serverErr)
+			closeConn(dest.conn)
+			retryDest, retryErr := t.getDestConn(target, retryState)
+			if retryErr == nil && retryDest.conn != nil && retryDest.viaSSH {
+				dest = retryDest
+				retryInfo := retryState.info()
+				tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
+				tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+				tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
+				continue
+			}
+			if retryErr != nil {
+				serverErr = retryErr
+				retryState.recordProxyRetryReason(retryErr)
+			}
+		}
+		if serverErr != nil && shouldRetryEarlyProxyError(serverErr) {
+			failureClass := t.classifyDialError(serverErr, dest.viaSSH)
+			tracker.MarkFailedDetailed(req, requestPhaseInitialWrite, failureClass, serverErr.Error(), false)
+			closeConn(dest.conn)
+			closeConn(client)
+			return
+		}
+		t.proxyBidirectional(dest.conn, client, req)
+		return
 	}
 }
 
@@ -356,9 +625,11 @@ func (t *Tunnel) SnapshotSSHConnectionStats() SSHConnectionStats {
 	defer t.reconnectMutex.Unlock()
 
 	count := 0
-	if t.client != nil {
-		count = 1
-	}
+	count = t.healthyPoolCount()
+
+	generation, timeoutStreak, lastFailureClass := t.snapshotSSHHealth()
+	healthyCount, suspectCount, probingCount, reconnectingCount, evictedCount := t.countPoolStates()
+	poolMembers := t.snapshotPoolMembers()
 
 	return SSHConnectionStats{
 		ConnectionCount:              count,
@@ -367,6 +638,17 @@ func (t *Tunnel) SnapshotSSHConnectionStats() SSHConnectionStats {
 		LastReconnectError:           t.lastReconnectError,
 		LastReconnectAt:              t.lastReconnectAt,
 		LastReconnectFailureAt:       t.lastReconnectFailureAt,
+		SSHHealthy:                   healthyCount > 0,
+		SSHClientGeneration:          generation,
+		SSHDialTimeoutStreak:         timeoutStreak,
+		LastSSHFailureClass:          lastFailureClass,
+		PoolSize:                     healthyCount + suspectCount + probingCount + reconnectingCount,
+		HealthyCount:                 healthyCount,
+		SuspectCount:                 suspectCount,
+		ProbingCount:                 probingCount,
+		ReconnectingCount:            reconnectingCount,
+		EvictedCount:                 evictedCount,
+		PoolMembers:                  poolMembers,
 	}
 }
 
@@ -441,20 +723,25 @@ func (t *Tunnel) handleHTTP(ctx context.Context, w http.ResponseWriter, req *htt
 
 }
 
-func (t *Tunnel) getDestConn(host string) (destinationConn, error) {
+func (t *Tunnel) getDestConn(host string, retryState *requestRetryState) (destinationConn, error) {
+	// Check profile-based domain routing first
+	if dest, ok := t.tryRouteMatch(host, retryState); ok {
+		return dest, nil
+	}
+
 	if !t.enableHttpOverSSH {
 		conn, err := net.DialTimeout("tcp", host, 3*time.Second)
 		return destinationConn{conn: conn}, err
 	}
 
 	if !t.enableHttpDomainFilter {
-		conn, client, err := t.createSSHConn(host)
-		return destinationConn{conn: conn, sshClient: client, viaSSH: true}, err
+		conn, client, generation, memberID, retryInfo, err := t.createSSHConn(host, retryState)
+		return destinationConn{conn: conn, sshClient: client, sshMemberID: memberID, viaSSH: true, generation: generation, retryInfo: retryInfo}, err
 	}
 
 	if t.shouldUseSSHForHost(host) {
-		conn, client, err := t.createSSHConn(host)
-		return destinationConn{conn: conn, sshClient: client, viaSSH: true}, err
+		conn, client, generation, memberID, retryInfo, err := t.createSSHConn(host, retryState)
+		return destinationConn{conn: conn, sshClient: client, sshMemberID: memberID, viaSSH: true, generation: generation, retryInfo: retryInfo}, err
 	}
 
 	conn, err := net.DialTimeout("tcp", host, 10*time.Second)
@@ -462,28 +749,33 @@ func (t *Tunnel) getDestConn(host string) (destinationConn, error) {
 
 }
 
-func (t *Tunnel) createSSHConn(host string) (net.Conn, *ssh.Client, error) {
-	client := t.GetSSHClient()
-	if client == nil {
-		return nil, nil, SSHReconnectRequired
+// tryRouteMatch checks if the host matches a profile route and returns a connection via that profile's tunnel.
+// Returns (dest, true) on success, (_, false) if no route matched or the route tunnel failed.
+func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (destinationConn, bool) {
+	if t.routeMatcher == nil || t.profileTunnelMgr == nil {
+		return destinationConn{}, false
 	}
-	timeout := t.sshDestTimeout
-	if timeout <= 0 {
-		timeout = 3 * time.Second
+	profileID, matched := t.routeMatcher.Match(host)
+	if !matched {
+		return destinationConn{}, false
 	}
-	background := context.Background()
-	timeoutCtx, cancel := context.WithTimeout(background, timeout)
-	defer cancel()
+	dest, err := t.profileTunnelMgr.CreateSSHConnForProfile(profileID, host, retryState)
+	if err == nil {
+		return dest, true
+	}
+	log.Printf("Profile路由连接失败(profile=%s, host=%s): %v, 回退到默认路由", profileID, host, err)
+	return destinationConn{}, false
+}
 
-	conn, err := client.DialContext(timeoutCtx, "tcp", host)
+func (t *Tunnel) createSSHConn(host string, retryState *requestRetryState) (net.Conn, *ssh.Client, uint64, uint64, SSHRetryInfo, error) {
+	conn, member, _, reconnectTriggered, retryInfo, err := t.dialSSHConn(context.Background(), host, retryState)
 	if err != nil {
-		if isSSHReconnectError(err) {
-			return nil, client, fmt.Errorf("%w: %v", SSHDialError, err)
+		if reconnectTriggered {
+			return nil, nil, 0, memberID(member), retryInfo, fmt.Errorf("%w: %v", SSHDialError, err)
 		}
-		return nil, client, err
+		return nil, nil, 0, memberID(member), retryInfo, err
 	}
-
-	return conn, client, nil
+	return conn, member.Client, member.Generation, member.ID, retryInfo, nil
 }
 
 func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -493,15 +785,26 @@ func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http
 		port = "443"
 	}
 	req := tracker.StartRequest(host, port, "HTTPS", t.enableHttpOverSSH)
+	tracker.UpdateMetadata(req, requestPhaseDial, t.enableHttpOverSSH, 0, "", false, 0)
 
-	dest, err := t.getDestConn(r.Host)
+	retryState := t.newRequestRetryState()
+	dialStartedAt := time.Now()
+	dest, err := t.getDestConn(r.Host, retryState)
 	if err != nil {
-		tracker.MarkFailed(req, err.Error())
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		failureClass := t.classifyDialError(err, dest.viaSSH)
+		reconnectTriggered := dest.viaSSH && shouldReconnect(err)
+		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClass, reconnectTriggered, dest.generation)
+		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
+		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClass, err.Error(), reconnectTriggered)
+		http.Error(w, err.Error(), proxyHTTPStatus(err, dest.viaSSH))
 		return
 	}
-	destConn := dest.conn
+	tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), "", false, dest.generation)
+	tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+	tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 	tracker.MarkActive(req)
+	tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
 	finishProxyConn := t.beginActiveProxyConn()
 	defer finishProxyConn()
 	w.WriteHeader(http.StatusOK)
@@ -517,21 +820,7 @@ func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return // fixed: was missing return
 	}
-
-	done := make(chan struct{}, 2)
-	safe.GO(func() {
-		t.copyProxyData(destConn, clientConn, true)
-		done <- struct{}{}
-	})
-	safe.GO(func() {
-		t.copyProxyData(clientConn, destConn, false)
-		done <- struct{}{}
-	})
-	// 等待任一方向结束即标记完成
-	safe.GO(func() {
-		<-done
-		tracker.MarkCompleted(req)
-	})
+	t.proxyBidirectionalWithEarlyRetry(ctx, clientConn, dest, r.Host, req, retryState)
 }
 
 func copyHeader(dst, src http.Header) {
@@ -636,88 +925,124 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 	tracker := t.GetRequestTracker()
 	rHost, rPort := splitHostPort(address)
 	req := tracker.StartRequest(rHost, rPort, protocol, t.enableHttpOverSSH)
+	tracker.UpdateMetadata(req, requestPhaseDial, t.enableHttpOverSSH, 0, "", false, 0)
 
-	dest, done := t.getConn(ctx, client, address)
-	if done {
-		tracker.MarkFailed(req, "connection failed")
+	retryState := t.newRequestRetryState()
+	dialStartedAt := time.Now()
+	dest, err := t.getConn(ctx, client, address, retryState)
+	if err != nil {
+		failureClass := t.classifyDialError(err, dest.viaSSH)
+		reconnectTriggered := dest.viaSSH && shouldReconnect(err)
+		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClass, reconnectTriggered, dest.generation)
+		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
+		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClass, err.Error(), reconnectTriggered)
 		return
 	}
 	if dest.conn == nil {
-		tracker.MarkFailed(req, "destination connection is nil")
+		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClassUnknown, false, dest.generation)
+		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
+		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClassUnknown, "destination connection is nil", false)
 		log.Println("Get Dest Connection Failed: destination connection is nil")
 		fmt.Fprint(client, "HTTP/1.1 500 destination connection is nil\r\n\r\n")
 		return
 	}
 	destConn := dest.conn
+	tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), "", false, dest.generation)
+	tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+	tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 	tracker.MarkActive(req)
+	tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
 	finishProxyConn := t.beginActiveProxyConn()
 	defer finishProxyConn()
 
 	if method == "CONNECT" {
 		fmt.Fprint(client, "HTTP/1.1 200 Connection established\r\n\r\n")
 	} else {
-		if _, writeErr := destConn.Write(b[:n]); writeErr != nil {
+		written, writeErr := destConn.Write(b[:n])
+		if writeErr != nil && written == 0 && n <= t.configuredProxyRetryInitialBufferBytes() && dest.viaSSH && t.configuredProxyRetryMaxAttempts() > 0 && retryState.canAttempt() {
+			retryState.recordProxyRetryReason(writeErr)
+			closeConn(destConn)
+			retryDest, retryErr := t.getDestConn(address, retryState)
+			if retryErr == nil && retryDest.conn != nil && retryDest.viaSSH {
+				retryWritten, retryWriteErr := retryDest.conn.Write(b[:n])
+				if retryWriteErr == nil {
+					dest = retryDest
+					destConn = retryDest.conn
+					retryInfo := retryState.info()
+					tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
+					tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+					tracker.UpdateRetryInfo(req, retryInfo.RetryCount, writeErr.Error(), retryInfo.RetryMembers, retryInfo.BalanceStrategy)
+					writeErr = nil
+					written = retryWritten
+				} else {
+					closeConn(retryDest.conn)
+					writeErr = retryWriteErr
+					written = retryWritten
+					retryInfo := retryState.info()
+					if retryInfo.RetryReason == "" {
+						retryInfo.RetryReason = writeErr.Error()
+					}
+					tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
+				}
+			} else if retryErr != nil {
+				writeErr = retryErr
+				retryInfo := retryState.info()
+				tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryErr.Error(), retryInfo.RetryMembers, retryInfo.BalanceStrategy)
+			}
+		}
+		if writeErr != nil {
 			log.Printf("write initial request to destination failed: %v", writeErr)
+			failureClass := t.classifyDialError(writeErr, dest.viaSSH)
+			tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, failureClass, false, dest.generation)
 			if dest.viaSSH && dest.sshClient != nil && isSSHReconnectError(writeErr) {
 				t.invalidateSSHClientIfMatch(dest.sshClient, "http initial write failed: "+writeErr.Error())
 				safe.GO(func() {
 					t.ReconnectSSHWithSource(ctx, "http-proxy-write")
 				})
+				tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, failureClass, true, dest.generation)
 			}
-			fmt.Fprint(client, "HTTP/1.1 500 "+writeErr.Error()+"\r\n\r\n")
-			tracker.MarkFailed(req, writeErr.Error())
+			status := proxyHTTPStatus(writeErr, dest.viaSSH)
+			fmt.Fprintf(client, "HTTP/1.1 %d %s\r\n\r\n", status, http.StatusText(status))
+			tracker.MarkFailedDetailed(req, requestPhaseInitialWrite, failureClass, writeErr.Error(), dest.viaSSH && isSSHReconnectError(writeErr))
 			return
 		}
 	}
-	//进行转发
-	safe.GO(func() {
-		t.copyProxyData(destConn, client, true)
-	})
-	t.copyProxyData(client, destConn, false)
-	tracker.MarkCompleted(req)
+	if method == "CONNECT" {
+		t.proxyBidirectionalWithEarlyRetry(ctx, client, dest, address, req, retryState)
+		return
+	}
+	t.proxyBidirectional(destConn, client, req)
 }
 
-func (t *Tunnel) getConn(ctx context.Context, client net.Conn, address string) (destinationConn, bool) {
-	dest, err := t.getDestConn(address)
+func (t *Tunnel) getConn(ctx context.Context, client net.Conn, address string, retryState *requestRetryState) (destinationConn, error) {
+	dest, err := t.getDestConn(address, retryState)
 	if err == nil && dest.conn != nil {
-		return dest, false
+		return dest, nil
 	}
 
 	if dest.viaSSH && shouldReconnect(err) {
 		if err != nil && dest.sshClient != nil {
 			t.invalidateSSHClientIfMatch(dest.sshClient, err.Error())
 		}
-
-		t.ReconnectSSHWithSource(t.reconnectContext(ctx), "http-proxy-request")
-		if t.PeekSSHClient() == nil {
-			log.Printf("Get Dest Connection Failed(%s): ssh reconnect failed", address)
-			fmt.Fprint(client, "HTTP/1.1 500 ssh reconnect failed\r\n\r\n")
-			return destinationConn{}, true
-		}
-
-		dest, err = t.getDestConn(address)
-		if err == nil && dest.conn != nil {
-			return dest, false
-		}
-
-		if err != nil {
-			log.Printf("Get Dest Connection Failed(%s) after reconnect: %v", address, err)
-			fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
-		} else {
-			log.Printf("Get Dest Connection Failed(%s) after reconnect: destination connection is nil", address)
-			fmt.Fprint(client, "HTTP/1.1 500 destination connection is nil\r\n\r\n")
-		}
-		return destinationConn{}, true
+		safe.GO(func() {
+			t.ReconnectSSHWithSource(t.reconnectContext(ctx), "http-proxy-request")
+		})
+		log.Printf("Get Dest Connection Failed(%s): ssh pool unavailable, replenish scheduled: %v", address, err)
+		fmt.Fprint(client, "HTTP/1.1 502 Bad Gateway\r\n\r\n")
+		return dest, err
 	}
 
 	if err != nil {
 		log.Printf("Get Dest Connection Failed(%s): %v", address, err)
-		fmt.Fprint(client, "HTTP/1.1 500 "+err.Error()+"\r\n\r\n")
+		fmt.Fprintf(client, "HTTP/1.1 %d %s\r\n\r\n", proxyHTTPStatus(err, dest.viaSSH), http.StatusText(proxyHTTPStatus(err, dest.viaSSH)))
 	} else {
 		log.Printf("Get Dest Connection Failed(%s): destination connection is nil", address)
 		fmt.Fprint(client, "HTTP/1.1 500 destination connection is nil\r\n\r\n")
+		err = errors.New("destination connection is nil")
 	}
-	return destinationConn{}, true
+	return dest, err
 }
 
 func shouldReconnect(err error) bool {
@@ -728,6 +1053,22 @@ func shouldReconnect(err error) bool {
 		return true
 	}
 	return isSSHReconnectError(err)
+}
+
+func proxyHTTPStatus(err error, viaSSH bool) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return http.StatusGatewayTimeout
+	}
+	if viaSSH && shouldReconnect(err) {
+		return http.StatusBadGateway
+	}
+	return http.StatusBadGateway
 }
 
 func isSSHReconnectError(err error) bool {
@@ -754,7 +1095,10 @@ func isIgnorableProxyErr(err error) bool {
 	errText := strings.ToLower(err.Error())
 	return strings.Contains(errText, "use of closed network connection") ||
 		strings.Contains(errText, "wsarecv") ||
-		strings.Contains(errText, "forcibly closed by the remote host")
+		strings.Contains(errText, "forcibly closed by the remote host") ||
+		strings.Contains(errText, "broken pipe") ||
+		strings.Contains(errText, "connection reset by peer") ||
+		err == io.EOF
 }
 
 func (t *Tunnel) httpProxyStart(ctx context.Context, wg *sync.WaitGroup) {
@@ -877,32 +1221,47 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 	tracker := t.GetRequestTracker()
 	sHost, sPort := splitHostPort(addr)
 	req := tracker.StartRequest(sHost, sPort, "SOCKS5", true)
+	tracker.UpdateMetadata(req, requestPhaseDial, true, 0, "", false, 0)
 
-	sshClient := t.GetSSHClient()
-	if sshClient == nil {
-		_ = writeSocks5Reply(conn, 0x01, nil)
-		tracker.MarkFailed(req, "SSH client not connected")
-		return SSHReconnectRequired
+	retryState := t.newRequestRetryState()
+
+	// Check profile-based domain routing first
+	if dest, ok := t.tryRouteMatch(addr, retryState); ok {
+		if err := writeSocks5Reply(conn, 0x00, dest.conn.LocalAddr()); err != nil {
+			_ = dest.conn.Close()
+			log.Println(err)
+			tracker.MarkFailed(req, err.Error())
+			return err
+		}
+		tracker.UpdateMetadata(req, requestPhaseDial, true, 0, "", false, dest.generation)
+		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.MarkActive(req)
+		tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, dest.generation)
+		_ = conn.SetReadDeadline(time.Time{})
+		finishProxyConn := t.beginActiveProxyConn()
+		defer finishProxyConn()
+		t.proxyBidirectionalWithEarlyRetry(ctx, conn, dest, addr, req, retryState)
+		return nil
 	}
 
-	timeout := t.sshDestTimeout
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
-	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), timeout)
-	defer timeoutCancel()
-
-	server, err := sshClient.DialContext(timeoutCtx, "tcp", addr)
+	dialStartedAt := time.Now()
+	server, member, failureClass, reconnectTriggered, retryInfo, err := t.dialSSHConn(context.Background(), addr, retryState)
 	if err != nil {
 		log.Println(err)
 		_ = writeSocks5Reply(conn, mapSocks5ReplyCode(err), nil)
-		tracker.MarkFailed(req, err.Error())
-		if isSSHReconnectError(err) {
-			t.invalidateSSHClientIfMatch(sshClient, "socks5 dial failed: "+err.Error())
+		tracker.UpdateMetadata(req, requestPhaseDial, true, time.Since(dialStartedAt), failureClass, reconnectTriggered, 0)
+		tracker.UpdateSSHMember(req, memberID(member), t.profileID)
+		tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
+		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClass, err.Error(), reconnectTriggered)
+		if reconnectTriggered {
 			return SSHReconnectRequired
 		}
 		return err
 	}
+	generation := member.Generation
+	tracker.UpdateMetadata(req, requestPhaseDial, true, time.Since(dialStartedAt), "", false, generation)
+	tracker.UpdateSSHMember(req, member.ID, t.profileID)
+	tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 
 	if err := writeSocks5Reply(conn, 0x00, server.LocalAddr()); err != nil {
 		_ = server.Close()
@@ -912,14 +1271,18 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 	}
 
 	tracker.MarkActive(req)
+	tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, generation)
 	_ = conn.SetReadDeadline(time.Time{})
 	finishProxyConn := t.beginActiveProxyConn()
 	defer finishProxyConn()
-	safe.GO(func() {
-		t.copyProxyData(server, conn, true)
-	})
-	t.copyProxyData(conn, server, false)
-	tracker.MarkCompleted(req)
+	t.proxyBidirectionalWithEarlyRetry(ctx, conn, destinationConn{
+		conn:        server,
+		sshClient:   member.Client,
+		sshMemberID: member.ID,
+		viaSSH:      true,
+		generation:  generation,
+		retryInfo:   retryInfo,
+	}, addr, req, retryState)
 	return nil
 }
 
@@ -1055,32 +1418,44 @@ func (t *Tunnel) httpProxy(ctx context.Context, conn net.Conn) error {
 	hpHost, hpPort := splitHostPort(addr)
 	req := tracker.StartRequest(hpHost, hpPort, "SOCKS5", true)
 
-	sshClient := t.GetSSHClient()
-	if sshClient == nil {
-		tracker.MarkFailed(req, "SSH client not connected")
-		return NetworkError
+	retryState := t.newRequestRetryState()
+
+	// Check profile-based domain routing first
+	if dest, ok := t.tryRouteMatch(addr, retryState); ok {
+		tracker.UpdateMetadata(req, requestPhaseDial, true, 0, "", false, dest.generation)
+		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.MarkActive(req)
+		tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, dest.generation)
+		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+		t.proxyBidirectionalWithEarlyRetry(ctx, conn, dest, addr, req, retryState)
+		return nil
 	}
 
-	timeout := t.sshDestTimeout
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
-	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), timeout)
-	defer timeoutCancel()
-
-	server, err := sshClient.DialContext(timeoutCtx, "tcp", addr)
+	dialStartedAt := time.Now()
+	server, member, failureClass, reconnectTriggered, retryInfo, err := t.dialSSHConn(context.Background(), addr, retryState)
 	if err != nil {
 		log.Println(err)
-		tracker.MarkFailed(req, err.Error())
+		tracker.UpdateMetadata(req, requestPhaseDial, true, time.Since(dialStartedAt), failureClass, reconnectTriggered, 0)
+		tracker.UpdateSSHMember(req, memberID(member), t.profileID)
+		tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
+		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClass, err.Error(), reconnectTriggered)
 		return NetworkError
 	}
+	generation := member.Generation
+	tracker.UpdateMetadata(req, requestPhaseDial, true, time.Since(dialStartedAt), "", false, generation)
+	tracker.UpdateSSHMember(req, member.ID, t.profileID)
+	tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 	tracker.MarkActive(req)
+	tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, generation)
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	safe.GO(func() {
-		t.copyProxyData(server, conn, true)
-	})
-	t.copyProxyData(conn, server, false)
-	tracker.MarkCompleted(req)
+	t.proxyBidirectionalWithEarlyRetry(ctx, conn, destinationConn{
+		conn:        server,
+		sshClient:   member.Client,
+		sshMemberID: member.ID,
+		viaSSH:      true,
+		generation:  generation,
+		retryInfo:   retryInfo,
+	}, addr, req, retryState)
 	return nil
 }
 
@@ -1146,10 +1521,14 @@ func (t *Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh
 	wg2.Wait()
 }
 
-func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, client *ssh.Client) bool {
+func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, member *SSHPoolMember) bool {
 	if t.keepAlive.Interval == 0 || t.keepAlive.CountMax == 0 {
 		return false
 	}
+	if member == nil {
+		return false
+	}
+	client := member.Client
 	if client == nil {
 		return false
 	}
@@ -1166,15 +1545,17 @@ func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, client *
 		case <-ctx.Done():
 			return false
 		case err := <-wait:
-			if t.currentSSHClient() != client {
+			if t.findMemberByClient(client) == nil {
 				return false
 			}
 			if err != nil && err != io.EOF {
-				once.Do(func() { log.Printf("(%v) SSH error: %v", t, err) })
+				once.Do(func() {
+					log.Printf("SSH member wait error(memberId=%d,generation=%d): %v", member.ID, member.Generation, err)
+				})
 			}
 			return true
 		case <-ticker.C:
-			if t.currentSSHClient() != client {
+			if t.findMemberByClient(client) == nil {
 				return false
 			}
 
@@ -1201,7 +1582,9 @@ func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, client *
 			}
 
 			if n := atomic.AddInt32(&aliveCount, 1); n > int32(t.keepAlive.CountMax) {
-				once.Do(func() { log.Printf("(%v) SSH keep-alive termination", t) })
+				once.Do(func() {
+					log.Printf("SSH keep-alive termination(server=%s, memberId=%d, generation=%d, consecutiveFailures=%d)", t.serverAddress, member.ID, member.Generation, n)
+				})
 				return true
 			}
 		}

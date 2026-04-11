@@ -59,8 +59,8 @@ func (t *Tunnel) ReconnectSSHWithSource(ctx context.Context, source string) {
 
 		cl, err := t.dialSSH()
 		if err == nil {
-			t.setSSHClient(cl, source)
-			t.startKeepAlive(reconnectCtx, cl)
+			member := t.addSSHMember(cl, source)
+			t.startKeepAlive(reconnectCtx, member)
 			return
 		}
 
@@ -92,7 +92,7 @@ func (t *Tunnel) ReconnectSSHWithSource(ctx context.Context, source string) {
 func (t *Tunnel) beginReconnect(ctx context.Context) bool {
 	for {
 		t.reconnectMutex.Lock()
-		if t.client != nil {
+		if t.currentPoolSize() >= t.configuredPoolSize() {
 			t.reconnectMutex.Unlock()
 			return false
 		}
@@ -127,10 +127,8 @@ func (t *Tunnel) endReconnect() {
 	t.reconnectMutex.Unlock()
 }
 
-func (t *Tunnel) setSSHClient(cl *ssh.Client, source string) {
+func (t *Tunnel) addSSHMember(cl *ssh.Client, source string) *SSHPoolMember {
 	t.reconnectMutex.Lock()
-	oldClient := t.client
-	t.client = cl
 	currentCount := t.reconnectCount
 	isFirstConnect := false
 	if cl != nil {
@@ -139,8 +137,11 @@ func (t *Tunnel) setSSHClient(cl *ssh.Client, source string) {
 		t.lastReconnectAt = time.Now()
 		t.lastReconnectFailureAt = time.Time{}
 		t.resetExitIPInfo()
-		if t.sshConnectedOnce {
+		if t.reconnectRecoveryPending {
 			t.reconnectCount++
+			currentCount = t.reconnectCount
+			t.reconnectRecoveryPending = false
+		} else if t.sshConnectedOnce {
 			currentCount = t.reconnectCount
 		} else {
 			t.sshConnectedOnce = true
@@ -150,34 +151,47 @@ func (t *Tunnel) setSSHClient(cl *ssh.Client, source string) {
 	}
 	t.reconnectMutex.Unlock()
 
+	if cl == nil {
+		return nil
+	}
+
+	member := &SSHPoolMember{
+		Client:     cl,
+		ProfileID:  t.profileID,
+		State:      sshMemberHealthy,
+		Generation: t.nextSSHGeneration(),
+		CreatedAt:  time.Now(),
+	}
+	t.sshPoolMu.Lock()
+	member.ID = nextGlobalMemberID()
+	t.sshPool = append(t.sshPool, member)
+	t.sshPoolMu.Unlock()
+
 	if cl != nil {
+		t.resetSSHFailureState()
 		localAddr := safeSSHAddrString(func() net.Addr { return cl.LocalAddr() })
 		remoteAddr := safeSSHAddrString(func() net.Addr { return cl.RemoteAddr() })
 		if isFirstConnect {
-			log.Printf("SSH首次连接成功(source=%s, reconnectCount=%d, local=%s, remote=%s)", source, currentCount, localAddr, remoteAddr)
+			log.Printf("SSH首次连接成功(source=%s, reconnectCount=%d, generation=%d, memberId=%d, local=%s, remote=%s)", source, currentCount, member.Generation, member.ID, localAddr, remoteAddr)
 		} else {
-			log.Printf("SSH重连成功(source=%s, reconnectCount=%d, local=%s, remote=%s)", source, currentCount, localAddr, remoteAddr)
+			log.Printf("SSH重连成功(source=%s, reconnectCount=%d, generation=%d, memberId=%d, local=%s, remote=%s)", source, currentCount, member.Generation, member.ID, localAddr, remoteAddr)
 		}
 	}
-
-	if oldClient != nil && oldClient != cl {
-		closeSSHClient(oldClient)
-		log.Printf("旧SSH连接已释放(source=%s)", source)
-	}
+	return member
 }
 
-func (t *Tunnel) startKeepAlive(ctx context.Context, client *ssh.Client) {
+func (t *Tunnel) startKeepAlive(ctx context.Context, member *SSHPoolMember) {
 	safe.GO(func() {
 		var once sync.Once
-		if !t.keepAliveMonitor(ctx, &once, client) {
+		if !t.keepAliveMonitor(ctx, &once, member) {
 			return
 		}
 
-		if !t.invalidateSSHClientIfMatch(client, "keepalive monitor stopped") {
+		if member == nil || !t.evictMember(member, "keepalive monitor stopped") {
 			return
 		}
 
-		log.Printf("SSH连接已关闭，准备重新连接")
+		log.Printf("SSH连接已关闭，准备补充连接池成员(memberId=%d,generation=%d)", member.ID, member.Generation)
 		safe.GO(func() {
 			t.ReconnectSSHWithSource(ctx, "keepalive-monitor")
 		})
