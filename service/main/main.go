@@ -157,12 +157,14 @@ func innerStart() {
 	}()
 
 	configPath := ""
+	filteredArgs := []string{os.Args[0]}
 	for i := 1; i < len(os.Args); i++ {
 		if strings.HasPrefix(os.Args[i], "--config=") {
 			configPath = strings.TrimPrefix(os.Args[i], "--config=")
 			log.Println("从命令行参数获取配置文件路径:", configPath)
-			break
+			continue
 		}
+		filteredArgs = append(filteredArgs, os.Args[i])
 	}
 
 	u, err := user.Current()
@@ -295,7 +297,7 @@ func innerStart() {
 	flagSet.Int(config.ProxyRetryInitialBufferBytes.GetKey(), config.ProxyRetryInitialBufferBytes.GetDefaultValue(), config.ProxyRetryInitialBufferBytes.GetDescription())
 	flagSet.String(config.LogFilePath.GetKey(), config.LogFilePath.GetDefaultValue(), config.LogFilePath.GetDescription())
 
-	if err := flagSet.Parse(os.Args[1:]); err != nil {
+	if err := flagSet.Parse(filteredArgs[1:]); err != nil {
 		log.Printf("Failed to parse flags: %v", err)
 		return
 	}
