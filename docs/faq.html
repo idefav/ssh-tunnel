@@ -429,6 +429,104 @@ set https_proxy=http://127.0.0.1:1082</code></pre>
                             </div>
                         </div>
                     </div>
+
+                    <!-- Multi-Profile FAQ -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingNine">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseNine" aria-expanded="false" aria-controls="collapseNine">
+                                如何使用 Multi-Profile 功能实现按域名分流？
+                            </button>
+                        </h2>
+                        <div id="collapseNine" class="accordion-collapse collapse" aria-labelledby="headingNine" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>Multi-Profile 功能（v1.4.18+）允许您为不同的目标域名/IP/CIDR 配置独立的 SSH 隧道。</p>
+
+                                <h5>配置步骤：</h5>
+                                <ol>
+                                    <li>在管理界面 <code>/view/index</code> 的 Profile 卡片中，新增一个 Profile，填写 SSH 服务器信息。</li>
+                                    <li>为该 Profile 添加路由规则（域名/IP/CIDR），例如 <code>*.github.com</code>。</li>
+                                    <li>保存 Profile，系统自动写入 <code>profiles.json</code> 并建立对应连接池。</li>
+                                    <li>之后所有匹配该规则的请求将自动走该 Profile 的 SSH 隧道，其余请求走默认隧道。</li>
+                                </ol>
+
+                                <h5>路由规则类型：</h5>
+                                <ul>
+                                    <li><strong>domain</strong>：域名匹配，支持通配符，如 <code>*.google.com</code></li>
+                                    <li><strong>ip</strong>：精确 IP 匹配，如 <code>8.8.8.8</code></li>
+                                    <li><strong>cidr</strong>：CIDR 网段匹配，如 <code>10.0.0.0/8</code></li>
+                                </ul>
+
+                                <div class="alert alert-info mt-3">
+                                    <i class="bi bi-lightbulb-fill me-2"></i>
+                                    <strong>提示：</strong> 未命中任何 Profile 路由规则的请求，将通过主隧道（默认 SSH 连接）转发。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Connection Pool FAQ -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingTen">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTen" aria-expanded="false" aria-controls="collapseTen">
+                                如何管理 SSH 连接池？已摘除成员如何清理？
+                            </button>
+                        </h2>
+                        <div id="collapseTen" class="accordion-collapse collapse" aria-labelledby="headingTen" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>SSH 连接池（v1.4.18+）允许多条 SSH 链路并发复用，提升吞吐量并自动故障摘除。</p>
+
+                                <h5>成员状态说明：</h5>
+                                <ul>
+                                    <li><strong>healthy</strong>：健康，正常承载请求</li>
+                                    <li><strong>suspect</strong>：可疑，已检测到异常信号，进入观察期</li>
+                                    <li><strong>probing</strong>：探测中，正在通过探测 URL 验证连通性</li>
+                                    <li><strong>reconnecting</strong>：重连中，SSH 链路断开后正在恢复</li>
+                                    <li><strong>evicted</strong>：已摘除，移出活跃池并记入历史</li>
+                                </ul>
+
+                                <h5>管理操作（SSH 状态页）：</h5>
+                                <ul>
+                                    <li>点击「探测」按钮，对指定成员发起主动健康检查</li>
+                                    <li>点击「🗑」按钮，手动摘除指定活跃成员</li>
+                                    <li>当存在已摘除成员时，顶部显示「清理已摘除」按钮，点击清空历史记录</li>
+                                </ul>
+
+                                <h5>关键配置参数：</h5>
+                                <pre class="bg-dark text-light p-2 rounded"><code>ssh.pool.size=5
+ssh.pool.balance.strategy=least_active
+ssh.probe.url=https://www.google.com
+ssh.probe.failure.threshold=2</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Version Management FAQ -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingEleven">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEleven" aria-expanded="false" aria-controls="collapseEleven">
+                                内置版本管理页面如何使用自动更新？
+                            </button>
+                        </h2>
+                        <div id="collapseEleven" class="accordion-collapse collapse" aria-labelledby="headingEleven" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <p>SSH-Tunnel 内置版本管理页面（<code>/view/version</code>），可自动检测 GitHub Release 并完成一键升级。</p>
+
+                                <h5>使用步骤：</h5>
+                                <ol>
+                                    <li>访问 <code>http://localhost:1083/view/version</code></li>
+                                    <li>页面自动显示当前版本及可用的新版本列表</li>
+                                    <li>点击目标版本的「更新」按钮，系统下载并 SHA256 校验后自动替换二进制</li>
+                                    <li>Linux/macOS 平台会自动设置 <code>chmod 0755</code> 确保新版本具有执行权限（v1.4.21+）</li>
+                                    <li>替换成功后，系统自动重启服务使新版本生效</li>
+                                </ol>
+
+                                <div class="alert alert-warning mt-3">
+                                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                    <strong>注意：</strong> 更新过程中服务会短暂中断。如使用服务模式（systemd/launchd/Windows服务），重启由服务管理器自动完成。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="mt-5">

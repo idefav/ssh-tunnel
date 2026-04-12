@@ -120,12 +120,46 @@
         </div>
     </section>
 
+    <section class="py-5">
+        <div class="container">
+            <h2 class="text-center mb-5">核心特性</h2>
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <i class="bi bi-diagram-3 fs-1 text-success mb-3"></i>
+                            <h3 class="h5">Multi-Profile 路由</h3>
+                            <p class="text-muted">为不同域名/IP/CIDR 配置独立 SSH 隧道，实现精细化分流，未命中规则走默认隧道。</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <i class="bi bi-hdd-stack fs-1 text-success mb-3"></i>
+                            <h3 class="h5">SSH 连接池</h3>
+                            <p class="text-muted">多成员 SSH 连接池并发复用，支持自动探测、故障摘除与重连，提升吞吐量和稳定性。</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <i class="bi bi-arrow-repeat fs-1 text-success mb-3"></i>
+                            <h3 class="h5">内置版本管理</h3>
+                            <p class="text-muted">自动检测 GitHub Release，SHA256 校验后一键升级，Linux/macOS 自动设置执行权限。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <section class="py-5 bg-light">
         <div class="container">
             <div class="row align-items-center g-4">
                 <div class="col-lg-6">
-                    <h2>后续更新</h2>
-                    <p>首次安装成功后，默认会启用管理页面。后续版本升级请直接在管理页的版本页面执行，不需要再次运行一键安装脚本。</p>
+                    <h2>后续更新</h2>后续版本升级请直接在管理页的版本页面执行，不需要再次运行一键安装脚本。</p>
                     <p class="mb-3">默认入口：</p>
                     <pre class="bg-dark text-light p-3 rounded"><code>http://127.0.0.1:1083/view/version</code></pre>
                     <a href="installation.html" class="btn btn-primary">查看完整安装说明</a>

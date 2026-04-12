@@ -20,6 +20,7 @@
 - 服务重启: [docs/features/restart-service-feature.md](features/restart-service-feature.md)
 - 多 Profile 切换: [docs/features/multi-profile-switch-design.md](features/multi-profile-switch-design.md)
 - SSH 稳定性修复: [docs/features/ssh-stability-fix-2026-03.md](features/ssh-stability-fix-2026-03.md)
+- 日志清理: [docs/features/log-clear-feature.md](features/log-clear-feature.md)
 
 ## 脚本索引
 

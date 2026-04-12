@@ -58,6 +58,9 @@
                         <a href="#command-options" class="list-group-item list-group-item-action">命令选项</a>
                         <a href="#proxy-modes" class="list-group-item list-group-item-action">代理模式</a>
                         <a href="#admin-ui" class="list-group-item list-group-item-action">管理界面</a>
+                        <a href="#multi-profile" class="list-group-item list-group-item-action">多 Profile 路由</a>
+                        <a href="#connection-pool" class="list-group-item list-group-item-action">SSH 连接池</a>
+                        <a href="#version-management" class="list-group-item list-group-item-action">版本管理</a>
                         <a href="#domain-filtering" class="list-group-item list-group-item-action">域名过滤</a>
                         <a href="#service-configuration" class="list-group-item list-group-item-action">服务配置</a>
                     </div>
@@ -186,6 +189,51 @@
                                     <td>重试间隔时间(秒)</td>
                                     <td>3</td>
                                 </tr>
+                                <tr>
+                                    <td><code>-ssh.pool.size</code></td>
+                                    <td>SSH连接池大小</td>
+                                    <td>5</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-ssh.pool.replenish.interval.sec</code></td>
+                                    <td>SSH连接池补充间隔(秒)</td>
+                                    <td>1</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-ssh.pool.balance.strategy</code></td>
+                                    <td>负载均衡策略: least_active / round_robin / random</td>
+                                    <td>least_active</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-ssh.probe.url</code></td>
+                                    <td>SSH主动探测地址</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td><code>-ssh.probe.urls</code></td>
+                                    <td>SSH主动探测地址列表(逗号分隔)</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td><code>-ssh.probe.timeout.sec</code></td>
+                                    <td>SSH主动探测超时(秒)</td>
+                                    <td>3</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-ssh.probe.failure.threshold</code></td>
+                                    <td>SSH主动探测失败阈值</td>
+                                    <td>2</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-proxy.retry.max.attempts</code></td>
+                                    <td>代理请求失败额外重试次数</td>
+                                    <td>1</td>
+                                </tr>
+                                <tr>
+                                    <td><code>-proxy.retry.initial.buffer.bytes</code></td>
+                                    <td>代理早期重试初始缓存大小(字节)</td>
+                                    <td>32768</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -216,20 +264,101 @@
                     <h2>管理界面</h2>
                     <p>SSH-Tunnel 提供了一个内置的管理界面，方便您监控连接状态、查看日志和配置信息：</p>
                     <pre class="bg-dark text-light p-3 rounded"><code>./ssh-tunnel -s xx.xx.xx.xx -admin.enable -admin.address 127.0.0.1:1083</code></pre>
-                    <p>启用后，您可以通过浏览器访问 <code>http://localhost:1083/view/index</code> 来打开管理界面。</p>
+                    <p>启用后，浏览器访问 <code>http://localhost:1083/view/index</code> 打开管理界面。</p>
 
-                    <p>管理界面包含以下功能：</p>
+                    <h3>主要功能</h3>
                     <ul>
-                        <li><strong>SSH 状态</strong>：显示 SSH 连接的状态和相关信息</li>
-                        <li><strong>日志</strong>：查看应用运行日志</li>
-                        <li><strong>域名列表</strong>：查看和编辑域名过滤列表</li>
-                        <li><strong>应用配置</strong>：查看当前应用配置信息</li>
+                        <li><strong>SSH 状态</strong>：显示 SSH 连接状态、延迟、上下行速率与累计流量</li>
+                        <li><strong>连接池管理</strong>：实时查看连接池成员（健康/可疑/探测中/已摘除），支持手动探测、手动摘除指定成员、一键清理已摘除历史</li>
+                        <li><strong>多 Profile 管理</strong>：维护多套 SSH 配置，支持动态切换与持久化写入 <code>profiles.json</code></li>
+                        <li><strong>日志查看</strong>：默认加载最近 1000 行历史并继续实时追踪；支持一键清空日志</li>
+                        <li><strong>域名列表</strong>：响应式域名过滤列表，支持增删改查</li>
+                        <li><strong>应用配置</strong>：在线修改配置参数，保存后即时生效</li>
+                        <li><strong>服务控制</strong>：支持重启服务以应用新配置</li>
+                        <li><strong>版本管理</strong>：检查 GitHub Release 新版本，支持一键更新（含 SHA256 校验）</li>
+                        <li><strong>进程信息</strong>：显示当前程序执行路径与工作目录</li>
                     </ul>
 
                     <div class="mt-4 mb-4">
                         <img src="assets/image/25604.jpg" alt="管理界面预览" class="img-fluid rounded shadow">
                         <p class="text-center mt-2 text-muted">管理界面预览</p>
                     </div>
+                </div>
+
+                <div id="multi-profile" class="doc-section">
+                    <h2>多 Profile 路由 <span class="badge bg-success">v1.4.18+</span></h2>
+                    <p>Multi-Profile 功能允许您维护多套 SSH 配置（每套称为一个 Profile），并为每个 Profile 配置独立的域名、IP、CIDR 路由规则。命中规则的代理请求会自动走对应 Profile 的 SSH 隧道。</p>
+
+                    <h3>配置文件示例（profiles.json）</h3>
+                    <pre class="bg-dark text-light p-3 rounded"><code>[{
+  "id": "profile-1",
+  "name": "US Server",
+  "serverIp": "1.2.3.4",
+  "serverSshPort": 22,
+  "loginUsername": "root",
+  "sshPrivateKeyPath": "~/.ssh/id_rsa",
+  "sshPoolSize": 3,
+  "routes": [
+    {"type": "domain", "value": "*.github.com"},
+    {"type": "cidr",   "value": "192.168.100.0/24"}
+  ]
+}]</code></pre>
+
+                    <h3>路由规则类型</h3>
+                    <ul>
+                        <li><strong>domain</strong>：域名匹配，支持通配符，如 <code>*.google.com</code></li>
+                        <li><strong>ip</strong>：精确 IP 匹配，如 <code>8.8.8.8</code></li>
+                        <li><strong>cidr</strong>：CIDR 网段匹配，如 <code>10.0.0.0/8</code></li>
+                    </ul>
+                    <p>未命中任何 Profile 路由规则的请求，将通过主隧道（默认 SSH 连接）转发。</p>
+                    <p>在管理界面 <code>/view/index</code> 的 Profile 卡片中，可新增、编辑、复制、删除 Profile，切换后自动重连并生效。</p>
+                </div>
+
+                <div id="connection-pool" class="doc-section">
+                    <h2>SSH 连接池 <span class="badge bg-success">v1.4.18+</span></h2>
+                    <p>SSH-Tunnel 内置多成员 SSH 连接池，每个代理请求从池中选取一条 SSH 链路，实现并发复用与自动故障摘除。</p>
+
+                    <h3>成员状态</h3>
+                    <ul>
+                        <li><span class="badge bg-success">healthy</span> 健康，正常承载请求</li>
+                        <li><span class="badge bg-warning text-dark">suspect</span> 可疑，已检测到异常信号，进入观察期</li>
+                        <li><span class="badge bg-info text-dark">probing</span> 探测中，正在通过探测 URL 验证连通性</li>
+                        <li><span class="badge bg-secondary">reconnecting</span> 重连中，SSH 链路断开后正在恢复</li>
+                        <li><span class="badge bg-danger">evicted</span> 已摘除，移出活跃池并记入历史</li>
+                    </ul>
+
+                    <h3>关键参数</h3>
+                    <pre class="bg-dark text-light p-3 rounded"><code>ssh.pool.size=5
+ssh.pool.replenish.interval.sec=1
+ssh.pool.balance.strategy=least_active
+ssh.probe.url=https://www.google.com
+ssh.probe.timeout.sec=3
+ssh.probe.failure.threshold=2
+proxy.retry.max.attempts=1</code></pre>
+
+                    <h3>管理界面操作</h3>
+                    <p>访问 SSH 状态页（<code>/view/ssh-state</code>）可进行以下操作：</p>
+                    <ul>
+                        <li>实时查看所有成员状态及请求计数</li>
+                        <li>点击「探测」按钮对指定成员发起主动健康检查</li>
+                        <li>点击「🗑」按钮手动摘除指定活跃成员</li>
+                        <li>点击「清理已摘除」按钮一键清空摘除历史记录</li>
+                    </ul>
+                </div>
+
+                <div id="version-management" class="doc-section">
+                    <h2>版本管理 <span class="badge bg-success">v1.4+</span></h2>
+                    <p>SSH-Tunnel 内置版本管理页面，可自动检测 GitHub Release 并完成一键升级。</p>
+                    <p>访问地址：<code>http://localhost:1083/view/version</code></p>
+
+                    <h3>主要功能</h3>
+                    <ul>
+                        <li>定时从 GitHub Release API 检测新版本（可自定义检查间隔）</li>
+                        <li>展示所有可用版本及发布说明，支持分页浏览</li>
+                        <li>支持指定版本一键更新，含 SHA256 完整性校验</li>
+                        <li>Linux/macOS 升级后自动 <code>chmod 0755</code> 确保执行权限（v1.4.21+）</li>
+                        <li>Windows 平台通过临时脚本完成原子替换</li>
+                    </ul>
                 </div>
 
                 <div id="domain-filtering" class="doc-section">

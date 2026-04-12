@@ -88,6 +88,24 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
         SSH重连最大重试次数 (default 20)
   -ssh.reconnect.max.interval.sec int
         SSH重连最大退避间隔(秒) (default 5)
+  -ssh.pool.size int
+        SSH连接池大小 (default 5)
+  -ssh.pool.replenish.interval.sec int
+        SSH连接池补充间隔(秒) (default 1)
+  -ssh.pool.balance.strategy string
+        SSH连接池负载均衡策略: least_active/round_robin/random (default "least_active")
+  -ssh.probe.url string
+        SSH主动探测地址
+  -ssh.probe.urls string
+        SSH主动探测地址列表(逗号分隔)
+  -ssh.probe.timeout.sec int
+        SSH主动探测超时(秒) (default 3)
+  -ssh.probe.failure.threshold int
+        SSH主动探测失败阈值 (default 2)
+  -proxy.retry.max.attempts int
+        代理请求失败额外重试次数 (default 1)
+  -proxy.retry.initial.buffer.bytes int
+        代理早期重试初始缓存大小(字节) (default 32768)
   -s string
         服务器IP地址(短命令)
   -server.ip string
@@ -120,6 +138,8 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 - 📶 **SSH链路指标** - SSH状态页支持延迟测试、实时上下行速率和累计流量展示 🆕
 - 🔢 **连接统计** - SSH状态页新增当前SSH连接数与累计重连次数展示 🆕
 - ♻️ **计数清零** - SSH状态页支持一键清零重连次数，便于分阶段观测 🆕
+- 🏊 **连接池管理** - SSH状态页展示连接池成员状态（健康/可疑/探测中/已摘除），支持手动探测指定成员 🆕
+- 🗑️ **池成员摘除** - 支持手动摘除指定活跃成员，一键清理已摘除成员历史 🆕
 - 🔄 **服务控制** - 支持重启服务以应用新配置
 - 📋 **域名缓存** - 查看和管理域名匹配缓存
 - 🌐 **域名管理** - 响应式域名列表界面，充分利用浏览器空间 🆕
@@ -171,6 +191,26 @@ ssh.reconnect.max.interval.sec=5
 - 强制同一时刻仅保留一个活跃 SSH 连接；重连成功后会及时释放旧连接。
 
 详细说明见：`docs/features/ssh-stability-fix-2026-03.md`
+
+## SSH 连接池参数（v1.4.18+）
+
+开启多成员 SSH 连接池，让每个 SOCKS5/HTTP 请求均衡复用多条 SSH 链路：
+
+```properties
+ssh.pool.size=5
+ssh.pool.replenish.interval.sec=1
+ssh.pool.balance.strategy=least_active
+ssh.probe.url=https://www.google.com
+ssh.probe.timeout.sec=3
+ssh.probe.failure.threshold=2
+proxy.retry.max.attempts=1
+```
+
+说明：
+- `ssh.pool.size` 控制连接池成员数，增大时自动补充，减小时收缩空闲成员。
+- `ssh.pool.balance.strategy` 支持 `least_active`（最少活跃请求）、`round_robin`、`random` 三种策略。
+- `ssh.probe.url` / `ssh.probe.urls` 配置主动探测目标，用于检测成员健康。
+- `proxy.retry.max.attempts` 请求失败时自动换成员重试次数。
 
 ## MacOS boot auto-start settings
 
@@ -273,6 +313,18 @@ win+r 输入 services.svc 打开服务管理窗口
 ### 4. 在windows配置中启动代理
 
 ### 最近更新 🆕
+
+#### 2026-04-12 (v1.4.20~v1.4.21)
+- ✅ SSH 连接池管理页新增「清理已摘除」按钮，一键清空摘除历史
+- ✅ 连接池成员列表支持手动摘除指定活跃成员
+- ✅ 新增 API：`POST /admin/ssh/pool/clear-evicted`、`POST /admin/ssh/pool/evict-member`
+- ✅ 修复 Linux/macOS 自动升级后新版本缺少可执行权限（chmod 0755）
+
+#### 2026-04-11 (v1.4.17~v1.4.19)
+- ✅ Profile 域名路由：按域名/IP/CIDR 路由到指定 SSH 隧道
+- ✅ 每个 Profile 维护独立 SSH 连接池，管理页实时查看成员状态
+- ✅ 安装脚本 SSH 密钥自动发现与无密码配置向导（Unix/Windows）
+- ✅ 修复服务模式下 `--config=` 参数被重复传入的问题
 
 #### 2026-02-26 - Profile/SSH重连增强
 - ✅ Profile 编辑区改为弹窗，支持新增/编辑/复制（复制时自动清空 Profile ID）
