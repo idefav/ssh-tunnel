@@ -789,6 +789,34 @@ func (t *Tunnel) maybeProbeMember(ctx context.Context, member *SSHPoolMember) bo
 	return false
 }
 
+// ClearEvictedMembers removes all entries from the evicted member history.
+// Returns the number of entries cleared.
+func (t *Tunnel) ClearEvictedMembers() int {
+	t.sshPoolMu.Lock()
+	defer t.sshPoolMu.Unlock()
+	count := len(t.sshPoolEvicted)
+	t.sshPoolEvicted = nil
+	return count
+}
+
+// EvictMemberByID finds an active pool member by ID and evicts it.
+// Returns true if the member was found and evicted.
+func (t *Tunnel) EvictMemberByID(memberID uint64) bool {
+	t.sshPoolMu.Lock()
+	var target *SSHPoolMember
+	for _, m := range t.sshPool {
+		if m != nil && m.ID == memberID && m.State != sshMemberEvicted {
+			target = m
+			break
+		}
+	}
+	t.sshPoolMu.Unlock()
+	if target == nil {
+		return false
+	}
+	return t.evictMember(target, "manual evict by admin")
+}
+
 // ProbeMemberByID finds a pool member by ID and triggers a probe.
 // Returns (found, probeErr).
 func (t *Tunnel) ProbeMemberByID(ctx context.Context, memberID uint64) (bool, error) {

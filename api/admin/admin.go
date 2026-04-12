@@ -863,6 +863,60 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			writer.Write(mbytes)
 		})
 
+		adminRouter.HandleFunc("/admin/ssh/pool/clear-evicted", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			count := tunnel.ClearEvictedMembers()
+			if ptm := tunnel.GetProfileTunnelMgr(); ptm != nil {
+				count += ptm.ClearEvictedMembers()
+			}
+			resp := map[string]interface{}{
+				"success": true,
+				"cleared": count,
+				"message": fmt.Sprintf("已清理 %d 个已摘除成员记录", count),
+			}
+			mbytes, _ := json.Marshal(resp)
+			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/ssh/pool/evict-member", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			memberIDStr := request.URL.Query().Get("id")
+			if memberIDStr == "" {
+				respondWithError(writer, "缺少参数id", http.StatusBadRequest)
+				return
+			}
+			memberID, err := strconv.ParseUint(memberIDStr, 10, 64)
+			if err != nil {
+				respondWithError(writer, "参数id无效", http.StatusBadRequest)
+				return
+			}
+			found := tunnel.EvictMemberByID(memberID)
+			if !found {
+				if ptm := tunnel.GetProfileTunnelMgr(); ptm != nil {
+					found = ptm.EvictMemberByID(memberID)
+				}
+			}
+			if !found {
+				respondWithError(writer, fmt.Sprintf("未找到成员#%d或已被摘除", memberID), http.StatusNotFound)
+				return
+			}
+			resp := map[string]interface{}{
+				"success":  true,
+				"memberId": memberID,
+				"message":  fmt.Sprintf("已摘除成员#%d", memberID),
+			}
+			mbytes, _ := json.Marshal(resp)
+			writer.Write(mbytes)
+		})
+
 		adminRouter.HandleFunc("/admin/ssh/exit-info", func(writer http.ResponseWriter, request *http.Request) {
 			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 			if request.Method != http.MethodGet {

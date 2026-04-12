@@ -215,6 +215,31 @@ func (ptm *ProfileTunnelManager) ProbeMemberByID(ctx context.Context, memberID u
 	return false, nil
 }
 
+// ClearEvictedMembers removes all evicted member history from all profile tunnels.
+// Returns the total number of entries cleared.
+func (ptm *ProfileTunnelManager) ClearEvictedMembers() int {
+	ptm.mu.RLock()
+	defer ptm.mu.RUnlock()
+	total := 0
+	for _, entry := range ptm.tunnels {
+		total += entry.tunnel.ClearEvictedMembers()
+	}
+	return total
+}
+
+// EvictMemberByID searches all profile tunnels for an active member with the given ID and evicts it.
+// Returns true if the member was found and evicted.
+func (ptm *ProfileTunnelManager) EvictMemberByID(memberID uint64) bool {
+	ptm.mu.RLock()
+	defer ptm.mu.RUnlock()
+	for _, entry := range ptm.tunnels {
+		if entry.tunnel.EvictMemberByID(memberID) {
+			return true
+		}
+	}
+	return false
+}
+
 // newProfileTunnel creates a Tunnel configured for a specific profile.
 // It only sets up SSH connectivity — no proxy listeners.
 func newProfileTunnel(profileID string, profile cfg.SSHProfile) (*Tunnel, error) {
