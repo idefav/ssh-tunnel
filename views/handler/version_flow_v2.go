@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -753,6 +754,10 @@ func createInstallStagingFile(homeDir, version, fileName, cachePath string) (str
 
 func replaceExecutableV2(currentExe, stagedPath string, isServiceMode bool) error {
 	if runtime.GOOS != "windows" {
+		// Set executable permissions before rename so the binary is runnable after replacement.
+		if err := os.Chmod(stagedPath, 0755); err != nil {
+			log.Printf("警告: 设置新版本执行权限失败: %v", err)
+		}
 		return os.Rename(stagedPath, currentExe)
 	}
 	return replaceExecutableWindowsV2(currentExe, stagedPath, isServiceMode)

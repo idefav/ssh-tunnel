@@ -1367,7 +1367,10 @@ func replaceExecutable(currentExe, newFile string) error {
 	if runtime.GOOS == "windows" {
 		return replaceExecutableWindows(currentExe, newFile)
 	} else {
-		// Linux/macOS 可以直接替换
+		// Set executable permissions before rename so the binary is runnable after replacement.
+		if err := os.Chmod(newFile, 0755); err != nil {
+			log.Printf("警告: 设置新版本执行权限失败: %v", err)
+		}
 		return os.Rename(newFile, currentExe)
 	}
 }
