@@ -153,6 +153,17 @@ func ShowDomainsView(response http.ResponseWriter, request *http.Request) {
 	tmpl.Execute(response, data)
 }
 
+func ShowRoutesView(response http.ResponseWriter, request *http.Request) {
+	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml", "nav.gohtml", "routes.gohtml")
+	if err != nil {
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := tmpl.Execute(response, nil); err != nil {
+		log.Printf("渲染路由页面失败: %v", err)
+	}
+}
+
 func ShowCacheView(response http.ResponseWriter, request *http.Request) {
 	tunnel := &tunnel2.DefaultSshTunnel
 
@@ -417,9 +428,15 @@ func getWorkingDirectory() string {
 	return workDir
 }
 
+func dispatchV2Handler(handler http.HandlerFunc, w http.ResponseWriter, r *http.Request) bool {
+	handler(w, r)
+	return true
+}
+
 func ShowVersionView(w http.ResponseWriter, r *http.Request) {
-	showVersionViewV2(w, r)
-	return
+	if dispatchV2Handler(showVersionViewV2, w, r) {
+		return
+	}
 	tmpl, err := template.ParseFS(views.HtmlFs, "layout.gohtml", "nav.gohtml", "version.gohtml")
 	if err != nil {
 		http.Error(w, "模板解析错误: "+err.Error(), http.StatusInternalServerError)
@@ -515,8 +532,9 @@ func ShowVersionView(w http.ResponseWriter, r *http.Request) {
 
 // API处理函数
 func CheckForUpdatesHandler(w http.ResponseWriter, r *http.Request) {
-	checkForUpdatesV2(w, r)
-	return
+	if dispatchV2Handler(checkForUpdatesV2, w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
@@ -548,8 +566,9 @@ func CheckForUpdatesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
-	downloadReleaseV2(w, r)
-	return
+	if dispatchV2Handler(downloadReleaseV2, w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
@@ -612,8 +631,9 @@ func DownloadReleaseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CancelDownloadHandler(w http.ResponseWriter, r *http.Request) {
-	cancelDownloadV2(w, r)
-	return
+	if dispatchV2Handler(cancelDownloadV2, w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
@@ -644,8 +664,9 @@ func CancelDownloadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateToVersionHandler(w http.ResponseWriter, r *http.Request) {
-	updateToVersionV2(w, r)
-	return
+	if dispatchV2Handler(updateToVersionV2, w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持POST方法", http.StatusMethodNotAllowed)
 		return
@@ -942,8 +963,9 @@ func (dm *DownloadManager) CancelDownload(id string) (bool, string) {
 }
 
 func GetDownloadProgressHandler(w http.ResponseWriter, r *http.Request) {
-	getDownloadProgressV2(w, r)
-	return
+	if dispatchV2Handler(getDownloadProgressV2, w, r) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "仅支持GET方法", http.StatusMethodNotAllowed)
 		return

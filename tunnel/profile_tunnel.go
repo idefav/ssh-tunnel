@@ -14,8 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ProfileTunnelManager manages per-profile Tunnel instances for domain-based routing.
-// Each profile with DomainRoutes gets its own SSH connection pool.
+// ProfileTunnelManager manages per-profile Tunnel instances for standalone routing rules.
 type ProfileTunnelManager struct {
 	mu      sync.RWMutex
 	tunnels map[string]*profileTunnelEntry
@@ -122,61 +121,63 @@ func (ptm *ProfileTunnelManager) StopAll() {
 
 // ReloadProfiles diffs current running tunnels against the new profile set,
 // starting/stopping tunnels as needed.
-func (ptm *ProfileTunnelManager) ReloadProfiles(parentCtx context.Context, profiles map[string]cfg.SSHProfile, activeProfileID string) {
+func (ptm *ProfileTunnelManager) ReloadProfiles(parentCtx context.Context, profiles map[string]cfg.SSHProfile, activeProfileID string, rules []cfg.RouteRule) {
 	ptm.mu.Lock()
 
-	// Determine which profiles need tunnels (have DomainRoutes and are not the active profile)
+	targeted := make(map[string]bool)
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		for _, target := range rule.TargetProfileIDs {
+			targeted[target] = true
+		}
+	}
 	wanted := make(map[string]cfg.SSHProfile)
 	for id, profile := range profiles {
-		if len(profile.DomainRoutes) > 0 && id != activeProfileID {
+		if targeted[id] && id != activeProfileID {
 			wanted[id] = profile
 		}
 	}
 
-	// Stop tunnels that are no longer needed
 	for id, entry := range ptm.tunnels {
-		if _, ok := wanted[id]; !ok {
+		profile, ok := wanted[id]
+		if !ok || !sameProfileConnection(entry.profile, profile) {
 			ptm.stopEntryLocked(id, entry)
 		}
 	}
 	ptm.mu.Unlock()
 
-	// Start new tunnels or update existing ones
 	for id, profile := range wanted {
 		ptm.mu.RLock()
-		entry, exists := ptm.tunnels[id]
+		_, exists := ptm.tunnels[id]
 		ptm.mu.RUnlock()
 		if !exists {
 			if err := ptm.StartProfileTunnel(parentCtx, id, profile); err != nil {
 				log.Printf("启动Profile隧道失败(profileId=%s): %v", id, err)
 			}
-		} else {
-			// Update pool size if changed
-			newSize := profile.SSHPoolSize
-			if newSize <= 0 {
-				newSize = 2
-			}
-			oldSize := entry.profile.SSHPoolSize
-			if oldSize <= 0 {
-				oldSize = 2
-			}
-			if newSize != oldSize {
-				entry.tunnel.sshPoolSize = newSize
-				ptm.mu.Lock()
-				entry.profile = profile
-				ptm.mu.Unlock()
-				log.Printf("已更新Profile隧道池大小(profileId=%s, %d -> %d)", id, oldSize, newSize)
-				if newSize < oldSize {
-					entry.tunnel.shrinkPoolTo(newSize)
-				}
-			}
 		}
 	}
 
-	// Update route matcher
 	if ptm.matcher != nil {
-		ptm.matcher.LoadRoutes(profiles, activeProfileID)
+		ptm.matcher.LoadRoutes(rules)
 	}
+}
+
+func sameProfileConnection(left, right cfg.SSHProfile) bool {
+	return left.ServerIp == right.ServerIp &&
+		left.ServerSshPort == right.ServerSshPort &&
+		left.LoginUser == right.LoginUser &&
+		left.SshPrivateKeyPath == right.SshPrivateKeyPath &&
+		left.RetryIntervalSec == right.RetryIntervalSec &&
+		normalizedProfilePoolSize(left.SSHPoolSize) == normalizedProfilePoolSize(right.SSHPoolSize)
+}
+
+func normalizedProfilePoolSize(size int) int {
+	if size <= 0 {
+		return 2
+	}
+	return size
 }
 
 // ActiveProfileIDs returns the list of currently running profile tunnel IDs.
@@ -304,10 +305,7 @@ func (ptm *ProfileTunnelManager) CreateSSHConnForProfile(profileID string, host 
 	}
 
 	conn, client, generation, memberID, retryInfo, err := t.createSSHConn(host, retryState)
-	if err != nil {
-		return destinationConn{}, err
-	}
-	return destinationConn{
+	dest := destinationConn{
 		conn:        conn,
 		sshClient:   client,
 		sshMemberID: memberID,
@@ -315,5 +313,6 @@ func (ptm *ProfileTunnelManager) CreateSSHConnForProfile(profileID string, host 
 		viaSSH:      true,
 		generation:  generation,
 		retryInfo:   retryInfo,
-	}, nil
+	}
+	return dest, err
 }

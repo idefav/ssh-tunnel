@@ -21,6 +21,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" id="nav-routes" href="/view/routes">
+                            <i class="bi bi-signpost-split"></i> 路由
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" id="nav-caches" href="/view/caches">
                             <i class="bi bi-hdd-stack"></i> 缓存
                         </a>
@@ -55,6 +60,8 @@
                 $('#nav-home').addClass('active');
             } else if (path.includes('/view/domains')) {
                 $('#nav-domains').addClass('active');
+            } else if (path.includes('/view/routes')) {
+                $('#nav-routes').addClass('active');
             } else if (path.includes('/view/caches')) {
                 $('#nav-caches').addClass('active');
             } else if (path.includes('/view/ssh/state')) {

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "routes": [
+    {
+      "id": "route_0123456789abcdef0123456789abcdef",
+      "pattern": "example.com",
+      "type": "domain",
+      "enabled": true,
+      "strategy": "fixed",
+      "targetProfileIds": ["prod-main"]
+    },
+    {
+      "id": "route_fedcba9876543210fedcba9876543210",
+      "pattern": "10.20.0.0/16",
+      "type": "cidr",
+      "enabled": true,
+      "strategy": "random",
+      "targetProfileIds": ["prod-main", "prod-backup"]
+    }
+  ]
+}

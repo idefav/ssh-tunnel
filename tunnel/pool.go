@@ -96,23 +96,63 @@ type SSHRetryInfo struct {
 }
 
 type requestRetryState struct {
-	maxExtra           int
-	exclude            map[uint64]bool
-	members            []uint64
-	reason             string
-	balanceStrategy    string
-	lastErr            error
-	lastClass          string
-	lastMember         *SSHPoolMember
-	reconnectTriggered bool
+	maxExtra            int
+	exclude             map[uint64]bool
+	members             []uint64
+	reason              string
+	balanceStrategy     string
+	lastErr             error
+	lastClass           string
+	lastMember          *SSHPoolMember
+	reconnectTriggered  bool
+	routeID             string
+	routeStrategy       string
+	attemptedProfiles   []string
+	attemptedProfileSet map[string]bool
+	profileRetryStates  map[string]*requestRetryState
 }
 
 func (t *Tunnel) newRequestRetryState() *requestRetryState {
 	return &requestRetryState{
-		maxExtra:        t.configuredProxyRetryMaxAttempts(),
-		exclude:         make(map[uint64]bool),
-		balanceStrategy: t.configuredBalanceStrategy(),
+		maxExtra:            t.configuredProxyRetryMaxAttempts(),
+		exclude:             make(map[uint64]bool),
+		balanceStrategy:     t.configuredBalanceStrategy(),
+		attemptedProfileSet: make(map[string]bool),
+		profileRetryStates:  make(map[string]*requestRetryState),
 	}
+}
+
+func (s *requestRetryState) setRoute(ruleID, strategy string) {
+	if s == nil {
+		return
+	}
+	if s.routeID != "" && s.routeID != ruleID {
+		s.attemptedProfiles = nil
+		s.attemptedProfileSet = make(map[string]bool)
+		s.profileRetryStates = make(map[string]*requestRetryState)
+	}
+	s.routeID = ruleID
+	s.routeStrategy = strategy
+}
+
+func (s *requestRetryState) markProfileAttempt(profileID string) {
+	if s == nil || profileID == "" {
+		return
+	}
+	if s.attemptedProfileSet == nil {
+		s.attemptedProfileSet = make(map[string]bool)
+	}
+	if !s.attemptedProfileSet[profileID] {
+		s.attemptedProfileSet[profileID] = true
+		s.attemptedProfiles = append(s.attemptedProfiles, profileID)
+	}
+}
+
+func (s *requestRetryState) routeProfiles() []string {
+	if s == nil {
+		return nil
+	}
+	return append([]string(nil), s.attemptedProfiles...)
 }
 
 func (s *requestRetryState) maxAttempts() int {

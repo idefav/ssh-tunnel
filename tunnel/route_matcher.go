@@ -5,15 +5,16 @@ import (
 	"net"
 	"sort"
 	"ssh-tunnel/cfg"
+	"strconv"
 	"strings"
 	"sync"
 )
 
 // compiledRoute holds a pre-processed routing rule for efficient matching.
 type compiledRoute struct {
-	ProfileID string
-	Pattern   string
-	Type      string // "domain", "ip", "cidr"
+	Rule    cfg.RouteRule
+	Pattern string
+	Type    string // "domain", "ip", "cidr"
 	// For domain matching
 	lowerPattern string
 	isWildcard   bool   // starts with "*."
@@ -26,68 +27,74 @@ type compiledRoute struct {
 
 // RouteMatcher matches hostnames/IPs to profile IDs based on domain routing rules.
 type RouteMatcher struct {
-	mu     sync.RWMutex
-	routes []compiledRoute
-	cache  map[string]string // host -> profileID (empty string = no match)
+	mu         sync.RWMutex
+	routes     []compiledRoute
+	routesByID map[string]cfg.RouteRule
+	cache      map[string]string // host -> routeID (empty string = no match)
+	generation uint64
 }
 
 func NewRouteMatcher() *RouteMatcher {
 	return &RouteMatcher{
-		cache: make(map[string]string),
+		cache:      make(map[string]string),
+		routesByID: make(map[string]cfg.RouteRule),
 	}
 }
 
-// LoadRoutes compiles routing rules from all profiles. Call on startup and whenever profiles change.
-// Routes belonging to activeProfileID are skipped since the main tunnel already handles that profile.
-func (rm *RouteMatcher) LoadRoutes(profiles map[string]cfg.SSHProfile, activeProfileID string) {
+// LoadRoutes compiles enabled standalone routing rules.
+func (rm *RouteMatcher) LoadRoutes(rules []cfg.RouteRule) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
 	rm.routes = nil
 	rm.cache = make(map[string]string)
+	rm.routesByID = make(map[string]cfg.RouteRule)
+	rm.generation++
 
-	for profileID, profile := range profiles {
-		if profileID == activeProfileID {
+	for _, rule := range rules {
+		if !rule.Enabled {
 			continue
 		}
-		for _, route := range profile.DomainRoutes {
-			cr := compileRoute(profileID, route)
-			if cr != nil {
-				rm.routes = append(rm.routes, *cr)
-			}
+		cr := compileRoute(rule)
+		if cr != nil {
+			rm.routes = append(rm.routes, *cr)
+			rm.routesByID[rule.ID] = cloneRouteRule(rule)
 		}
 	}
 
 	// Sort by specificity descending (most specific first)
-	sort.Slice(rm.routes, func(i, j int) bool {
+	sort.SliceStable(rm.routes, func(i, j int) bool {
 		return rm.routes[i].specificity > rm.routes[j].specificity
 	})
 }
 
-// Match finds the profileID that should handle the given host.
-// Returns (profileID, true) if a match is found, ("", false) otherwise.
-func (rm *RouteMatcher) Match(host string) (string, bool) {
+// Match finds the standalone route rule that should handle the given host.
+func (rm *RouteMatcher) Match(host string) (cfg.RouteRule, bool) {
 	rm.mu.RLock()
 	if len(rm.routes) == 0 {
 		rm.mu.RUnlock()
-		return "", false
+		return cfg.RouteRule{}, false
 	}
 
 	// Check cache
 	if cached, ok := rm.cache[host]; ok {
+		rule, found := rm.routesByID[cached]
 		rm.mu.RUnlock()
-		if cached == "" {
-			return "", false
+		if cached == "" || !found {
+			return cfg.RouteRule{}, false
 		}
-		return cached, true
+		return cloneRouteRule(rule), true
 	}
 	// Copy routes for matching outside lock
 	routes := rm.routes
+	generation := rm.generation
 	rm.mu.RUnlock()
 
 	// Extract hostname (strip port if present)
-	hostOnly := host
-	if h, _, err := net.SplitHostPort(host); err == nil {
+	hostOnly := strings.Trim(host, "[]")
+	if net.ParseIP(hostOnly) != nil {
+		// Raw IPv4/IPv6 address without a port.
+	} else if h, _, err := net.SplitHostPort(host); err == nil {
 		hostOnly = h
 	} else {
 		hostOnly = strings.Split(host, ":")[0]
@@ -98,17 +105,21 @@ func (rm *RouteMatcher) Match(host string) (string, bool) {
 	for _, route := range routes {
 		if matchRoute(route, hostOnly) {
 			rm.mu.Lock()
-			rm.cache[host] = route.ProfileID
+			if rm.generation == generation {
+				rm.cache[host] = route.Rule.ID
+			}
 			rm.mu.Unlock()
-			return route.ProfileID, true
+			return cloneRouteRule(route.Rule), true
 		}
 	}
 
 	// Cache negative result
 	rm.mu.Lock()
-	rm.cache[host] = ""
+	if rm.generation == generation {
+		rm.cache[host] = ""
+	}
 	rm.mu.Unlock()
-	return "", false
+	return cfg.RouteRule{}, false
 }
 
 // ClearCache clears the match cache. Call when routes change.
@@ -116,43 +127,53 @@ func (rm *RouteMatcher) ClearCache() {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 	rm.cache = make(map[string]string)
+	rm.generation++
 }
 
-// HasRoutesForProfile returns true if any routes exist for the given profileID.
+// HasRoutesForProfile returns true if an enabled rule targets profileID.
 func (rm *RouteMatcher) HasRoutesForProfile(profileID string) bool {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	for _, r := range rm.routes {
-		if r.ProfileID == profileID {
-			return true
+		for _, target := range r.Rule.TargetProfileIDs {
+			if target == profileID {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// ProfilesWithRoutes returns the set of profileIDs that have at least one routing rule.
+// ProfilesWithRoutes returns the set of profileIDs targeted by enabled rules.
 func (rm *RouteMatcher) ProfilesWithRoutes() map[string]bool {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	result := make(map[string]bool)
 	for _, r := range rm.routes {
-		result[r.ProfileID] = true
+		for _, target := range r.Rule.TargetProfileIDs {
+			result[target] = true
+		}
 	}
 	return result
 }
 
-func compileRoute(profileID string, route cfg.DomainRoute) *compiledRoute {
-	pattern := strings.TrimSpace(route.Pattern)
+func cloneRouteRule(rule cfg.RouteRule) cfg.RouteRule {
+	rule.TargetProfileIDs = append([]string(nil), rule.TargetProfileIDs...)
+	return rule
+}
+
+func compileRoute(rule cfg.RouteRule) *compiledRoute {
+	pattern := strings.TrimSpace(rule.Pattern)
 	if pattern == "" {
 		return nil
 	}
-	routeType := strings.ToLower(strings.TrimSpace(route.Type))
+	routeType := strings.ToLower(strings.TrimSpace(rule.Type))
 	if routeType == "" {
 		routeType = guessRouteType(pattern)
 	}
 
 	cr := &compiledRoute{
-		ProfileID:    profileID,
+		Rule:         cloneRouteRule(rule),
 		Pattern:      pattern,
 		Type:         routeType,
 		lowerPattern: strings.ToLower(pattern),
@@ -163,7 +184,7 @@ func compileRoute(profileID string, route cfg.DomainRoute) *compiledRoute {
 		if strings.HasPrefix(cr.lowerPattern, "*.") {
 			cr.isWildcard = true
 			cr.domainSuffix = cr.lowerPattern[1:] // keep the dot: ".example.com"
-			cr.specificity = len(cr.domainSuffix) * 10
+			cr.specificity = len(cr.lowerPattern[2:]) * 10
 		} else {
 			cr.specificity = len(cr.lowerPattern)*10 + 5 // exact domain > wildcard
 		}
@@ -172,14 +193,14 @@ func compileRoute(profileID string, route cfg.DomainRoute) *compiledRoute {
 	case "cidr":
 		_, cidrNet, err := net.ParseCIDR(pattern)
 		if err != nil {
-			log.Printf("Invalid CIDR pattern '%s' for profile '%s': %v", pattern, profileID, err)
+			log.Printf("Invalid CIDR pattern '%s' for route '%s': %v", pattern, rule.ID, err)
 			return nil
 		}
 		cr.cidrNet = cidrNet
 		ones, _ := cidrNet.Mask.Size()
 		cr.specificity = ones // /32 > /24 > /16 > /8
 	default:
-		log.Printf("Unknown route type '%s' for profile '%s', pattern '%s'", routeType, profileID, pattern)
+		log.Printf("Unknown route type '%s' for route '%s', pattern '%s'", routeType, rule.ID, pattern)
 		return nil
 	}
 
@@ -194,9 +215,20 @@ func guessRouteType(pattern string) string {
 	if strings.HasPrefix(pattern, "*.") {
 		return "domain"
 	}
-	// Check if it looks like an IP or IP pattern
-	normalized := strings.Replace(pattern, "*", "0", -1)
-	if ip := net.ParseIP(normalized); ip != nil {
+	// Check if it looks like an IP or IP wildcard prefix.
+	parts := strings.Split(pattern, ".")
+	looksLikeIP := len(parts) >= 1 && len(parts) <= 4
+	for _, part := range parts {
+		if part == "*" {
+			continue
+		}
+		value, err := strconv.Atoi(part)
+		if err != nil || value < 0 || value > 255 {
+			looksLikeIP = false
+			break
+		}
+	}
+	if looksLikeIP && (len(parts) == 4 || parts[len(parts)-1] == "*") {
 		return "ip"
 	}
 	return "domain"
@@ -206,10 +238,16 @@ func specificityForIPPattern(pattern string) int {
 	// Count non-wildcard octets
 	parts := strings.Split(pattern, ".")
 	score := 0
+	hasWildcard := false
 	for _, p := range parts {
 		if p != "*" {
-			score += 32
+			score += 8
+		} else {
+			hasWildcard = true
 		}
+	}
+	if !hasWildcard {
+		score++
 	}
 	return score
 }
@@ -227,6 +265,9 @@ func matchRoute(route compiledRoute, hostOnly string) bool {
 }
 
 func matchDomain(route compiledRoute, hostOnly string) bool {
+	if net.ParseIP(hostOnly) != nil {
+		return false
+	}
 	if route.isWildcard {
 		// *.example.com matches sub.example.com and example.com
 		return strings.HasSuffix(hostOnly, route.domainSuffix) || hostOnly == route.lowerPattern[2:]

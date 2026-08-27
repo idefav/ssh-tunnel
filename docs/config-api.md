@@ -12,6 +12,8 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 |------|------|------|
 | `/view/index` | GET | 主页面 - 显示隧道状态和域名缓存 |
 | `/view/app/config` | GET | 配置管理页面 - 显示和编辑应用配置 |
+| `/view/routes` | GET | 独立路由管理页面 - 固定/随机多 Profile 出口 |
+| `/view/ssh/state` | GET | SSH 状态、请求追踪与持久化流量统计 |
 | `/view/logs` | GET | 日志查看页面 - 实时查看应用日志 |
 
 ### API接口
@@ -35,14 +37,49 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 
 > 说明：Profile 保存后会同时写入配置键 `profiles.json` 与文件 `profiles.json`（美化格式，便于人工查看和维护）。
 
+`domainRoutes` 不再由 Profile API 编辑。旧文件中的该字段只在启动迁移时读取；完成迁移后规则写入独立 `routes.json` 并清理旧字段。被任意路由规则引用的 Profile 不允许删除，冲突响应会返回 `referencingRouteIds`。
+
+#### 独立路由 API
+
+| 接口 | 方法 | 描述 | 请求 |
+|------|------|------|------|
+| `/admin/routes` | GET | 获取规则、Profile 与当前激活 Profile | 无 |
+| `/admin/routes/upsert` | POST | 创建或更新规则；空 `id` 创建 | `{"route":{...}}` |
+| `/admin/routes/toggle` | POST | 启用或停用规则 | `{"routeId":"...","enabled":true}` |
+| `/admin/routes/delete` | POST | 删除规则 | `{"routeId":"..."}` |
+
+规则结构：
+
+```json
+{
+  "id": "route_0123456789abcdef0123456789abcdef",
+  "pattern": "*.example.com",
+  "type": "domain",
+  "enabled": true,
+  "strategy": "random",
+  "targetProfileIds": ["prod-main", "prod-backup"]
+}
+```
+
+`type` 支持 `domain`、`ip`、`cidr`；IP 通配前缀 `192.168.*` 会规范化为 `192.168.*.*`。`fixed` 必须且只能有一个目标，`random` 至少有两个不同目标。同类型、规范化后相同的模式不可重复。规则写入活动配置目录的 `routes.json`，采用临时文件和原子替换。
+
 #### SSH连接API 🆕
 
 | 接口 | 方法 | 描述 | 返回 |
 |------|------|------|------|
 | `/admin/ssh/state` | GET | 获取当前 SSH 客户端状态 | `version/localAddr/remoteAddr/sessionId/user` |
 | `/admin/ssh/reconnect` | POST | 使用最新配置执行真实 SSH 重连 | 成功返回新的 SSH 会话信息 |
-| `/admin/ssh/metrics` | GET | 获取当前 SSH 代理实时上下行速率与累计流量 | `uploadSpeed/downloadSpeed/uploadBytesTotal/downloadBytesTotal` |
+| `/admin/ssh/metrics` | GET | 获取持久化总体及 Profile/直连实时与累计流量 | 保留旧字段，并增加 `trafficByProfile/directTraffic/trafficLastResetAt/trafficUpdatedAt` |
 | `/admin/ssh/test` | POST | 执行 SSH 延迟与当前速率测试 | `latencyMs/uploadSpeed/downloadSpeed` |
+
+#### 流量统计 API
+
+| 接口 | 方法 | 描述 |
+|------|------|------|
+| `/admin/traffic/history?scope=all&from=<RFC3339>&to=<RFC3339>&groupBy=hour` | GET | 查询小时/日/月历史；scope 支持 `all`、`direct`、`profile:<id>` |
+| `/admin/traffic/reset` | POST | `{"scope":"all"}` 重置全部，或 `{"scope":"profile","profileId":"..."}` 重置单 Profile |
+
+历史小时桶使用运行机器的系统本地时区并保留 365 天。重置只归零当前累计并记录最近重置时间，不删除历史。`traffic.db` 无法打开、锁冲突或初始化失败会阻止服务启动，不会退化为内存统计。
 
 `/admin/ssh/reconnect` 的执行顺序：
 1. 重载配置文件

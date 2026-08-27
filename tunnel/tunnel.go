@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -124,9 +125,11 @@ type Tunnel struct {
 	reconnectRecoveryPending     bool
 
 	// Profile-based domain routing
-	routeMatcher      *RouteMatcher
-	profileTunnelMgr  *ProfileTunnelManager
-	profileID         string // profileID for this tunnel instance (empty for main tunnel)
+	routeMatcher     *RouteMatcher
+	profileTunnelMgr *ProfileTunnelManager
+	profileID        string // profileID for this tunnel instance (empty for main tunnel)
+	trafficStore     *TrafficStore
+	routeDialer      func(profileID, host string, retryState *requestRetryState) (destinationConn, error)
 }
 
 type ProxyMetrics struct {
@@ -176,13 +179,16 @@ type ExitIPInfo struct {
 }
 
 type destinationConn struct {
-	conn        net.Conn
-	sshClient   *ssh.Client
-	sshMemberID uint64
-	profileID   string
-	viaSSH      bool
-	generation  uint64
-	retryInfo   SSHRetryInfo
+	conn                net.Conn
+	sshClient           *ssh.Client
+	sshMemberID         uint64
+	profileID           string
+	viaSSH              bool
+	generation          uint64
+	retryInfo           SSHRetryInfo
+	routeID             string
+	routeStrategy       string
+	attemptedProfileIDs []string
 }
 
 const (
@@ -342,6 +348,10 @@ func (t *Tunnel) GetProfileTunnelMgr() *ProfileTunnelManager {
 	return t.profileTunnelMgr
 }
 
+func (t *Tunnel) GetTrafficStore() *TrafficStore {
+	return t.trafficStore
+}
+
 func (t *Tunnel) GetRequestTracker() *ProxyRequestTracker {
 	t.requestTrackerOnce.Do(func() {
 		t.requestTracker = NewProxyRequestTracker(50)
@@ -373,10 +383,12 @@ func (t *Tunnel) addProxyDownloadBytes(n int64) {
 
 func (t *Tunnel) copyProxyData(destination io.WriteCloser, source io.ReadCloser, upload bool) {
 	n, err := io.Copy(destination, source)
-	if upload {
-		t.addProxyUploadBytes(n)
-	} else {
-		t.addProxyDownloadBytes(n)
+	if t.trafficStore == nil {
+		if upload {
+			t.addProxyUploadBytes(n)
+		} else {
+			t.addProxyDownloadBytes(n)
+		}
 	}
 
 	closeWrite(destination)
@@ -522,6 +534,7 @@ func (t *Tunnel) proxyBidirectionalWithEarlyRetry(ctx context.Context, client ne
 					retryInfo := retryState.info()
 					tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
 					tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+					tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 					tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 					continue
 				}
@@ -544,6 +557,7 @@ func (t *Tunnel) proxyBidirectionalWithEarlyRetry(ctx context.Context, client ne
 		if serverN > 0 {
 			tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
 			tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+			tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 			retryInfo := retryState.info()
 			tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 			t.proxyBidirectional(&prefixReadConn{Conn: dest.conn, prefix: firstServerByte[:serverN]}, client, req)
@@ -558,6 +572,7 @@ func (t *Tunnel) proxyBidirectionalWithEarlyRetry(ctx context.Context, client ne
 				retryInfo := retryState.info()
 				tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
 				tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+				tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 				tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 				continue
 			}
@@ -579,6 +594,10 @@ func (t *Tunnel) proxyBidirectionalWithEarlyRetry(ctx context.Context, client ne
 }
 
 func (t *Tunnel) SnapshotProxyMetrics() ProxyMetrics {
+	if t.trafficStore != nil {
+		metrics, _ := t.SnapshotTraffic()
+		return metrics
+	}
 	uploadTotal := atomic.LoadUint64(&t.proxyUploadBytes)
 	downloadTotal := atomic.LoadUint64(&t.proxyDownloadBytes)
 	activeProxyConns := atomic.LoadInt64(&t.activeProxyConns)
@@ -618,6 +637,23 @@ func (t *Tunnel) SnapshotProxyMetrics() ProxyMetrics {
 		DownloadBps:        t.proxyDownloadBps,
 		ActiveProxyConns:   activeProxyConns,
 	}
+}
+
+// SnapshotTraffic returns a consistent persistent traffic snapshot. Callers that
+// need both the compatibility metrics and per-scope details should use this
+// method so speed samples are advanced only once.
+func (t *Tunnel) SnapshotTraffic() (ProxyMetrics, TrafficSummary) {
+	if t.trafficStore == nil {
+		return t.SnapshotProxyMetrics(), TrafficSummary{}
+	}
+	summary := t.trafficStore.Summary()
+	return ProxyMetrics{
+		UploadBytesTotal:   summary.Overall.UploadBytesTotal,
+		DownloadBytesTotal: summary.Overall.DownloadBytesTotal,
+		UploadBps:          summary.Overall.UploadBps,
+		DownloadBps:        summary.Overall.DownloadBps,
+		ActiveProxyConns:   atomic.LoadInt64(&t.activeProxyConns),
+	}, summary
 }
 
 func (t *Tunnel) SnapshotSSHConnectionStats() SSHConnectionStats {
@@ -724,47 +760,126 @@ func (t *Tunnel) handleHTTP(ctx context.Context, w http.ResponseWriter, req *htt
 }
 
 func (t *Tunnel) getDestConn(host string, retryState *requestRetryState) (destinationConn, error) {
-	// Check profile-based domain routing first
-	if dest, ok := t.tryRouteMatch(host, retryState); ok {
-		return dest, nil
+	// Check standalone routing first. A matched rule never falls back to the default route.
+	if dest, matched, err := t.tryRouteMatch(host, retryState); matched {
+		return t.meterDestination(dest), err
 	}
 
 	if !t.enableHttpOverSSH {
 		conn, err := net.DialTimeout("tcp", host, 3*time.Second)
-		return destinationConn{conn: conn}, err
+		return t.meterDestination(destinationConn{conn: conn}), err
 	}
 
 	if !t.enableHttpDomainFilter {
 		conn, client, generation, memberID, retryInfo, err := t.createSSHConn(host, retryState)
-		return destinationConn{conn: conn, sshClient: client, sshMemberID: memberID, viaSSH: true, generation: generation, retryInfo: retryInfo}, err
+		return t.meterDestination(destinationConn{conn: conn, sshClient: client, sshMemberID: memberID, profileID: t.profileID, viaSSH: true, generation: generation, retryInfo: retryInfo}), err
 	}
 
 	if t.shouldUseSSHForHost(host) {
 		conn, client, generation, memberID, retryInfo, err := t.createSSHConn(host, retryState)
-		return destinationConn{conn: conn, sshClient: client, sshMemberID: memberID, viaSSH: true, generation: generation, retryInfo: retryInfo}, err
+		return t.meterDestination(destinationConn{conn: conn, sshClient: client, sshMemberID: memberID, profileID: t.profileID, viaSSH: true, generation: generation, retryInfo: retryInfo}), err
 	}
 
 	conn, err := net.DialTimeout("tcp", host, 10*time.Second)
-	return destinationConn{conn: conn}, err
+	return t.meterDestination(destinationConn{conn: conn}), err
 
 }
 
-// tryRouteMatch checks if the host matches a profile route and returns a connection via that profile's tunnel.
-// Returns (dest, true) on success, (_, false) if no route matched or the route tunnel failed.
-func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (destinationConn, bool) {
+func (t *Tunnel) meterDestination(dest destinationConn) destinationConn {
+	if dest.conn == nil || t.trafficStore == nil {
+		return dest
+	}
+	profileID := dest.profileID
+	if !dest.viaSSH {
+		profileID = ""
+	} else if profileID == "" {
+		profileID = t.profileID
+		dest.profileID = profileID
+	}
+	dest.conn = &meteredConn{Conn: dest.conn, store: t.trafficStore, profileID: profileID}
+	return dest
+}
+
+// tryRouteMatch resolves a matched standalone rule. Matched rules fail closed.
+func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (destinationConn, bool, error) {
 	if t.routeMatcher == nil || t.profileTunnelMgr == nil {
-		return destinationConn{}, false
+		return destinationConn{}, false, nil
 	}
-	profileID, matched := t.routeMatcher.Match(host)
+	rule, matched := t.routeMatcher.Match(host)
 	if !matched {
-		return destinationConn{}, false
+		return destinationConn{}, false, nil
 	}
-	dest, err := t.profileTunnelMgr.CreateSSHConnForProfile(profileID, host, retryState)
-	if err == nil {
-		return dest, true
+	if retryState == nil {
+		retryState = t.newRequestRetryState()
 	}
-	log.Printf("Profile路由连接失败(profile=%s, host=%s): %v, 回退到默认路由", profileID, host, err)
-	return destinationConn{}, false
+	retryState.setRoute(rule.ID, rule.Strategy)
+	targets := append([]string(nil), rule.TargetProfileIDs...)
+	if rule.Strategy == cfg.RouteStrategyRandom {
+		remaining := targets[:0]
+		for _, target := range targets {
+			if !retryState.attemptedProfileSet[target] {
+				remaining = append(remaining, target)
+			}
+		}
+		targets = remaining
+		rand.Shuffle(len(targets), func(i, j int) { targets[i], targets[j] = targets[j], targets[i] })
+	}
+	if len(targets) == 0 {
+		dest := destinationConn{viaSSH: true, routeID: rule.ID, routeStrategy: rule.Strategy, attemptedProfileIDs: retryState.routeProfiles()}
+		return dest, true, fmt.Errorf("路由%s的目标Profile均不可用", rule.ID)
+	}
+
+	var failures []string
+	var last destinationConn
+	for _, profileID := range targets {
+		retryState.markProfileAttempt(profileID)
+		if retryState.profileRetryStates == nil {
+			retryState.profileRetryStates = make(map[string]*requestRetryState)
+		}
+		profileState := retryState.profileRetryStates[profileID]
+		if profileState == nil {
+			stateTunnel := t
+			if t.routeDialer == nil && profileID != t.profileID {
+				stateTunnel = t.profileTunnelMgr.GetTunnel(profileID)
+				if stateTunnel == nil {
+					failures = append(failures, profileID+": tunnel unavailable")
+					continue
+				}
+			}
+			profileState = stateTunnel.newRequestRetryState()
+			retryState.profileRetryStates[profileID] = profileState
+		}
+
+		dest, err := t.dialRouteProfile(profileID, host, profileState)
+		dest.routeID = rule.ID
+		dest.routeStrategy = rule.Strategy
+		dest.attemptedProfileIDs = retryState.routeProfiles()
+		last = dest
+		if err == nil {
+			return dest, true, nil
+		}
+		failures = append(failures, profileID+": "+err.Error())
+		if rule.Strategy == cfg.RouteStrategyFixed {
+			break
+		}
+	}
+	last.viaSSH = true
+	last.routeID = rule.ID
+	last.routeStrategy = rule.Strategy
+	last.attemptedProfileIDs = retryState.routeProfiles()
+	log.Printf("独立路由连接失败(route=%s, host=%s, targets=%v): %s", rule.ID, host, rule.TargetProfileIDs, strings.Join(failures, "; "))
+	return last, true, fmt.Errorf("路由%s目标连接失败: %s", rule.ID, strings.Join(failures, "; "))
+}
+
+func (t *Tunnel) dialRouteProfile(profileID, host string, retryState *requestRetryState) (destinationConn, error) {
+	if t.routeDialer != nil {
+		return t.routeDialer(profileID, host, retryState)
+	}
+	if profileID == t.profileID {
+		conn, client, generation, memberID, retryInfo, err := t.createSSHConn(host, retryState)
+		return destinationConn{conn: conn, sshClient: client, sshMemberID: memberID, profileID: profileID, viaSSH: true, generation: generation, retryInfo: retryInfo}, err
+	}
+	return t.profileTunnelMgr.CreateSSHConnForProfile(profileID, host, retryState)
 }
 
 func (t *Tunnel) createSSHConn(host string, retryState *requestRetryState) (net.Conn, *ssh.Client, uint64, uint64, SSHRetryInfo, error) {
@@ -795,6 +910,7 @@ func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http
 		reconnectTriggered := dest.viaSSH && shouldReconnect(err)
 		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClass, reconnectTriggered, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClass, err.Error(), reconnectTriggered)
 		http.Error(w, err.Error(), proxyHTTPStatus(err, dest.viaSSH))
@@ -802,6 +918,7 @@ func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http
 	}
 	tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), "", false, dest.generation)
 	tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+	tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 	tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 	tracker.MarkActive(req)
 	tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
@@ -935,6 +1052,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 		reconnectTriggered := dest.viaSSH && shouldReconnect(err)
 		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClass, reconnectTriggered, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClass, err.Error(), reconnectTriggered)
 		return
@@ -942,6 +1060,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 	if dest.conn == nil {
 		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClassUnknown, false, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClassUnknown, "destination connection is nil", false)
 		log.Println("Get Dest Connection Failed: destination connection is nil")
@@ -951,6 +1070,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 	destConn := dest.conn
 	tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), "", false, dest.generation)
 	tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+	tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 	tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 	tracker.MarkActive(req)
 	tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
@@ -973,6 +1093,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 					retryInfo := retryState.info()
 					tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
 					tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+					tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 					tracker.UpdateRetryInfo(req, retryInfo.RetryCount, writeErr.Error(), retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 					writeErr = nil
 					written = retryWritten
@@ -996,7 +1117,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 			log.Printf("write initial request to destination failed: %v", writeErr)
 			failureClass := t.classifyDialError(writeErr, dest.viaSSH)
 			tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, failureClass, false, dest.generation)
-			if dest.viaSSH && dest.sshClient != nil && isSSHReconnectError(writeErr) {
+			if dest.viaSSH && (dest.routeID == "" || dest.profileID == t.profileID) && dest.sshClient != nil && isSSHReconnectError(writeErr) {
 				t.invalidateSSHClientIfMatch(dest.sshClient, "http initial write failed: "+writeErr.Error())
 				safe.GO(func() {
 					t.ReconnectSSHWithSource(ctx, "http-proxy-write")
@@ -1022,7 +1143,7 @@ func (t *Tunnel) getConn(ctx context.Context, client net.Conn, address string, r
 		return dest, nil
 	}
 
-	if dest.viaSSH && shouldReconnect(err) {
+	if dest.viaSSH && (dest.routeID == "" || dest.profileID == t.profileID) && shouldReconnect(err) {
 		if err != nil && dest.sshClient != nil {
 			t.invalidateSSHClientIfMatch(dest.sshClient, err.Error())
 		}
@@ -1226,7 +1347,15 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 	retryState := t.newRequestRetryState()
 
 	// Check profile-based domain routing first
-	if dest, ok := t.tryRouteMatch(addr, retryState); ok {
+	if dest, matched, routeErr := t.tryRouteMatch(addr, retryState); matched {
+		if routeErr != nil {
+			log.Println(routeErr)
+			_ = writeSocks5Reply(conn, mapSocks5ReplyCode(routeErr), nil)
+			tracker.UpdateRouteInfo(req, retryState.routeID, retryState.routeStrategy, retryState.routeProfiles())
+			tracker.MarkFailed(req, routeErr.Error())
+			return routeErr
+		}
+		dest = t.meterDestination(dest)
 		if err := writeSocks5Reply(conn, 0x00, dest.conn.LocalAddr()); err != nil {
 			_ = dest.conn.Close()
 			log.Println(err)
@@ -1235,6 +1364,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 		}
 		tracker.UpdateMetadata(req, requestPhaseDial, true, 0, "", false, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 		tracker.MarkActive(req)
 		tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, dest.generation)
 		_ = conn.SetReadDeadline(time.Time{})
@@ -1275,14 +1405,16 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 	_ = conn.SetReadDeadline(time.Time{})
 	finishProxyConn := t.beginActiveProxyConn()
 	defer finishProxyConn()
-	t.proxyBidirectionalWithEarlyRetry(ctx, conn, destinationConn{
+	dest := t.meterDestination(destinationConn{
 		conn:        server,
 		sshClient:   member.Client,
 		sshMemberID: member.ID,
+		profileID:   t.profileID,
 		viaSSH:      true,
 		generation:  generation,
 		retryInfo:   retryInfo,
-	}, addr, req, retryState)
+	})
+	t.proxyBidirectionalWithEarlyRetry(ctx, conn, dest, addr, req, retryState)
 	return nil
 }
 
@@ -1421,9 +1553,17 @@ func (t *Tunnel) httpProxy(ctx context.Context, conn net.Conn) error {
 	retryState := t.newRequestRetryState()
 
 	// Check profile-based domain routing first
-	if dest, ok := t.tryRouteMatch(addr, retryState); ok {
+	if dest, matched, routeErr := t.tryRouteMatch(addr, retryState); matched {
+		if routeErr != nil {
+			log.Println(routeErr)
+			tracker.UpdateRouteInfo(req, retryState.routeID, retryState.routeStrategy, retryState.routeProfiles())
+			tracker.MarkFailed(req, routeErr.Error())
+			return NetworkError
+		}
+		dest = t.meterDestination(dest)
 		tracker.UpdateMetadata(req, requestPhaseDial, true, 0, "", false, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
 		tracker.MarkActive(req)
 		tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, dest.generation)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
@@ -1448,14 +1588,16 @@ func (t *Tunnel) httpProxy(ctx context.Context, conn net.Conn) error {
 	tracker.MarkActive(req)
 	tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, generation)
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	t.proxyBidirectionalWithEarlyRetry(ctx, conn, destinationConn{
+	dest := t.meterDestination(destinationConn{
 		conn:        server,
 		sshClient:   member.Client,
 		sshMemberID: member.ID,
+		profileID:   t.profileID,
 		viaSSH:      true,
 		generation:  generation,
 		retryInfo:   retryInfo,
-	}, addr, req, retryState)
+	})
+	t.proxyBidirectionalWithEarlyRetry(ctx, conn, dest, addr, req, retryState)
 	return nil
 }
 

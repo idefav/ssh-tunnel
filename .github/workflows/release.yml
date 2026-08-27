@@ -9,15 +9,16 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') # 只有这次 Commit 是 创建 Tag 时，才进行后续发布操作
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@master # checkout 代码
+      - uses: actions/checkout@v4 # checkout 代码
       - uses: actions/setup-go@v5 # 配置 Go 环境
         with:
           go-version: "1.24.0" # 改成自己的版本
 
       - run: VERSION="${GITHUB_REF_NAME}" bash scripts/build.sh
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with: # 将下述可执行文件 release 上去
+          generate_release_notes: true
           files: |
             ./bin/ssh-tunnel-windows-386.exe
             ./bin/ssh-tunnel-windows-amd64.exe

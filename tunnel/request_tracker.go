@@ -37,6 +37,9 @@ type ProxyRequest struct {
 	RetryReason         string             `json:"retryReason,omitempty"`
 	RetryMembers        []uint64           `json:"retryMembers,omitempty"`
 	BalanceStrategy     string             `json:"balanceStrategy,omitempty"`
+	RouteID             string             `json:"routeId,omitempty"`
+	RouteStrategy       string             `json:"routeStrategy,omitempty"`
+	AttemptedProfileIDs []string           `json:"attemptedProfileIds,omitempty"`
 }
 
 // ProxyRequestTracker 代理请求跟踪器（环形缓冲，保留最近 N 条）
@@ -155,14 +158,29 @@ func (prt *ProxyRequestTracker) UpdateMetadata(req *ProxyRequest, phase string, 
 }
 
 func (prt *ProxyRequestTracker) UpdateSSHMember(req *ProxyRequest, memberID uint64, profileID string) {
-	if req == nil || memberID == 0 {
+	if req == nil {
 		return
 	}
 	prt.mu.Lock()
 	defer prt.mu.Unlock()
-	req.SSHMemberID = memberID
+	if memberID != 0 {
+		req.SSHMemberID = memberID
+	}
 	if profileID != "" {
 		req.ProfileID = profileID
+	}
+}
+
+func (prt *ProxyRequestTracker) UpdateRouteInfo(req *ProxyRequest, routeID, strategy string, attemptedProfileIDs []string) {
+	if req == nil {
+		return
+	}
+	prt.mu.Lock()
+	defer prt.mu.Unlock()
+	req.RouteID = routeID
+	req.RouteStrategy = strategy
+	if len(attemptedProfileIDs) > 0 {
+		req.AttemptedProfileIDs = append([]string(nil), attemptedProfileIDs...)
 	}
 }
 

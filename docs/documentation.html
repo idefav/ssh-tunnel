@@ -58,7 +58,9 @@
                         <a href="#command-options" class="list-group-item list-group-item-action">命令选项</a>
                         <a href="#proxy-modes" class="list-group-item list-group-item-action">代理模式</a>
                         <a href="#admin-ui" class="list-group-item list-group-item-action">管理界面</a>
-                        <a href="#multi-profile" class="list-group-item list-group-item-action">多 Profile 路由</a>
+                        <a href="#multi-profile" class="list-group-item list-group-item-action">多 Profile 管理</a>
+                        <a href="#standalone-routing" class="list-group-item list-group-item-action">独立路由</a>
+                        <a href="#traffic-statistics" class="list-group-item list-group-item-action">流量统计</a>
                         <a href="#connection-pool" class="list-group-item list-group-item-action">SSH 连接池</a>
                         <a href="#version-management" class="list-group-item list-group-item-action">版本管理</a>
                         <a href="#domain-filtering" class="list-group-item list-group-item-action">域名过滤</a>
@@ -268,9 +270,10 @@
 
                     <h3>主要功能</h3>
                     <ul>
-                        <li><strong>SSH 状态</strong>：显示 SSH 连接状态、延迟、上下行速率与累计流量</li>
+                        <li><strong>SSH 状态</strong>：显示 SSH 连接状态、延迟、持久化总体/Profile/直连流量和历史图表</li>
                         <li><strong>连接池管理</strong>：实时查看连接池成员（健康/可疑/探测中/已摘除），支持手动探测、手动摘除指定成员、一键清理已摘除历史</li>
                         <li><strong>多 Profile 管理</strong>：维护多套 SSH 配置，支持动态切换与持久化写入 <code>profiles.json</code></li>
+                        <li><strong>独立路由</strong>：在 <code>/view/routes</code> 管理域名、IP 通配符和 CIDR 规则，支持固定或随机多 Profile 出口</li>
                         <li><strong>日志查看</strong>：默认加载最近 1000 行历史并继续实时追踪；支持一键清空日志</li>
                         <li><strong>域名列表</strong>：响应式域名过滤列表，支持增删改查</li>
                         <li><strong>应用配置</strong>：在线修改配置参数，保存后即时生效</li>
@@ -286,32 +289,38 @@
                 </div>
 
                 <div id="multi-profile" class="doc-section">
-                    <h2>多 Profile 路由 <span class="badge bg-success">v1.4.18+</span></h2>
-                    <p>Multi-Profile 功能允许您维护多套 SSH 配置（每套称为一个 Profile），并为每个 Profile 配置独立的域名、IP、CIDR 路由规则。命中规则的代理请求会自动走对应 Profile 的 SSH 隧道。</p>
+                    <h2>多 Profile 管理 <span class="badge bg-success">v1.4.18+</span></h2>
+                    <p>Multi-Profile 功能允许维护多套 SSH 服务器、账号、私钥和连接池配置。在管理界面 <code>/view/index</code> 的 Profile 卡片中可新增、编辑、复制、删除和切换 Profile。</p>
+                    <p>从 v1.5.0 开始，路由不再作为 Profile 的内嵌字段编辑。被任何独立路由引用的 Profile 不能删除，需先调整或删除引用规则。</p>
+                </div>
 
-                    <h3>配置文件示例（profiles.json）</h3>
-                    <pre class="bg-dark text-light p-3 rounded"><code>[{
-  "id": "profile-1",
-  "name": "US Server",
-  "serverIp": "1.2.3.4",
-  "serverSshPort": 22,
-  "loginUsername": "root",
-  "sshPrivateKeyPath": "~/.ssh/id_rsa",
-  "sshPoolSize": 3,
-  "routes": [
-    {"type": "domain", "value": "*.github.com"},
-    {"type": "cidr",   "value": "192.168.100.0/24"}
-  ]
-}]</code></pre>
+                <div id="standalone-routing" class="doc-section">
+                    <h2>独立路由 <span class="badge bg-success">v1.5.0+</span></h2>
+                    <p>访问 <code>http://localhost:1083/view/routes</code> 可创建、编辑、启停和删除路由。规则保存在活动配置文件同目录的 <code>routes.json</code>；未显式指定配置文件时，使用 <code>~/.ssh-tunnel/routes.json</code>。</p>
 
-                    <h3>路由规则类型</h3>
+                    <h3>规则类型与策略</h3>
                     <ul>
-                        <li><strong>domain</strong>：域名匹配，支持通配符，如 <code>*.google.com</code></li>
-                        <li><strong>ip</strong>：精确 IP 匹配，如 <code>8.8.8.8</code></li>
-                        <li><strong>cidr</strong>：CIDR 网段匹配，如 <code>10.0.0.0/8</code></li>
+                        <li><strong>domain</strong>：域名后缀及 <code>*.google.com</code> 通配域名。</li>
+                        <li><strong>ip</strong>：IPv4 精确值或通配符，如 <code>192.168.*</code>。</li>
+                        <li><strong>cidr</strong>：IPv4/IPv6 CIDR，如 <code>10.0.0.0/8</code>。</li>
+                        <li><strong>fixed</strong>：必须选择一个 Profile。</li>
+                        <li><strong>random</strong>：至少选择两个 Profile，每个新 TCP 连接重新打乱并依次尝试。所有目标失败时不回退默认 Profile。</li>
                     </ul>
-                    <p>未命中任何 Profile 路由规则的请求，将通过主隧道（默认 SSH 连接）转发。</p>
-                    <p>在管理界面 <code>/view/index</code> 的 Profile 卡片中，可新增、编辑、复制、删除 Profile，切换后自动重连并生效。</p>
+                    <p>命中时按更具体规则优先；未命中或规则已停用时，继续执行默认 Profile、域名过滤或直连逻辑。启用规则所需的后台 SSH 连接池会实时增删，无需重启服务。</p>
+
+                    <h3>旧配置迁移</h3>
+                    <p>首次启动会自动把 Profile 中的旧 <code>domainRoutes</code> 迁移为指向原 Profile 的启用固定规则。如多个 Profile 存在相同的规范化模式，程序会拒绝启动并明确报冲突。</p>
+                </div>
+
+                <div id="traffic-statistics" class="doc-section">
+                    <h2>持久化流量统计 <span class="badge bg-success">v1.5.0+</span></h2>
+                    <p>SSH 状态页 <code>/view/ssh/state</code> 展示所有代理流量的总体数据、各实际使用的 Profile 和直连明细，包含实时速度、累计值和 24 小时、7 天、30 天及按月历史。</p>
+                    <ul>
+                        <li>数据保存于配置目录的 <code>traffic.db</code>，每 5 秒批量刷盘，正常停止时强制同步。</li>
+                        <li>历史按运行机器的系统本地时区保存小时桶，保留最近 365 天。</li>
+                        <li>支持整体或单 Profile 重置，重置不删除历史小时数据。</li>
+                        <li>数据库打开失败或被其他进程锁定时，服务会中止启动，不会退化为易失统计。</li>
+                    </ul>
                 </div>
 
                 <div id="connection-pool" class="doc-section">
@@ -337,7 +346,7 @@ ssh.probe.failure.threshold=2
 proxy.retry.max.attempts=1</code></pre>
 
                     <h3>管理界面操作</h3>
-                    <p>访问 SSH 状态页（<code>/view/ssh-state</code>）可进行以下操作：</p>
+                    <p>访问 SSH 状态页（<code>/view/ssh/state</code>）可进行以下操作：</p>
                     <ul>
                         <li>实时查看所有成员状态及请求计数</li>
                         <li>点击「探测」按钮对指定成员发起主动健康检查</li>
@@ -348,7 +357,7 @@ proxy.retry.max.attempts=1</code></pre>
 
                 <div id="version-management" class="doc-section">
                     <h2>版本管理 <span class="badge bg-success">v1.4+</span></h2>
-                    <p>SSH-Tunnel 内置版本管理页面，可自动检测 GitHub Release 并完成一键升级。</p>
+                    <p>SSH-Tunnel 内置版本管理页面，可定时检测 GitHub Release，并在人工确认后完成一键升级。</p>
                     <p>访问地址：<code>http://localhost:1083/view/version</code></p>
 
                     <h3>主要功能</h3>
@@ -359,6 +368,7 @@ proxy.retry.max.attempts=1</code></pre>
                         <li>Linux/macOS 升级后自动 <code>chmod 0755</code> 确保执行权限（v1.4.21+）</li>
                         <li>Windows 平台通过临时脚本完成原子替换</li>
                     </ul>
+                    <div class="alert alert-info"><code>auto-update.enabled=true</code> 只启用定时检查，不会无人值守地下载或替换二进制。</div>
                 </div>
 
                 <div id="domain-filtering" class="doc-section">
@@ -486,4 +496,3 @@ admin.address=127.0.0.1:1083</code></pre>
     <script src="assets/js/main.js"></script>
 </body>
 </html>
-

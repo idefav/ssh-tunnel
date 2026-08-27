@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"sort"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/constants"
 	"ssh-tunnel/router"
@@ -38,6 +39,20 @@ type profileUpsertRequest struct {
 }
 
 type profileDeleteRequest struct {
+	ProfileID string `json:"profileId"`
+}
+
+type routeUpsertRequest struct {
+	Route cfg.RouteRule `json:"route"`
+}
+
+type routeMutationRequest struct {
+	RouteID string `json:"routeId"`
+	Enabled bool   `json:"enabled"`
+}
+
+type trafficResetRequest struct {
+	Scope     string `json:"scope"`
 	ProfileID string `json:"profileId"`
 }
 
@@ -467,6 +482,102 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			writer.Write(jsonResponse)
 		})
 
+		adminRouter.HandleFunc("/admin/routes", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodGet {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+			store, err := cfg.ListRoutes(tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("读取routes失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+			profiles, err := cfg.ListProfiles(tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("读取profiles失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+			activeProfileID := profiles.ActiveProfileID
+			if activeProfileID == "" {
+				activeProfileID = cfg.DEFAULT_PROFILE_ID
+			}
+			jsonResponse, _ := json.Marshal(map[string]interface{}{"success": true, "data": store, "profiles": profiles.Profiles, "activeProfileId": activeProfileID})
+			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/routes/upsert", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			var req routeUpsertRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			store, err := cfg.UpsertRoute(req.Route, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("保存路由失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse, _ := json.Marshal(map[string]interface{}{"success": true, "data": store})
+			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/routes/toggle", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			var req routeMutationRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			store, err := cfg.ToggleRoute(req.RouteID, req.Enabled, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("切换路由失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse, _ := json.Marshal(map[string]interface{}{"success": true, "data": store})
+			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/routes/delete", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			var req routeMutationRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			store, err := cfg.DeleteRoute(req.RouteID, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("删除路由失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse, _ := json.Marshal(map[string]interface{}{"success": true, "data": store})
+			writer.Write(jsonResponse)
+		})
+
 		adminRouter.HandleFunc("/admin/profiles/upsert", func(writer http.ResponseWriter, request *http.Request) {
 			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 			writer.Header().Set("Access-Control-Allow-Origin", "*")
@@ -491,15 +602,37 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				respondWithError(writer, "profileId不能为空", http.StatusBadRequest)
 				return
 			}
+			// domainRoutes is accepted by the decoder only so older files can be
+			// migrated at startup; profile editing no longer owns route rules.
+			req.Profile.DomainRoutes = nil
 
-			store, err := cfg.UpsertProfile(strings.TrimSpace(req.ProfileID), req.Profile, tunnel.AppConfig())
+			profileID := strings.TrimSpace(req.ProfileID)
+			store, err := cfg.UpsertProfile(profileID, req.Profile, tunnel.AppConfig())
 			if err != nil {
 				respondWithError(writer, fmt.Sprintf("保存profile失败: %v", err), http.StatusInternalServerError)
 				return
 			}
 
-			// Reload profile-based domain routing
-			tunnel.ReloadProfileRouting(tunnel.AppConfig())
+			activeID := store.ActiveProfileID
+			if activeID == "" {
+				activeID = cfg.DEFAULT_PROFILE_ID
+			}
+			reconnectActive := profileID == activeID
+			if profileID == activeID {
+				cfg.ApplyProfileToAppConfig(tunnel.AppConfig(), req.Profile)
+				if err := tunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
+					respondWithError(writer, fmt.Sprintf("刷新当前Profile运行时失败: %v", err), http.StatusInternalServerError)
+					return
+				}
+			}
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if reconnectActive {
+				tunnel.DisconnectSSHClient()
+				safe.GO(func() { tunnel.ReconnectSSHWithSource(connCtx, "profile-update") })
+			}
 
 			response := map[string]interface{}{
 				"success": true,
@@ -554,6 +687,10 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				respondWithError(writer, fmt.Sprintf("应用profile到隧道运行时失败: %v", err), http.StatusInternalServerError)
 				return
 			}
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
 			setProfileSwitchStatus(profileSwitchStatus{
 				SwitchID:      switchID,
@@ -573,9 +710,6 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			safe.GO(func() {
 				monitorProfileSwitchResult(switchID, 30*time.Second, tunnel)
 			})
-
-			// Reload profile routing after switch
-			tunnel.ReloadProfileRouting(tunnel.AppConfig())
 
 			response := map[string]interface{}{
 				"success":  true,
@@ -644,6 +778,22 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				respondWithError(writer, "profileId不能为空", http.StatusBadRequest)
 				return
 			}
+			routeIDs, err := cfg.ReferencingRouteIDs(profileID, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("检查路由引用失败: %v", err), http.StatusInternalServerError)
+				return
+			}
+			if len(routeIDs) > 0 {
+				response := map[string]interface{}{
+					"success":             false,
+					"error":               true,
+					"message":             fmt.Sprintf("Profile正被路由规则引用: %s", strings.Join(routeIDs, ", ")),
+					"referencingRouteIds": routeIDs,
+				}
+				writer.WriteHeader(http.StatusConflict)
+				_ = json.NewEncoder(writer).Encode(response)
+				return
+			}
 
 			store, err := cfg.DeleteProfile(profileID, tunnel.AppConfig())
 			if err != nil {
@@ -651,8 +801,11 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				return
 			}
 
-			// Reload profile-based domain routing (stops deleted profile's tunnel)
-			tunnel.ReloadProfileRouting(tunnel.AppConfig())
+			// Reload standalone routing (stops any now-unused background pool).
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
 			response := map[string]interface{}{
 				"success": true,
@@ -770,7 +923,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				return
 			}
 
-			metrics := tunnel.SnapshotProxyMetrics()
+			metrics, trafficSummary := tunnel.SnapshotTraffic()
 			sshStats := tunnel.SnapshotSSHConnectionStats()
 			listenerStats := tunnel.SnapshotListenerStats()
 			tracker := tunnel.GetRequestTracker()
@@ -803,6 +956,10 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				"lastReconnectFailureAt":       formatOptionalTime(sshStats.LastReconnectFailureAt),
 				"acceptErrors":                 listenerStats.AcceptErrors,
 				"listenerRestarts":             listenerStats.ListenerRestarts,
+				"trafficByProfile":             trafficSummary.Profiles,
+				"directTraffic":                trafficSummary.Direct,
+				"trafficLastResetAt":           formatOptionalTime(trafficSummary.Overall.LastResetAt),
+				"trafficUpdatedAt":             formatOptionalTime(trafficSummary.UpdatedAt),
 			}
 
 			// Include active profile ID and profile tunnel pool members
@@ -812,6 +969,30 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 					activeID = cfg.DEFAULT_PROFILE_ID
 				}
 				response["activeProfileId"] = activeID
+				existing := make(map[string]bool, len(trafficSummary.Profiles))
+				for _, item := range trafficSummary.Profiles {
+					existing[item.ProfileID] = true
+				}
+				profileIDs := make([]string, 0, len(store.Profiles))
+				for profileID := range store.Profiles {
+					profileIDs = append(profileIDs, profileID)
+				}
+				sort.Strings(profileIDs)
+				for _, profileID := range profileIDs {
+					if !existing[profileID] {
+						zeroMetrics := trafficSummary.Direct
+						zeroMetrics.Scope = "profile:" + profileID
+						zeroMetrics.ProfileID = profileID
+						zeroMetrics.UploadBytesTotal = 0
+						zeroMetrics.DownloadBytesTotal = 0
+						zeroMetrics.UploadBps = 0
+						zeroMetrics.DownloadBps = 0
+						zeroMetrics.LastResetAt = time.Time{}
+						zeroMetrics.UpdatedAt = time.Time{}
+						trafficSummary.Profiles = append(trafficSummary.Profiles, zeroMetrics)
+					}
+				}
+				response["trafficByProfile"] = trafficSummary.Profiles
 			}
 			if ptm := tunnel.GetProfileTunnelMgr(); ptm != nil {
 				profileMembers := ptm.SnapshotAllPools()
@@ -823,6 +1004,88 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 			mbytes, _ := json.Marshal(response)
 			writer.Write(mbytes)
+		})
+
+		adminRouter.HandleFunc("/admin/traffic/history", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodGet {
+				respondWithError(writer, "只支持GET方法", http.StatusMethodNotAllowed)
+				return
+			}
+			store := tunnel.GetTrafficStore()
+			if store == nil {
+				respondWithError(writer, "流量数据库未初始化", http.StatusServiceUnavailable)
+				return
+			}
+			scope := strings.TrimSpace(request.URL.Query().Get("scope"))
+			groupBy := strings.TrimSpace(request.URL.Query().Get("groupBy"))
+			from, err := time.Parse(time.RFC3339, request.URL.Query().Get("from"))
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("from必须为RFC3339时间: %v", err), http.StatusBadRequest)
+				return
+			}
+			to, err := time.Parse(time.RFC3339, request.URL.Query().Get("to"))
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("to必须为RFC3339时间: %v", err), http.StatusBadRequest)
+				return
+			}
+			history, err := store.History(scope, from, to, groupBy)
+			if err != nil {
+				respondWithError(writer, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]interface{}{"success": true, "data": history})
+		})
+
+		adminRouter.HandleFunc("/admin/traffic/reset", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			store := tunnel.GetTrafficStore()
+			if store == nil {
+				respondWithError(writer, "流量数据库未初始化", http.StatusServiceUnavailable)
+				return
+			}
+			var req trafficResetRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			var err error
+			switch strings.TrimSpace(req.Scope) {
+			case "all":
+				profiles, profileErr := cfg.ListProfiles(tunnel.AppConfig())
+				if profileErr != nil {
+					respondWithError(writer, fmt.Sprintf("读取profiles失败: %v", profileErr), http.StatusInternalServerError)
+					return
+				}
+				for profileID := range profiles.Profiles {
+					store.EnsureProfile(profileID)
+				}
+				err = store.ResetAll()
+			case "profile":
+				profileID := strings.TrimSpace(req.ProfileID)
+				profiles, profileErr := cfg.ListProfiles(tunnel.AppConfig())
+				if profileErr != nil {
+					respondWithError(writer, fmt.Sprintf("读取profiles失败: %v", profileErr), http.StatusInternalServerError)
+					return
+				}
+				if _, exists := profiles.Profiles[profileID]; !exists && !store.HasProfile(profileID) {
+					respondWithError(writer, fmt.Sprintf("Profile不存在: %s", profileID), http.StatusBadRequest)
+					return
+				}
+				err = store.ResetProfile(profileID)
+			default:
+				respondWithError(writer, "scope只支持all或profile", http.StatusBadRequest)
+				return
+			}
+			if err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]interface{}{"success": true, "data": store.Summary()})
 		})
 
 		adminRouter.HandleFunc("/admin/ssh/probe-member", func(writer http.ResponseWriter, request *http.Request) {
@@ -1084,6 +1347,9 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				RetryReason         string   `json:"retryReason,omitempty"`
 				RetryMembers        []uint64 `json:"retryMembers,omitempty"`
 				BalanceStrategy     string   `json:"balanceStrategy,omitempty"`
+				RouteID             string   `json:"routeId,omitempty"`
+				RouteStrategy       string   `json:"routeStrategy,omitempty"`
+				AttemptedProfileIDs []string `json:"attemptedProfileIds,omitempty"`
 			}
 
 			formatDuration := func(d time.Duration) string {
@@ -1122,6 +1388,9 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 					RetryReason:         r.RetryReason,
 					RetryMembers:        r.RetryMembers,
 					BalanceStrategy:     r.BalanceStrategy,
+					RouteID:             r.RouteID,
+					RouteStrategy:       r.RouteStrategy,
+					AttemptedProfileIDs: r.AttemptedProfileIDs,
 				})
 			}
 

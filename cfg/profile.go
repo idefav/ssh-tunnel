@@ -369,6 +369,13 @@ func DeleteProfile(profileID string, appConfig *AppConfig) (ProfileStore, error)
 	if profileID == "" {
 		return ProfileStore{}, fmt.Errorf("profile id 不能为空")
 	}
+	routeIDs, err := ReferencingRouteIDs(profileID, appConfig)
+	if err != nil {
+		return ProfileStore{}, fmt.Errorf("检查Profile路由引用失败: %w", err)
+	}
+	if len(routeIDs) > 0 {
+		return ProfileStore{}, fmt.Errorf("Profile正被路由规则引用: %s", strings.Join(routeIDs, ", "))
+	}
 	store, err := ListProfiles(appConfig)
 	if err != nil {
 		return ProfileStore{}, err

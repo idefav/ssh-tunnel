@@ -509,7 +509,7 @@ ssh.probe.failure.threshold=2</code></pre>
                         </h2>
                         <div id="collapseEleven" class="accordion-collapse collapse" aria-labelledby="headingEleven" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                <p>SSH-Tunnel 内置版本管理页面（<code>/view/version</code>），可自动检测 GitHub Release 并完成一键升级。</p>
+                                <p>SSH-Tunnel 内置版本管理页面（<code>/view/version</code>），可定时检测 GitHub Release，并在人工确认后完成一键升级。</p>
 
                                 <h5>使用步骤：</h5>
                                 <ol>
@@ -517,13 +517,33 @@ ssh.probe.failure.threshold=2</code></pre>
                                     <li>页面自动显示当前版本及可用的新版本列表</li>
                                     <li>点击目标版本的「更新」按钮，系统下载并 SHA256 校验后自动替换二进制</li>
                                     <li>Linux/macOS 平台会自动设置 <code>chmod 0755</code> 确保新版本具有执行权限（v1.4.21+）</li>
-                                    <li>替换成功后，系统自动重启服务使新版本生效</li>
+                                    <li>服务模式下替换成功后依赖服务管理器重新拉起；交互运行模式需手动重启</li>
                                 </ol>
 
                                 <div class="alert alert-warning mt-3">
                                     <i class="bi bi-exclamation-triangle-fill me-2"></i>
                                     <strong>注意：</strong> 更新过程中服务会短暂中断。如使用服务模式（systemd/launchd/Windows服务），重启由服务管理器自动完成。
                                 </div>
+                                <div class="alert alert-info mt-3 mb-0"><code>auto-update.enabled=true</code> 只是自动检查，不会无人值守地下载和安装。</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingTwelve">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwelve" aria-expanded="false" aria-controls="collapseTwelve">
+                                从 v1.4.x 升级到 v1.5.0 需要注意什么？
+                            </button>
+                        </h2>
+                        <div id="collapseTwelve" class="accordion-collapse collapse" aria-labelledby="headingTwelve" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <ul>
+                                    <li>升级前备份配置文件和 <code>profiles.json</code>，并停止旧进程。</li>
+                                    <li>旧 <code>domainRoutes</code> 会自动迁移到 <code>routes.json</code>；如多个 Profile 有重复的规范化路由，程序会报冲突并拒绝启动。</li>
+                                    <li>新 <code>traffic.db</code> 从升级后开始累计，旧版本的内存流量不能补录。</li>
+                                    <li>确保服务账号可写配置目录，且同一目录只由一个进程使用。</li>
+                                    <li>降级到 v1.4.x 时需同时恢复升级前的 Profile 备份。</li>
+                                </ul>
                             </div>
                         </div>
                     </div>

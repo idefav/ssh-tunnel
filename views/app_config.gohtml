@@ -178,39 +178,6 @@
                                 <small class="form-text text-muted">作为路由Profile时使用的SSH连接池大小</small>
                             </div>
                         </div>
-
-                        <!-- Domain Routing Rules -->
-                        <div class="mt-3">
-                            <h6 class="border-bottom pb-2 mb-2"><i class="bi bi-signpost-split"></i> 域名路由规则</h6>
-                            <p class="small text-muted mb-2">
-                                配置域名/IP匹配规则，匹配的请求将通过此Profile的SSH隧道转发。支持域名后缀匹配、通配符、IP通配符和CIDR。
-                            </p>
-                            <div class="table-responsive border rounded mb-2" style="max-height: 200px; overflow-y: auto;">
-                                <table class="table table-sm mb-0">
-                                    <thead class="table-light" style="position: sticky; top: 0;">
-                                    <tr>
-                                        <th style="width:45%;">匹配模式</th>
-                                        <th style="width:30%;">类型</th>
-                                        <th style="width:25%;">操作</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody id="domainRoutesBody">
-                                    <tr id="domainRoutesEmpty"><td colspan="3" class="text-center text-muted py-2">暂无路由规则</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="input-group input-group-sm">
-                                <input type="text" class="form-control" id="newRoutePattern" placeholder="例如: google.com, 192.168.*, 10.0.0.0/8">
-                                <select class="form-select" id="newRouteType" style="max-width:120px;">
-                                    <option value="domain">域名</option>
-                                    <option value="ip">IP</option>
-                                    <option value="cidr">CIDR</option>
-                                </select>
-                                <button type="button" class="btn btn-outline-primary" id="addRouteBtn">
-                                    <i class="bi bi-plus"></i> 添加
-                                </button>
-                            </div>
-                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" id="clearProfileFormBtn">
@@ -632,13 +599,10 @@
                 const profile = profiles[profileId] || {};
                 const isActive = profileId === profilesStore.activeProfileId;
                 const row = document.createElement('tr');
-                const hasRoutes = profile.domainRoutes && profile.domainRoutes.length > 0;
-                const routesBadge = hasRoutes ? `<span class="badge bg-info ms-1" title="${profile.domainRoutes.length}条路由规则">路由</span>` : '';
                 row.innerHTML = `
                     <td>
                         <code>${escapeHtml(profileId)}</code>
                         ${isActive ? '<span class="badge bg-success ms-1">当前</span>' : ''}
-                        ${routesBadge}
                     </td>
                     <td><small>${escapeHtml(profile.loginUser || '-')}</small></td>
                     <td><small>${escapeHtml(profile.serverIp || '-')} : ${profile.serverSshPort || '-'}</small></td>
@@ -699,10 +663,6 @@
             document.getElementById('profileHttpBasicAuthEnable').checked = !!formProfile.httpBasicAuthEnable;
             document.getElementById('profileEnableHttpDomainFilter').checked = !!formProfile.enableHttpDomainFilter;
             document.getElementById('profileSSHPoolSize').value = formProfile.sshPoolSize || 2;
-
-            // Populate domain routes
-            currentDomainRoutes = (formProfile.domainRoutes || []).map(r => ({...r}));
-            renderDomainRoutes();
         }
 
         function openCreateProfileModal() {
@@ -815,8 +775,7 @@
                     enableHttpDomainFilter: document.getElementById('profileEnableHttpDomainFilter').checked,
                     httpDomainFilterFilePath: document.getElementById('profileHttpDomainFilterFilePath').value.trim(),
                     retryIntervalSec: parseInt(document.getElementById('profileRetryIntervalSec').value, 10) || 5,
-                    sshPoolSize: parseInt(document.getElementById('profileSSHPoolSize').value, 10) || 2,
-                    domainRoutes: currentDomainRoutes.length > 0 ? currentDomainRoutes : undefined
+                    sshPoolSize: parseInt(document.getElementById('profileSSHPoolSize').value, 10) || 2
                 }
             };
         }
@@ -883,63 +842,7 @@
             applyProfileFormValues({}, { resetId: true });
             profileModalMode = 'create';
             profileModalOriginalId = '';
-            currentDomainRoutes = [];
-            renderDomainRoutes();
         }
-
-        // Domain Routes Management
-        let currentDomainRoutes = [];
-
-        function renderDomainRoutes() {
-            const tbody = document.getElementById('domainRoutesBody');
-            const emptyRow = document.getElementById('domainRoutesEmpty');
-            if (!currentDomainRoutes || currentDomainRoutes.length === 0) {
-                tbody.innerHTML = '<tr id="domainRoutesEmpty"><td colspan="3" class="text-center text-muted py-2">暂无路由规则</td></tr>';
-                return;
-            }
-            const typeLabels = { domain: '域名', ip: 'IP', cidr: 'CIDR' };
-            let html = '';
-            currentDomainRoutes.forEach((route, idx) => {
-                html += '<tr>';
-                html += '<td><code>' + escapeHtml(route.pattern) + '</code></td>';
-                html += '<td><span class="badge bg-secondary">' + (typeLabels[route.type] || route.type) + '</span></td>';
-                html += '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeDomainRoute(' + idx + ')"><i class="bi bi-trash"></i></button></td>';
-                html += '</tr>';
-            });
-            tbody.innerHTML = html;
-        }
-
-        function addDomainRoute() {
-            const patternEl = document.getElementById('newRoutePattern');
-            const typeEl = document.getElementById('newRouteType');
-            const pattern = (patternEl.value || '').trim();
-            if (!pattern) {
-                showToast('error', '匹配模式不能为空');
-                return;
-            }
-            const type = typeEl.value || 'domain';
-            // Check for duplicates
-            if (currentDomainRoutes.some(r => r.pattern === pattern && r.type === type)) {
-                showToast('error', '该规则已存在');
-                return;
-            }
-            currentDomainRoutes.push({ pattern: pattern, type: type });
-            renderDomainRoutes();
-            patternEl.value = '';
-        }
-
-        function removeDomainRoute(idx) {
-            currentDomainRoutes.splice(idx, 1);
-            renderDomainRoutes();
-        }
-
-        document.getElementById('addRouteBtn').addEventListener('click', addDomainRoute);
-        document.getElementById('newRoutePattern').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                addDomainRoute();
-            }
-        });
 
         document.getElementById('profileForm').addEventListener('submit', saveProfile);
         document.getElementById('clearProfileFormBtn').addEventListener('click', clearProfileForm);

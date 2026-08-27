@@ -184,6 +184,38 @@
         </div>
     </div>
 
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h5 class="mb-1" style="font-size:1rem;font-weight:600;"><i class="bi bi-bar-chart-line me-1 text-primary"></i>持久化流量统计</h5>
+                <small class="text-muted">每 5 秒落库；历史按本机时区保存小时桶，保留最近 365 天。</small>
+            </div>
+            <button id="resetAllTraffic" class="btn btn-outline-danger btn-sm"><i class="bi bi-arrow-counterclockwise me-1"></i>重置全部累计</button>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-4"><div class="border rounded p-3 h-100"><div class="small text-muted">总体累计</div><div id="trafficOverallTotal" class="fs-5 fw-semibold">↑ 0 B / ↓ 0 B</div></div></div>
+                <div class="col-md-4"><div class="border rounded p-3 h-100"><div class="small text-muted">总体实时速度</div><div id="trafficOverallSpeed" class="fs-5 fw-semibold">↑ 0 B/s / ↓ 0 B/s</div></div></div>
+                <div class="col-md-4"><div class="border rounded p-3 h-100"><div class="small text-muted">最近重置 / 更新</div><div id="trafficResetUpdatedAt" class="small fw-medium">--</div></div></div>
+            </div>
+            <div class="table-responsive border rounded mb-4">
+                <table class="table table-sm mb-0"><thead><tr><th>范围</th><th>上传累计</th><th>下载累计</th><th>上传速度</th><th>下载速度</th><th>最近重置</th><th class="text-end">操作</th></tr></thead>
+                    <tbody id="trafficScopesBody"><tr><td colspan="7" class="text-center text-muted py-3">等待统计数据...</td></tr></tbody>
+                </table>
+            </div>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <h6 class="mb-0">流量历史</h6>
+                <div class="d-flex gap-2 flex-wrap">
+                    <select id="trafficHistoryScope" class="form-select form-select-sm" style="min-width:150px"><option value="all">全部流量</option><option value="direct">直连</option></select>
+                    <select id="trafficHistoryRange" class="form-select form-select-sm" style="min-width:120px"><option value="24h">24 小时</option><option value="7d">7 天</option><option value="30d">30 天</option><option value="12m">按月</option></select>
+                    <button id="refreshTrafficHistory" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i></button>
+                </div>
+            </div>
+            <div class="small mb-2"><span class="text-primary me-3">● 上传</span><span class="text-success">● 下载</span><span id="trafficHistoryTimezone" class="text-muted ms-3"></span></div>
+            <canvas id="trafficHistoryChart" style="width:100%;height:240px"></canvas>
+        </div>
+    </div>
+
     <!-- 实时请求列表 -->
     <div class="card shadow-sm mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -216,13 +248,14 @@
                             <th style="width: 50px; text-align: center;">SSH</th>
                             <th style="width: 70px;">成员</th>
                             <th style="width: 90px;">Profile</th>
+                            <th style="width: 115px;">路由</th>
                             <th style="width: 95px;">重试</th>
                             <th style="width: 80px; text-align: right;">耗时</th>
                         </tr>
                     </thead>
                     <tbody id="requestTableBody">
                         <tr>
-                            <td colspan="10" class="text-center text-muted py-4">等待请求数据...</td>
+                            <td colspan="11" class="text-center text-muted py-4">等待请求数据...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -354,6 +387,11 @@
             let exitInfoTimer = null;
             let cachedActiveProfileId = "default";
             const exitInfoIntervalMs = 60000;
+            const trafficScopesBody = document.getElementById("trafficScopesBody");
+            const trafficHistoryScope = document.getElementById("trafficHistoryScope");
+            const trafficHistoryRange = document.getElementById("trafficHistoryRange");
+            const trafficHistoryCanvas = document.getElementById("trafficHistoryChart");
+            let trafficHistoryPoints = [];
 
             // Speed test modal elements
             const stModal = new bootstrap.Modal(document.getElementById("speedTestModal"));
@@ -675,6 +713,7 @@
                 if (lastReconnectErrorEl) {
                     lastReconnectErrorEl.textContent = data.lastReconnectError || "--";
                 }
+                renderTrafficScopes(data);
                 renderPoolMembers(data);
                 pushHistory(data.uploadBps || 0, data.downloadBps || 0);
                 drawSpeedChart();
@@ -686,6 +725,89 @@
                         if (!data || data.success === false) return;
                         updateMetricsUI(data);
                     });
+            }
+
+            function formatTrafficTime(value) {
+                if (!value || value === "0001-01-01T00:00:00Z") return "--";
+                const date = new Date(value);
+                return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+            }
+
+            function renderTrafficScopes(data) {
+                const scopes = [{scope:"direct", profileId:"", label:"直连", ...(data.directTraffic || {})}]
+                    .concat((data.trafficByProfile || []).map(item => ({...item, label:item.profileId || item.scope})));
+                document.getElementById("trafficOverallTotal").textContent = "↑ " + formatBytes(data.uploadBytesTotal || 0) + " / ↓ " + formatBytes(data.downloadBytesTotal || 0);
+                document.getElementById("trafficOverallSpeed").textContent = "↑ " + formatBytes(data.uploadBps || 0) + "/s / ↓ " + formatBytes(data.downloadBps || 0) + "/s";
+                document.getElementById("trafficResetUpdatedAt").textContent = (data.trafficLastResetAt || "--") + " / " + (data.trafficUpdatedAt || "--");
+                if (!scopes.length) {
+                    trafficScopesBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">暂无流量明细</td></tr>';
+                    return;
+                }
+                trafficScopesBody.innerHTML = scopes.map(item => {
+                    const canReset = !!item.profileId;
+                    return '<tr><td><span class="badge ' + (item.scope === 'direct' ? 'bg-secondary' : 'bg-info text-dark') + '">' + escapeHtml(item.label) + '</span></td>' +
+                        '<td>' + formatBytes(item.uploadBytesTotal || 0) + '</td><td>' + formatBytes(item.downloadBytesTotal || 0) + '</td>' +
+                        '<td>' + formatBytes(item.uploadBps || 0) + '/s</td><td>' + formatBytes(item.downloadBps || 0) + '/s</td>' +
+                        '<td>' + escapeHtml(formatTrafficTime(item.lastResetAt)) + '</td><td class="text-end">' + (canReset ? '<button class="btn btn-outline-danger btn-sm traffic-reset-profile" data-profile="' + escapeHtml(item.profileId) + '">重置</button>' : '--') + '</td></tr>';
+                }).join('');
+
+                const selected = trafficHistoryScope.value;
+                const options = ['<option value="all">全部流量</option>', '<option value="direct">直连</option>'].concat((data.trafficByProfile || []).map(item => '<option value="profile:' + escapeHtml(item.profileId) + '">Profile: ' + escapeHtml(item.profileId) + '</option>'));
+                trafficHistoryScope.innerHTML = options.join('');
+                if (Array.from(trafficHistoryScope.options).some(option => option.value === selected)) trafficHistoryScope.value = selected;
+            }
+
+            async function resetTraffic(payload) {
+                const label = payload.scope === 'all' ? '全部累计流量' : ('Profile ' + payload.profileId + ' 的累计流量');
+                if (!confirm('确定重置' + label + '吗？历史小时数据不会删除。')) return;
+                const response = await fetch('/admin/traffic/reset', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+                const body = await response.json().catch(() => ({}));
+                if (!response.ok || body.success === false) throw new Error(body.message || '重置失败');
+                showToast('流量累计已重置', true);
+                fetchRealtimeMetrics();
+            }
+
+            function trafficHistoryParams() {
+                const now = new Date();
+                const from = new Date(now);
+                let groupBy = 'hour';
+                switch (trafficHistoryRange.value) {
+                    case '7d': from.setDate(from.getDate() - 7); groupBy = 'day'; break;
+                    case '30d': from.setDate(from.getDate() - 30); groupBy = 'day'; break;
+                    case '12m': from.setDate(from.getDate() - 365); groupBy = 'month'; break;
+                    default: from.setHours(from.getHours() - 24);
+                }
+                return {scope:trafficHistoryScope.value, from:from.toISOString(), to:now.toISOString(), groupBy};
+            }
+
+            async function fetchTrafficHistory() {
+                const params = new URLSearchParams(trafficHistoryParams());
+                try {
+                    const response = await fetch('/admin/traffic/history?' + params.toString());
+                    const body = await response.json();
+                    if (!response.ok || body.success === false) throw new Error(body.message || '查询历史失败');
+                    trafficHistoryPoints = (body.data && body.data.points) || [];
+                    document.getElementById('trafficHistoryTimezone').textContent = '时区: ' + ((body.data && body.data.timezone) || '--');
+                    drawTrafficHistory();
+                } catch (error) { showToast(error.message, false); }
+            }
+
+            function drawTrafficHistory() {
+                const canvas = trafficHistoryCanvas;
+                const ratio = window.devicePixelRatio || 1;
+                const width = canvas.clientWidth || 800, height = canvas.clientHeight || 240;
+                canvas.width = width * ratio; canvas.height = height * ratio;
+                const ctx = canvas.getContext('2d'); ctx.scale(ratio, ratio); ctx.clearRect(0, 0, width, height);
+                const padding = {left:54,right:16,top:16,bottom:34};
+                const chartWidth = width - padding.left - padding.right, chartHeight = height - padding.top - padding.bottom;
+                const maxValue = Math.max(1, ...trafficHistoryPoints.flatMap(point => [point.uploadBytes || 0, point.downloadBytes || 0]));
+                ctx.strokeStyle = '#e2e8f0'; ctx.fillStyle = '#64748b'; ctx.font = '11px sans-serif';
+                for (let i = 0; i <= 4; i++) { const y = padding.top + chartHeight * i / 4; ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(width-padding.right, y); ctx.stroke(); ctx.fillText(formatBytes(maxValue * (1-i/4)), 2, y+4); }
+                if (!trafficHistoryPoints.length) { ctx.fillText('所选时间范围暂无历史流量', padding.left + 12, padding.top + 24); return; }
+                const draw = (field, color) => { ctx.strokeStyle=color; ctx.lineWidth=2; ctx.beginPath(); trafficHistoryPoints.forEach((point,index) => { const x=padding.left+(trafficHistoryPoints.length===1?chartWidth/2:chartWidth*index/(trafficHistoryPoints.length-1)); const y=padding.top+chartHeight-(Number(point[field]||0)/maxValue)*chartHeight; index===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }); ctx.stroke(); };
+                draw('uploadBytes','#2563eb'); draw('downloadBytes','#16a34a');
+                const labelCount = Math.min(5, trafficHistoryPoints.length);
+                for (let i=0;i<labelCount;i++) { const index=Math.round(i*(trafficHistoryPoints.length-1)/Math.max(1,labelCount-1)); const x=padding.left+(trafficHistoryPoints.length===1?chartWidth/2:chartWidth*index/(trafficHistoryPoints.length-1)); const label=new Date(trafficHistoryPoints[index].start).toLocaleDateString(undefined,{month:'numeric',day:'numeric',hour:trafficHistoryRange.value==='24h'?'2-digit':undefined}); ctx.fillText(label, Math.max(padding.left,x-22), height-10); }
             }
 
             // ======================== Speed Test Modal ========================
@@ -905,27 +1027,30 @@
 
             function renderRequestTable(requests) {
                 if (!requests || requests.length === 0) {
-                    requestTableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">暂无请求记录</td></tr>';
+                    requestTableBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">暂无请求记录</td></tr>';
                     return;
                 }
                 let html = "";
                 for (const r of requests) {
                     const rowClass = r.status === "failed" ? "table-danger" : (r.status === "active" || r.status === "connecting" ? "table-light" : "");
                     const sshIcon = r.viaSSH ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-dash text-muted"></i>';
-                    const errorTip = r.error ? ' title="' + r.error.replace(/"/g, '&quot;') + '"' : '';
+                    const errorTip = r.error ? ' title="' + escapeHtml(r.error) + '"' : '';
                     html += '<tr class="' + rowClass + '"' + errorTip + '>';
-                    html += '<td class="text-nowrap" style="color:#64748b;">' + r.startTime + '</td>';
-                    html += '<td class="text-truncate" style="max-width: 280px;font-weight:500;" title="' + r.host + '">' + r.host + '</td>';
-                    html += '<td style="color:#64748b;">' + r.port + '</td>';
+                    html += '<td class="text-nowrap" style="color:#64748b;">' + escapeHtml(r.startTime) + '</td>';
+                    html += '<td class="text-truncate" style="max-width: 280px;font-weight:500;" title="' + escapeHtml(r.host) + '">' + escapeHtml(r.host) + '</td>';
+                    html += '<td style="color:#64748b;">' + escapeHtml(r.port) + '</td>';
                     html += '<td>' + protocolBadge(r.protocol) + '</td>';
                     html += '<td>' + statusBadge(r.status) + '</td>';
                     html += '<td class="text-center">' + sshIcon + '</td>';
                     html += '<td style="color:#64748b;">' + (r.sshMemberId ? ("#" + r.sshMemberId) : "--") + '</td>';
-                    const reqProfile = r.profileId || cachedActiveProfileId || '--';
-                    const reqProfileBadge = r.profileId ? 'bg-info text-dark' : 'bg-success';
+                    const reqProfile = r.viaSSH ? (r.profileId || (r.routeId ? '--' : (cachedActiveProfileId || '--'))) : '直连';
+                    const reqProfileBadge = r.viaSSH ? (r.profileId ? 'bg-info text-dark' : 'bg-success') : 'bg-secondary';
                     html += '<td><span class="badge ' + reqProfileBadge + '" style="font-size:0.7rem;">' + escapeHtml(reqProfile) + '</span></td>';
+                    const attempted = (r.attemptedProfileIds || []).join(' → ');
+                    const routeTitle = attempted ? ' title="尝试: ' + escapeHtml(attempted) + '"' : '';
+                    html += '<td' + routeTitle + '>' + (r.routeId ? '<span class="badge bg-secondary">' + escapeHtml(r.routeStrategy || 'fixed') + '</span><div class="small text-muted text-truncate" style="max-width:105px">' + escapeHtml(r.routeId) + '</div>' : '--') + '</td>';
                     const retryText = r.retryCount ? (r.retryCount + '次') : '--';
-                    const retryTitle = r.retryReason ? (' title="' + r.retryReason.replace(/"/g, '&quot;') + '"') : '';
+                    const retryTitle = r.retryReason ? (' title="' + escapeHtml(r.retryReason) + '"') : '';
                     html += '<td style="color:#64748b;"' + retryTitle + '>' + retryText + '</td>';
                     html += '<td class="text-end" style="color:#64748b;font-variant-numeric:tabular-nums;">' + (r.duration || '--') + '</td>';
                     html += '</tr>';
@@ -1115,7 +1240,16 @@
             exitInfoTimer = setInterval(fetchExitInfo, exitInfoIntervalMs);
             fetchRequests();
             requestRefreshTimer = setInterval(fetchRequests, 1000);
-            window.addEventListener("resize", drawSpeedChart);
+            document.getElementById('resetAllTraffic').addEventListener('click', () => resetTraffic({scope:'all'}).catch(error => showToast(error.message, false)));
+            trafficScopesBody.addEventListener('click', event => {
+                const button = event.target.closest('.traffic-reset-profile');
+                if (button) resetTraffic({scope:'profile', profileId:button.dataset.profile}).catch(error => showToast(error.message, false));
+            });
+            trafficHistoryScope.addEventListener('change', fetchTrafficHistory);
+            trafficHistoryRange.addEventListener('change', fetchTrafficHistory);
+            document.getElementById('refreshTrafficHistory').addEventListener('click', fetchTrafficHistory);
+            fetchTrafficHistory();
+            window.addEventListener("resize", function() { drawSpeedChart(); drawTrafficHistory(); });
         });
     </script>
 {{end}}

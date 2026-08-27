@@ -22,6 +22,26 @@ import (
 
 var DefaultSshTunnel = Tunnel{}
 
+const trafficFlushInterval = 5 * time.Second
+
+func runTrafficStoreLoop(ctx context.Context, store *TrafficStore, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			if err := store.Close(); err != nil {
+				log.Printf("关闭流量数据库失败: %v", err)
+			}
+			return
+		case <-ticker.C:
+			if err := store.Flush(); err != nil {
+				log.Printf("流量统计刷盘失败: %v", err)
+			}
+		}
+	}
+}
+
 func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 	DefaultSshTunnel.SetAppConfig(config)
 	if err := DefaultSshTunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
@@ -30,6 +50,17 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	DefaultSshTunnel.SetTunnelContext(ctx)
+	trafficStore, err := OpenTrafficStore()
+	if err != nil {
+		cancel()
+		return err
+	}
+	DefaultSshTunnel.trafficStore = trafficStore
+	wg.Add(1)
+	safe.GO(func() {
+		defer wg.Done()
+		runTrafficStoreLoop(ctx, trafficStore, trafficFlushInterval)
+	})
 
 	if config.EnableSocks5.GetValue() {
 		DefaultSshTunnel.enableSocks5 = config.EnableSocks5.GetValue()
@@ -116,8 +147,12 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 		})
 	}
 
-	// Initialize profile-based domain routing
-	initProfileRouting(ctx, config)
+	// Initialize standalone routing rules.
+	if err := initProfileRouting(ctx, config); err != nil {
+		cancel()
+		_ = trafficStore.Close()
+		return err
+	}
 
 	return nil
 }
@@ -258,8 +293,8 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 	}
 }
 
-// initProfileRouting sets up the route matcher and starts profile tunnels for profiles with DomainRoutes.
-func initProfileRouting(ctx context.Context, config *cfg.AppConfig) {
+// initProfileRouting sets up the route matcher and starts profile tunnels targeted by enabled rules.
+func initProfileRouting(ctx context.Context, config *cfg.AppConfig) error {
 	matcher := NewRouteMatcher()
 	mgr := NewProfileTunnelManager(matcher)
 	DefaultSshTunnel.routeMatcher = matcher
@@ -267,43 +302,54 @@ func initProfileRouting(ctx context.Context, config *cfg.AppConfig) {
 
 	store, err := cfg.ListProfiles(config)
 	if err != nil {
-		log.Printf("加载profiles失败(跳过域名路由初始化): %v", err)
-		return
+		return fmt.Errorf("加载profiles失败: %w", err)
 	}
-
-	if len(store.Profiles) == 0 {
-		return
+	routeStore, err := cfg.ListRoutes(config)
+	if err != nil {
+		return fmt.Errorf("加载独立路由失败: %w", err)
 	}
-
-	// Load routes from all profiles (excluding active profile)
-	matcher.LoadRoutes(store.Profiles, store.ActiveProfileID)
-
-	// Start tunnels for profiles with DomainRoutes (excluding active profile)
-	for id, profile := range store.Profiles {
-		if len(profile.DomainRoutes) > 0 && id != store.ActiveProfileID {
-			if err := mgr.StartProfileTunnel(ctx, id, profile); err != nil {
-				log.Printf("启动Profile隧道失败(profileId=%s): %v", id, err)
-			}
-		}
+	activeID := store.ActiveProfileID
+	if activeID == "" {
+		activeID = cfg.DEFAULT_PROFILE_ID
 	}
+	DefaultSshTunnel.profileID = activeID
+	for profileID := range store.Profiles {
+		DefaultSshTunnel.trafficStore.EnsureProfile(profileID)
+	}
+	mgr.ReloadProfiles(ctx, store.Profiles, activeID, routeStore.Routes)
+	return nil
 }
 
 // ReloadProfileRouting reloads routing rules and restarts profile tunnels as needed.
 // Called when profiles are updated via admin API.
-func (t *Tunnel) ReloadProfileRouting(config *cfg.AppConfig) {
+func (t *Tunnel) ReloadProfileRouting(config *cfg.AppConfig) error {
 	if t.routeMatcher == nil || t.profileTunnelMgr == nil {
-		return
+		return nil
 	}
 
 	store, err := cfg.ListProfiles(config)
 	if err != nil {
-		log.Printf("重载Profile路由失败: %v", err)
-		return
+		return fmt.Errorf("重载Profile路由失败: %w", err)
+	}
+	routeStore, err := cfg.ListRoutes(config)
+	if err != nil {
+		return fmt.Errorf("重载独立路由失败: %w", err)
+	}
+	activeID := store.ActiveProfileID
+	if activeID == "" {
+		activeID = cfg.DEFAULT_PROFILE_ID
+	}
+	t.profileID = activeID
+	if t.trafficStore != nil {
+		for profileID := range store.Profiles {
+			t.trafficStore.EnsureProfile(profileID)
+		}
 	}
 
 	ctx := t.reconnectContext(context.Background())
-	t.profileTunnelMgr.ReloadProfiles(ctx, store.Profiles, store.ActiveProfileID)
+	t.profileTunnelMgr.ReloadProfiles(ctx, store.Profiles, activeID, routeStore.Routes)
 
 	// Clear domain match cache on the main tunnel
 	t.SetDomainMatchCache(make(map[string]bool))
+	return nil
 }
