@@ -316,7 +316,7 @@ func initProfileRouting(ctx context.Context, config *cfg.AppConfig) error {
 	for profileID := range store.Profiles {
 		DefaultSshTunnel.trafficStore.EnsureProfile(profileID)
 	}
-	mgr.ReloadProfiles(ctx, store.Profiles, activeID, routeStore.Routes)
+	mgr.ReloadProfiles(ctx, store.Profiles, activeID, cfg.ResolveEffectiveRoutes(routeStore))
 	return nil
 }
 
@@ -347,7 +347,7 @@ func (t *Tunnel) ReloadProfileRouting(config *cfg.AppConfig) error {
 	}
 
 	ctx := t.reconnectContext(context.Background())
-	t.profileTunnelMgr.ReloadProfiles(ctx, store.Profiles, activeID, routeStore.Routes)
+	t.profileTunnelMgr.ReloadProfiles(ctx, store.Profiles, activeID, cfg.ResolveEffectiveRoutes(routeStore))
 
 	// Clear domain match cache on the main tunnel
 	t.SetDomainMatchCache(make(map[string]bool))

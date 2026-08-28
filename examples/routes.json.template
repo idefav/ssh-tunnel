@@ -1,21 +1,29 @@
 {
-  "version": 1,
-  "routes": [
+  "version": 2,
+  "groups": [
     {
-      "id": "route_0123456789abcdef0123456789abcdef",
-      "pattern": "example.com",
-      "type": "domain",
+      "id": "group_0123456789abcdef0123456789abcdef",
+      "name": "OpenAI",
+      "description": "OpenAI 与 ChatGPT 相关服务",
       "enabled": true,
       "strategy": "fixed",
-      "targetProfileIds": ["prod-main"]
-    },
-    {
-      "id": "route_fedcba9876543210fedcba9876543210",
-      "pattern": "10.20.0.0/16",
-      "type": "cidr",
-      "enabled": true,
-      "strategy": "random",
-      "targetProfileIds": ["prod-main", "prod-backup"]
+      "targetProfileIds": ["prod-main"],
+      "rules": [
+        {
+          "id": "route_0123456789abcdef0123456789abcdef",
+          "pattern": "openai.com",
+          "type": "domain",
+          "enabled": true
+        },
+        {
+          "id": "route_fedcba9876543210fedcba9876543210",
+          "pattern": "api.openai.com",
+          "type": "domain",
+          "enabled": true,
+          "strategy": "random",
+          "targetProfileIds": ["prod-main", "prod-backup"]
+        }
+      ]
     }
   ]
 }

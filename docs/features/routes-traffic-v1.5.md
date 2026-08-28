@@ -1,18 +1,18 @@
-# v1.5.0 独立路由与持久化流量统计
+# v1.5.0 独立路由与流量统计 / v1.6.0 规则组
 
-## 独立路由
+## 路由规则组
 
-路由管理从 Profile 编辑弹窗中拆分到 `/view/routes`，规则保存于活动配置目录的 `routes.json`。未显式指定配置文件时，默认路径为 `~/.ssh-tunnel/routes.json`。
+路由管理位于 `/view/routes`，规则保存于活动配置目录的 `routes.json`。未显式指定配置文件时，默认路径为 `~/.ssh-tunnel/routes.json`。当前格式为版本 2：多个相关域名、IP 或 CIDR 可以放进带名称和说明的规则组。
 
 规则支持：
 
 - `domain`：域名后缀和 `*.example.com` 通配域名。
 - `ip`：IPv4 精确值或通配符，例如 `192.168.*`。
 - `cidr`：IPv4/IPv6 CIDR，例如 `10.0.0.0/8`。
-- `fixed`：固定路由到一个 Profile。
-- `random`：每个新 TCP 连接重新打乱至少两个 Profile，按顺序尝试故障转移。所有目标失败时不回退默认 Profile。
+- 组默认出口：支持 `fixed` 或 `random`，供组内规则继承。
+- 单规则独立出口：可覆盖组默认值为 `fixed` 或 `random`；`random` 会在每个新 TCP 连接重新打乱至少两个 Profile，按顺序尝试故障转移。所有目标失败时不回退默认 Profile。
 
-启用规则引用的非激活 Profile 会自动维护后台 SSH 连接池。规则启停、目标变化、Profile 参数更新和激活 Profile 切换均会热加载。被任何启用或停用规则引用的 Profile 不能删除。
+组开关和规则开关共同决定最终是否生效；关闭组会保留每条规则原有的开关状态。有效规则引用的非激活 Profile 会自动维护后台 SSH 连接池。组默认出口、规则继承/覆盖、规则移动、启停、Profile 参数更新和激活 Profile 切换均会热加载。被任何规则组默认出口或单规则独立出口引用的 Profile 不能删除，即使对应组或规则已停用。
 
 ## 流量统计
 
@@ -35,8 +35,12 @@ SOCKS5、HTTP、HTTPS CONNECT、初始 HTTP 请求和长连接都在实际 `Read
 4. 旧版本未持久化的流量无法迁移，v1.5.0 将从 0 开始累计。
 5. 如需降级到 v1.4.x，同时恢复升级前的 Profile 备份；老版本不识别 `routes.json`。
 
+## 从版本 1 平铺路由升级
+
+版本 1 的 `routes.json` 会自动迁入确定 ID 的“未分组（自动迁移）”。组默认出口取第一条旧规则，但每条旧规则仍保留自己的策略和目标作为独立覆盖，因此升级不会改变原有出口。迁移先完成全量校验，再通过临时文件和原子替换写入；重复启动不会重复生成规则。降级到只支持版本 1 的程序前，需要恢复升级前的 `routes.json` 和 `profiles.json` 备份。
+
 ## API
 
-路由 API：`GET /admin/routes`、`POST /admin/routes/upsert`、`POST /admin/routes/toggle`、`POST /admin/routes/delete`。
+规则组 API：`GET /admin/routes`、`POST /admin/route-groups/upsert`、`POST /admin/route-groups/toggle`、`POST /admin/route-groups/delete`。规则继续使用 `POST /admin/routes/upsert`、`POST /admin/routes/toggle`、`POST /admin/routes/delete`。
 
 流量 API：`GET /admin/ssh/metrics`、`GET /admin/traffic/history`、`POST /admin/traffic/reset`。请求参数和返回结构见 [配置 API 文档](../config-api.md)。

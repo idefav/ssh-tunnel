@@ -1,25 +1,69 @@
 {{define "content"}}
-<div class="card shadow-sm">
-    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div>
-            <h4 class="mb-1">域名与 IP 路由</h4>
-            <div class="small text-muted">规则独立于 Profile；匹配后可固定出口，或在多个 Profile 间随机并故障转移。</div>
-        </div>
-        <button class="btn btn-primary" id="createRouteBtn"><i class="bi bi-plus-lg me-1"></i>新增规则</button>
+<style>
+    .route-group-card { overflow: hidden; }
+    .route-group-description { max-width: 760px; }
+    .route-target-badge { font-weight: 500; }
+    .route-pattern { color: #d63384; }
+    .route-group-disabled .route-group-body { opacity: .62; }
+</style>
+
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+    <div>
+        <h4 class="mb-1">域名与 IP 路由组</h4>
+        <div class="small text-muted">把同一服务的多个域名、IP 或 CIDR 放入一组；规则默认继承组出口，也可单独覆盖。</div>
     </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead><tr>
-                    <th>状态</th><th>匹配模式</th><th>类型</th><th>策略</th><th>目标 Profile</th><th class="text-end">操作</th>
-                </tr></thead>
-                <tbody id="routesBody"><tr><td colspan="6" class="text-center text-muted py-4">正在加载...</td></tr></tbody>
-            </table>
-        </div>
+    <button class="btn btn-primary" id="createGroupBtn"><i class="bi bi-folder-plus me-1"></i>新增规则组</button>
+</div>
+
+<div id="routeGroups"><div class="card shadow-sm"><div class="card-body text-center text-muted py-5">正在加载...</div></div></div>
+
+<div class="modal" id="groupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" id="groupForm">
+            <div class="modal-header">
+                <h5 class="modal-title" id="groupModalTitle">新增规则组</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="groupId">
+                <div class="row g-3">
+                    <div class="col-md-7">
+                        <label class="form-label" for="groupName">名称</label>
+                        <input class="form-control" id="groupName" required maxlength="100" placeholder="例如：OpenAI">
+                    </div>
+                    <div class="col-md-5 d-flex align-items-end pb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="groupEnabled" checked>
+                            <label class="form-check-label" for="groupEnabled">启用规则组</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="groupDescription">说明</label>
+                        <textarea class="form-control" id="groupDescription" rows="2" maxlength="500" placeholder="例如：OpenAI 与 ChatGPT 相关服务"></textarea>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label" for="groupStrategy">默认路由策略</label>
+                        <select class="form-select" id="groupStrategy">
+                            <option value="fixed">固定 Profile</option>
+                            <option value="random">随机并故障转移</option>
+                        </select>
+                        <div class="form-text" id="groupStrategyHelp"></div>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label">默认目标 Profile</label>
+                        <div id="groupProfileChoices" class="border rounded p-3 d-flex flex-wrap gap-3"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary">保存规则组</button>
+            </div>
+        </form>
     </div>
 </div>
 
-<div class="modal fade" id="routeModal" tabindex="-1" aria-hidden="true">
+<div class="modal" id="routeModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <form class="modal-content" id="routeForm">
             <div class="modal-header">
@@ -29,160 +73,330 @@
             <div class="modal-body">
                 <input type="hidden" id="routeId">
                 <div class="row g-3">
+                    <div class="col-md-7">
+                        <label class="form-label" for="routeGroupId">所属规则组</label>
+                        <select class="form-select" id="routeGroupId" required></select>
+                    </div>
+                    <div class="col-md-5 d-flex align-items-end pb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="routeEnabled" checked>
+                            <label class="form-check-label" for="routeEnabled">启用该规则</label>
+                        </div>
+                    </div>
                     <div class="col-md-8">
                         <label class="form-label" for="routePattern">匹配模式</label>
-                        <input class="form-control" id="routePattern" required placeholder="google.com、*.example.com、192.168.*、10.0.0.0/8">
+                        <input class="form-control" id="routePattern" required placeholder="openai.com、*.example.com、192.168.*、10.0.0.0/8">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label" for="routeType">类型</label>
                         <select class="form-select" id="routeType">
-                            <option value="domain">域名</option><option value="ip">IP</option><option value="cidr">CIDR</option>
+                            <option value="domain">域名</option>
+                            <option value="ip">IP</option>
+                            <option value="cidr">CIDR</option>
                         </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label" for="routeStrategy">路由策略</label>
-                        <select class="form-select" id="routeStrategy">
-                            <option value="fixed">固定 Profile</option><option value="random">随机并故障转移</option>
-                        </select>
-                        <div class="form-text" id="strategyHelp">固定策略必须选择 1 个目标。</div>
-                    </div>
-                    <div class="col-md-6 d-flex align-items-end pb-2">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="routeEnabled" checked>
-                            <label class="form-check-label" for="routeEnabled">创建后立即启用</label>
-                        </div>
                     </div>
                     <div class="col-12">
-                        <label class="form-label">目标 Profile</label>
-                        <div id="profileChoices" class="border rounded p-3 d-flex flex-wrap gap-3"></div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="routeInherit" checked>
+                            <label class="form-check-label" for="routeInherit">继承规则组默认出口</label>
+                        </div>
+                        <div class="form-text" id="inheritSummary"></div>
+                    </div>
+                    <div class="col-12" id="routeOverrideFields">
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label class="form-label" for="routeStrategy">独立路由策略</label>
+                                <select class="form-select" id="routeStrategy">
+                                    <option value="fixed">固定 Profile</option>
+                                    <option value="random">随机并故障转移</option>
+                                </select>
+                                <div class="form-text" id="routeStrategyHelp"></div>
+                            </div>
+                            <div class="col-md-7">
+                                <label class="form-label">独立目标 Profile</label>
+                                <div id="routeProfileChoices" class="border rounded p-3 d-flex flex-wrap gap-3"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="submit" class="btn btn-primary" id="saveRouteBtn">保存规则</button>
+                <button type="submit" class="btn btn-primary">保存规则</button>
             </div>
         </form>
     </div>
 </div>
 
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
-    <div class="toast" id="routeToast" role="alert"><div class="toast-header"><strong class="me-auto">路由管理</strong><button class="btn-close" data-bs-dismiss="toast"></button></div><div class="toast-body" id="routeToastMessage"></div></div>
+    <div class="toast" id="routeToast" role="alert">
+        <div class="toast-header"><strong class="me-auto">路由管理</strong><button class="btn-close" data-bs-dismiss="toast"></button></div>
+        <div class="toast-body" id="routeToastMessage"></div>
+    </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    let routes = [];
+    let groups = [];
     let profiles = {};
     let activeProfileId = '';
-    const modal = new bootstrap.Modal(document.getElementById('routeModal'));
+    const expandedGroups = new Set();
+    const groupModal = new bootstrap.Modal(document.getElementById('groupModal'));
+    const routeModal = new bootstrap.Modal(document.getElementById('routeModal'));
     const toast = new bootstrap.Toast(document.getElementById('routeToast'));
     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const showMessage = message => { document.getElementById('routeToastMessage').textContent = message; toast.show(); };
+    const typeNames = {domain:'域名', ip:'IP', cidr:'CIDR'};
 
     async function api(url, options) {
         const response = await fetch(url, options);
         const body = await response.json().catch(() => ({}));
-        if (!response.ok || body.success === false) throw new Error(body.message || ('请求失败: ' + response.status));
+        if (!response.ok || body.success === false) {
+            const error = new Error(body.message || ('请求失败: ' + response.status));
+            error.status = response.status;
+            error.body = body;
+            throw error;
+        }
         return body;
     }
 
     async function loadRoutes() {
         try {
             const result = await api('/admin/routes');
-            routes = (result.data && result.data.routes) || [];
+            groups = (result.data && result.data.groups) || [];
             profiles = result.profiles || {};
             activeProfileId = result.activeProfileId || '';
-            renderRoutes();
+            groups.forEach(group => { if (!expandedGroups.has(group.id)) expandedGroups.add(group.id); });
+            renderGroups();
         } catch (error) {
-            document.getElementById('routesBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">' + esc(error.message) + '</td></tr>';
+            document.getElementById('routeGroups').innerHTML = '<div class="alert alert-danger">' + esc(error.message) + '</div>';
         }
     }
 
-    function renderRoutes() {
-        const body = document.getElementById('routesBody');
-        if (!routes.length) {
-            body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">暂无路由规则</td></tr>';
+    function profileBadges(ids) {
+        return (ids || []).map(id => '<span class="badge bg-light text-dark border route-target-badge me-1">' + esc(id) + (id === activeProfileId ? ' · 当前' : '') + '</span>').join('');
+    }
+
+    function effectivePolicy(group, route) {
+        const inherited = !route.strategy;
+        return {
+            inherited,
+            strategy: inherited ? group.strategy : route.strategy,
+            targets: inherited ? (group.targetProfileIds || []) : (route.targetProfileIds || [])
+        };
+    }
+
+    function renderGroups() {
+        const root = document.getElementById('routeGroups');
+        if (!groups.length) {
+            root.innerHTML = '<div class="card shadow-sm"><div class="card-body text-center py-5"><div class="text-muted mb-3">暂无规则组，请先创建一个规则组。</div><button class="btn btn-primary create-first-group"><i class="bi bi-folder-plus me-1"></i>创建规则组</button></div></div>';
             return;
         }
-        const typeNames = {domain:'域名', ip:'IP', cidr:'CIDR'};
-        body.innerHTML = routes.map(route => {
-            const targets = (route.targetProfileIds || []).map(id => '<span class="badge bg-light text-dark border me-1">' + esc(id) + (id === activeProfileId ? ' · 当前' : '') + '</span>').join('');
-            return '<tr><td><div class="form-check form-switch m-0"><input class="form-check-input route-toggle" type="checkbox" data-id="' + esc(route.id) + '" ' + (route.enabled ? 'checked' : '') + ' aria-label="启用规则"></div></td>' +
-                '<td><code>' + esc(route.pattern) + '</code><div class="small text-muted">' + esc(route.id) + '</div></td>' +
-                '<td>' + esc(typeNames[route.type] || route.type) + '</td>' +
-                '<td><span class="badge ' + (route.strategy === 'random' ? 'bg-info text-dark' : 'bg-secondary') + '">' + (route.strategy === 'random' ? '随机' : '固定') + '</span></td>' +
-                '<td>' + targets + '</td><td class="text-end"><button class="btn btn-sm btn-outline-primary me-1 route-edit" data-id="' + esc(route.id) + '">编辑</button><button class="btn btn-sm btn-outline-danger route-delete" data-id="' + esc(route.id) + '">删除</button></td></tr>';
+        root.innerHTML = groups.map(group => {
+            const expanded = expandedGroups.has(group.id);
+            const strategyLabel = group.strategy === 'random' ? '随机' : '固定';
+            const rules = group.rules || [];
+            const rows = rules.length ? rules.map(route => {
+                const policy = effectivePolicy(group, route);
+                const effectiveEnabled = group.enabled && route.enabled;
+                return '<tr>' +
+                    '<td><div class="form-check form-switch m-0"><input class="form-check-input route-toggle" type="checkbox" data-route-id="' + esc(route.id) + '" ' + (route.enabled ? 'checked' : '') + ' aria-label="启用规则"></div></td>' +
+                    '<td><code class="route-pattern">' + esc(route.pattern) + '</code><div class="small text-muted text-truncate" style="max-width:240px">' + esc(route.id) + '</div></td>' +
+                    '<td>' + esc(typeNames[route.type] || route.type) + '</td>' +
+                    '<td><span class="badge ' + (policy.inherited ? 'bg-success' : 'bg-warning text-dark') + '">' + (policy.inherited ? '继承组出口' : '独立出口') + '</span><div class="small text-muted mt-1">' + (policy.strategy === 'random' ? '随机故障转移' : '固定') + '</div></td>' +
+                    '<td>' + profileBadges(policy.targets) + '</td>' +
+                    '<td><span class="badge ' + (effectiveEnabled ? 'bg-primary' : 'bg-secondary') + '">' + (effectiveEnabled ? '生效' : '未生效') + '</span></td>' +
+                    '<td class="text-end text-nowrap"><button class="btn btn-sm btn-outline-primary me-1 route-edit" data-route-id="' + esc(route.id) + '">编辑</button><button class="btn btn-sm btn-outline-danger route-delete" data-route-id="' + esc(route.id) + '">删除</button></td>' +
+                    '</tr>';
+            }).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">该组暂无规则</td></tr>';
+            return '<div class="card shadow-sm mb-3 route-group-card ' + (group.enabled ? '' : 'route-group-disabled') + '" data-group-card="' + esc(group.id) + '">' +
+                '<div class="card-header py-3"><div class="d-flex justify-content-between align-items-start flex-wrap gap-3">' +
+                    '<div class="d-flex align-items-start gap-3"><button class="btn btn-sm btn-outline-secondary group-collapse" data-group-id="' + esc(group.id) + '" aria-expanded="' + expanded + '"><i class="bi ' + (expanded ? 'bi-chevron-down' : 'bi-chevron-right') + '"></i></button>' +
+                    '<div><div class="d-flex align-items-center flex-wrap gap-2"><h5 class="mb-0">' + esc(group.name) + '</h5><span class="badge bg-light text-dark border">' + rules.length + ' 条规则</span></div>' +
+                    (group.description ? '<div class="small text-muted route-group-description mt-1">' + esc(group.description) + '</div>' : '<div class="small text-muted mt-1">暂无说明</div>') +
+                    '<div class="small mt-2"><span class="text-muted me-2">默认出口</span><span class="badge ' + (group.strategy === 'random' ? 'bg-info text-dark' : 'bg-secondary') + '">' + strategyLabel + '</span><span class="ms-2">' + profileBadges(group.targetProfileIds) + '</span></div></div></div>' +
+                    '<div class="d-flex align-items-center gap-2 flex-wrap"><div class="form-check form-switch me-2"><input class="form-check-input group-toggle" type="checkbox" data-group-id="' + esc(group.id) + '" ' + (group.enabled ? 'checked' : '') + '><label class="form-check-label small">' + (group.enabled ? '已启用' : '已停用') + '</label></div>' +
+                    '<button class="btn btn-sm btn-primary route-create" data-group-id="' + esc(group.id) + '"><i class="bi bi-plus-lg me-1"></i>新增规则</button><button class="btn btn-sm btn-outline-primary group-edit" data-group-id="' + esc(group.id) + '">编辑组</button><button class="btn btn-sm btn-outline-danger group-delete" data-group-id="' + esc(group.id) + '">删除组</button></div>' +
+                '</div></div>' +
+                '<div class="route-group-body ' + (expanded ? '' : 'd-none') + '"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>规则状态</th><th>匹配模式</th><th>类型</th><th>出口配置</th><th>最终目标</th><th>最终状态</th><th class="text-end">操作</th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
         }).join('');
     }
 
-    function renderProfileChoices(selected) {
-        const choices = Object.keys(profiles).sort().map(id => '<label class="form-check"><input class="form-check-input profile-choice" type="checkbox" value="' + esc(id) + '" ' + (selected.includes(id) ? 'checked' : '') + '><span class="form-check-label"><code>' + esc(id) + '</code>' + (id === activeProfileId ? ' <span class="badge bg-success">当前</span>' : '') + '</span></label>');
-        document.getElementById('profileChoices').innerHTML = choices.length ? choices.join('') : '<span class="text-danger">请先在配置页创建 Profile</span>';
-    }
-
-    function openRoute(route) {
-        const item = route || {id:'', pattern:'', type:'domain', enabled:true, strategy:'fixed', targetProfileIds:[]};
-        document.getElementById('routeModalTitle').textContent = route ? '编辑路由规则' : '新增路由规则';
-        document.getElementById('routeId').value = item.id || '';
-        document.getElementById('routePattern').value = item.pattern || '';
-        document.getElementById('routeType').value = item.type || 'domain';
-        document.getElementById('routeStrategy').value = item.strategy || 'fixed';
-        document.getElementById('routeEnabled').checked = item.enabled !== false;
-        renderProfileChoices(item.targetProfileIds || []);
-        updateStrategyHelp();
-        modal.show();
-    }
-
-    function updateStrategyHelp() {
-        const random = document.getElementById('routeStrategy').value === 'random';
-        document.getElementById('strategyHelp').textContent = random ? '随机策略至少选择 2 个不重复目标；每个新连接重新随机排序并依次尝试。' : '固定策略必须选择 1 个目标。';
-        document.querySelectorAll('.profile-choice').forEach(choice => {
-            choice.onclick = () => {
-                if (!random && choice.checked) document.querySelectorAll('.profile-choice').forEach(other => { if (other !== choice) other.checked = false; });
-            };
+    function renderProfileChoices(containerId, selected, strategy) {
+        const selectedSet = new Set(selected || []);
+        const choices = Object.keys(profiles).sort().map(id => '<label class="form-check"><input class="form-check-input profile-choice" type="checkbox" value="' + esc(id) + '" ' + (selectedSet.has(id) ? 'checked' : '') + '><span class="form-check-label"><code>' + esc(id) + '</code>' + (id === activeProfileId ? ' <span class="badge bg-success">当前</span>' : '') + '</span></label>');
+        const container = document.getElementById(containerId);
+        container.innerHTML = choices.length ? choices.join('') : '<span class="text-danger">请先在配置页创建 Profile</span>';
+        container.querySelectorAll('.profile-choice').forEach(choice => {
+            choice.addEventListener('change', () => {
+                if (strategy === 'fixed' && choice.checked) {
+                    container.querySelectorAll('.profile-choice').forEach(other => { if (other !== choice) other.checked = false; });
+                }
+            });
         });
     }
 
-    document.getElementById('createRouteBtn').onclick = () => openRoute(null);
-    document.getElementById('routeStrategy').onchange = updateStrategyHelp;
-    document.getElementById('routesBody').onclick = async event => {
-        const target = event.target.closest('[data-id]');
-        if (!target) return;
-        const id = target.dataset.id;
-        const route = routes.find(item => item.id === id);
+    function updateGroupPolicyUI() {
+        const strategy = document.getElementById('groupStrategy').value;
+        const selected = Array.from(document.querySelectorAll('#groupProfileChoices .profile-choice:checked')).map(input => input.value);
+        document.getElementById('groupStrategyHelp').textContent = strategy === 'random' ? '至少选择 2 个不同 Profile；每个新连接随机排序后依次尝试。' : '必须且只能选择 1 个 Profile。';
+        renderProfileChoices('groupProfileChoices', selected, strategy);
+    }
+
+    function openGroup(group) {
+        const item = group || {id:'', name:'', description:'', enabled:true, strategy:'fixed', targetProfileIds:[]};
+        document.getElementById('groupModalTitle').textContent = group ? '编辑规则组' : '新增规则组';
+        document.getElementById('groupId').value = item.id || '';
+        document.getElementById('groupName').value = item.name || '';
+        document.getElementById('groupDescription').value = item.description || '';
+        document.getElementById('groupEnabled').checked = item.enabled !== false;
+        document.getElementById('groupStrategy').value = item.strategy || 'fixed';
+        renderProfileChoices('groupProfileChoices', item.targetProfileIds || [], item.strategy || 'fixed');
+        updateGroupPolicyUI();
+        groupModal.show();
+    }
+
+    function updateRoutePolicyUI() {
+        const inherit = document.getElementById('routeInherit').checked;
+        const group = groups.find(item => item.id === document.getElementById('routeGroupId').value);
+        document.getElementById('routeOverrideFields').classList.toggle('d-none', inherit);
+        document.getElementById('inheritSummary').textContent = group ? ('组默认：' + (group.strategy === 'random' ? '随机故障转移' : '固定') + ' → ' + (group.targetProfileIds || []).join(', ')) : '';
+        if (!inherit) {
+            const strategy = document.getElementById('routeStrategy').value;
+            const selected = Array.from(document.querySelectorAll('#routeProfileChoices .profile-choice:checked')).map(input => input.value);
+            document.getElementById('routeStrategyHelp').textContent = strategy === 'random' ? '至少选择 2 个不同 Profile。' : '必须且只能选择 1 个 Profile。';
+            renderProfileChoices('routeProfileChoices', selected, strategy);
+        }
+    }
+
+    function findRoute(routeId) {
+        for (const group of groups) {
+            const route = (group.rules || []).find(item => item.id === routeId);
+            if (route) return {group, route};
+        }
+        return null;
+    }
+
+    function openRoute(groupId, route) {
+        if (!groups.length) { showMessage('请先创建规则组'); return; }
+        const owner = route ? findRoute(route.id) : null;
+        const selectedGroupId = groupId || (owner && owner.group.id) || groups[0].id;
+        document.getElementById('routeModalTitle').textContent = route ? '编辑路由规则' : '新增路由规则';
+        document.getElementById('routeId').value = route ? route.id : '';
+        document.getElementById('routeGroupId').innerHTML = groups.map(group => '<option value="' + esc(group.id) + '">' + esc(group.name) + '</option>').join('');
+        document.getElementById('routeGroupId').value = selectedGroupId;
+        document.getElementById('routePattern').value = route ? route.pattern : '';
+        document.getElementById('routeType').value = route ? route.type : 'domain';
+        document.getElementById('routeEnabled').checked = !route || route.enabled !== false;
+        const inherit = !route || !route.strategy;
+        document.getElementById('routeInherit').checked = inherit;
+        document.getElementById('routeStrategy').value = route && route.strategy ? route.strategy : 'fixed';
+        renderProfileChoices('routeProfileChoices', route && route.targetProfileIds ? route.targetProfileIds : [], document.getElementById('routeStrategy').value);
+        updateRoutePolicyUI();
+        routeModal.show();
+    }
+
+    document.getElementById('createGroupBtn').addEventListener('click', () => openGroup(null));
+    document.getElementById('groupStrategy').addEventListener('change', updateGroupPolicyUI);
+    document.getElementById('routeInherit').addEventListener('change', updateRoutePolicyUI);
+    document.getElementById('routeStrategy').addEventListener('change', updateRoutePolicyUI);
+    document.getElementById('routeGroupId').addEventListener('change', updateRoutePolicyUI);
+
+    document.getElementById('routeGroups').addEventListener('click', async event => {
+        if (event.target.closest('.create-first-group')) { openGroup(null); return; }
+        const groupButton = event.target.closest('[data-group-id]');
+        const routeButton = event.target.closest('[data-route-id]');
         try {
-            if (target.classList.contains('route-edit')) return openRoute(route);
-            if (target.classList.contains('route-delete')) {
-                if (!confirm('确定删除路由规则 ' + route.pattern + ' 吗？')) return;
-                await api('/admin/routes/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({routeId:id})});
+            if (groupButton && groupButton.classList.contains('group-collapse')) {
+                const id = groupButton.dataset.groupId;
+                if (expandedGroups.has(id)) expandedGroups.delete(id); else expandedGroups.add(id);
+                renderGroups();
+                return;
+            }
+            if (groupButton && groupButton.classList.contains('group-edit')) {
+                openGroup(groups.find(item => item.id === groupButton.dataset.groupId));
+                return;
+            }
+            if (groupButton && groupButton.classList.contains('route-create')) {
+                openRoute(groupButton.dataset.groupId, null);
+                return;
+            }
+            if (groupButton && groupButton.classList.contains('group-delete')) {
+                const group = groups.find(item => item.id === groupButton.dataset.groupId);
+                const count = (group.rules || []).length;
+                const message = count ? ('确定删除规则组“' + group.name + '”及其 ' + count + ' 条规则吗？此操作不可撤销。') : ('确定删除空规则组“' + group.name + '”吗？');
+                if (!confirm(message)) return;
+                await api('/admin/route-groups/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({groupId:group.id, cascade:count > 0})});
+                expandedGroups.delete(group.id);
+                showMessage('规则组已删除');
+                await loadRoutes();
+                return;
+            }
+            if (routeButton && routeButton.classList.contains('route-edit')) {
+                const found = findRoute(routeButton.dataset.routeId);
+                if (found) openRoute(found.group.id, found.route);
+                return;
+            }
+            if (routeButton && routeButton.classList.contains('route-delete')) {
+                const found = findRoute(routeButton.dataset.routeId);
+                if (!found || !confirm('确定删除路由规则 ' + found.route.pattern + ' 吗？')) return;
+                await api('/admin/routes/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({routeId:found.route.id})});
                 showMessage('路由规则已删除');
                 await loadRoutes();
             }
         } catch (error) { showMessage(error.message); }
-    };
-    document.getElementById('routesBody').onchange = async event => {
-        if (!event.target.classList.contains('route-toggle')) return;
+    });
+
+    document.getElementById('routeGroups').addEventListener('change', async event => {
         try {
-            await api('/admin/routes/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({routeId:event.target.dataset.id, enabled:event.target.checked})});
-            showMessage(event.target.checked ? '路由规则已启用' : '路由规则已停用');
-            await loadRoutes();
-        } catch (error) { event.target.checked = !event.target.checked; showMessage(error.message); }
-    };
-    document.getElementById('routeForm').onsubmit = async event => {
+            if (event.target.classList.contains('group-toggle')) {
+                await api('/admin/route-groups/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({groupId:event.target.dataset.groupId, enabled:event.target.checked})});
+                showMessage(event.target.checked ? '规则组已启用' : '规则组已停用');
+                await loadRoutes();
+            } else if (event.target.classList.contains('route-toggle')) {
+                await api('/admin/routes/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({routeId:event.target.dataset.routeId, enabled:event.target.checked})});
+                showMessage(event.target.checked ? '路由规则已启用' : '路由规则已停用');
+                await loadRoutes();
+            }
+        } catch (error) {
+            event.target.checked = !event.target.checked;
+            showMessage(error.message);
+        }
+    });
+
+    document.getElementById('groupForm').addEventListener('submit', async event => {
         event.preventDefault();
-        const targets = Array.from(document.querySelectorAll('.profile-choice:checked')).map(input => input.value);
-        const strategy = document.getElementById('routeStrategy').value;
+        const strategy = document.getElementById('groupStrategy').value;
+        const targets = Array.from(document.querySelectorAll('#groupProfileChoices .profile-choice:checked')).map(input => input.value);
         if ((strategy === 'fixed' && targets.length !== 1) || (strategy === 'random' && targets.length < 2)) {
             showMessage(strategy === 'fixed' ? '固定策略必须选择 1 个 Profile' : '随机策略至少选择 2 个 Profile');
             return;
         }
-        const route = {id:document.getElementById('routeId').value, pattern:document.getElementById('routePattern').value.trim(), type:document.getElementById('routeType').value, enabled:document.getElementById('routeEnabled').checked, strategy, targetProfileIds:targets};
+        const group = {id:document.getElementById('groupId').value, name:document.getElementById('groupName').value.trim(), description:document.getElementById('groupDescription').value.trim(), enabled:document.getElementById('groupEnabled').checked, strategy, targetProfileIds:targets};
         try {
-            await api('/admin/routes/upsert', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({route})});
-            modal.hide(); showMessage('路由规则已保存'); await loadRoutes();
+            await api('/admin/route-groups/upsert', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({group})});
+            groupModal.hide(); showMessage('规则组已保存'); await loadRoutes();
         } catch (error) { showMessage(error.message); }
-    };
+    });
+
+    document.getElementById('routeForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        const inherit = document.getElementById('routeInherit').checked;
+        const route = {id:document.getElementById('routeId').value, pattern:document.getElementById('routePattern').value.trim(), type:document.getElementById('routeType').value, enabled:document.getElementById('routeEnabled').checked};
+        if (!inherit) {
+            route.strategy = document.getElementById('routeStrategy').value;
+            route.targetProfileIds = Array.from(document.querySelectorAll('#routeProfileChoices .profile-choice:checked')).map(input => input.value);
+            if ((route.strategy === 'fixed' && route.targetProfileIds.length !== 1) || (route.strategy === 'random' && route.targetProfileIds.length < 2)) {
+                showMessage(route.strategy === 'fixed' ? '固定策略必须选择 1 个 Profile' : '随机策略至少选择 2 个 Profile');
+                return;
+            }
+        }
+        try {
+            await api('/admin/routes/upsert', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({groupId:document.getElementById('routeGroupId').value, route})});
+            routeModal.hide(); showMessage('路由规则已保存'); await loadRoutes();
+        } catch (error) { showMessage(error.message); }
+    });
+
     loadRoutes();
 });
 </script>

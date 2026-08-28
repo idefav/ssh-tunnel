@@ -12,7 +12,7 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 |------|------|------|
 | `/view/index` | GET | 主页面 - 显示隧道状态和域名缓存 |
 | `/view/app/config` | GET | 配置管理页面 - 显示和编辑应用配置 |
-| `/view/routes` | GET | 独立路由管理页面 - 固定/随机多 Profile 出口 |
+| `/view/routes` | GET | 路由规则组管理页面 - 组出口继承与单规则覆盖 |
 | `/view/ssh/state` | GET | SSH 状态、请求追踪与持久化流量统计 |
 | `/view/logs` | GET | 日志查看页面 - 实时查看应用日志 |
 
@@ -37,31 +37,50 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 
 > 说明：Profile 保存后会同时写入配置键 `profiles.json` 与文件 `profiles.json`（美化格式，便于人工查看和维护）。
 
-`domainRoutes` 不再由 Profile API 编辑。旧文件中的该字段只在启动迁移时读取；完成迁移后规则写入独立 `routes.json` 并清理旧字段。被任意路由规则引用的 Profile 不允许删除，冲突响应会返回 `referencingRouteIds`。
+`domainRoutes` 不再由 Profile API 编辑。旧文件中的该字段只在启动迁移时读取；完成迁移后规则写入 `routes.json` 的自动迁移组并清理旧字段。被任意规则组默认出口或单规则独立出口引用的 Profile 不允许删除，冲突响应会返回 `referencingGroupIds` 和 `referencingRouteIds`。
 
-#### 独立路由 API
+#### 路由规则组 API
 
 | 接口 | 方法 | 描述 | 请求 |
 |------|------|------|------|
-| `/admin/routes` | GET | 获取规则、Profile 与当前激活 Profile | 无 |
-| `/admin/routes/upsert` | POST | 创建或更新规则；空 `id` 创建 | `{"route":{...}}` |
+| `/admin/routes` | GET | 获取版本 2 规则组、Profile 与当前激活 Profile | 无 |
+| `/admin/route-groups/upsert` | POST | 创建或更新规则组；更新时保留组内规则 | `{"group":{...}}` |
+| `/admin/route-groups/toggle` | POST | 启用或停用规则组 | `{"groupId":"...","enabled":true}` |
+| `/admin/route-groups/delete` | POST | 删除规则组；非空组必须明确级联 | `{"groupId":"...","cascade":true}` |
+| `/admin/routes/upsert` | POST | 创建、更新或移动规则；空 `id` 创建 | `{"groupId":"...","route":{...}}` |
 | `/admin/routes/toggle` | POST | 启用或停用规则 | `{"routeId":"...","enabled":true}` |
 | `/admin/routes/delete` | POST | 删除规则 | `{"routeId":"..."}` |
 
-规则结构：
+版本 2 结构：
 
 ```json
 {
-  "id": "route_0123456789abcdef0123456789abcdef",
-  "pattern": "*.example.com",
-  "type": "domain",
-  "enabled": true,
-  "strategy": "random",
-  "targetProfileIds": ["prod-main", "prod-backup"]
+  "version": 2,
+  "groups": [{
+    "id": "group_0123456789abcdef0123456789abcdef",
+    "name": "OpenAI",
+    "description": "OpenAI 与 ChatGPT 相关服务",
+    "enabled": true,
+    "strategy": "fixed",
+    "targetProfileIds": ["prod-main"],
+    "rules": [{
+      "id": "route_0123456789abcdef0123456789abcdef",
+      "pattern": "openai.com",
+      "type": "domain",
+      "enabled": true
+    }, {
+      "id": "route_fedcba9876543210fedcba9876543210",
+      "pattern": "api.openai.com",
+      "type": "domain",
+      "enabled": true,
+      "strategy": "random",
+      "targetProfileIds": ["prod-main", "prod-backup"]
+    }]
+  }]
 }
 ```
 
-`type` 支持 `domain`、`ip`、`cidr`；IP 通配前缀 `192.168.*` 会规范化为 `192.168.*.*`。`fixed` 必须且只能有一个目标，`random` 至少有两个不同目标。同类型、规范化后相同的模式不可重复。规则写入活动配置目录的 `routes.json`，采用临时文件和原子替换。
+组名称必填且忽略大小写唯一，组默认出口必须合法。规则同时省略 `strategy` 和 `targetProfileIds` 时继承组出口；只提供其中一项会被拒绝。`type` 支持 `domain`、`ip`、`cidr`；IP 通配前缀 `192.168.*` 会规范化为 `192.168.*.*`。`fixed` 必须且只能有一个目标，`random` 至少有两个不同目标。同类型、规范化后相同的模式在所有组之间不可重复。非空组未携带 `cascade:true` 删除时返回 `409` 及 `groupName/ruleCount`。文件采用临时文件和原子替换。
 
 #### SSH连接API 🆕
 

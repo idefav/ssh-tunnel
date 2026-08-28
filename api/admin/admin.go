@@ -43,12 +43,23 @@ type profileDeleteRequest struct {
 }
 
 type routeUpsertRequest struct {
-	Route cfg.RouteRule `json:"route"`
+	GroupID string        `json:"groupId"`
+	Route   cfg.RouteRule `json:"route"`
 }
 
 type routeMutationRequest struct {
 	RouteID string `json:"routeId"`
 	Enabled bool   `json:"enabled"`
+}
+
+type routeGroupUpsertRequest struct {
+	Group cfg.RouteGroup `json:"group"`
+}
+
+type routeGroupMutationRequest struct {
+	GroupID string `json:"groupId"`
+	Enabled bool   `json:"enabled"`
+	Cascade bool   `json:"cascade"`
 }
 
 type trafficResetRequest struct {
@@ -517,7 +528,7 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
 				return
 			}
-			store, err := cfg.UpsertRoute(req.Route, tunnel.AppConfig())
+			store, err := cfg.UpsertRoute(req.GroupID, req.Route, tunnel.AppConfig())
 			if err != nil {
 				respondWithError(writer, fmt.Sprintf("保存路由失败: %v", err), http.StatusBadRequest)
 				return
@@ -528,6 +539,80 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			}
 			jsonResponse, _ := json.Marshal(map[string]interface{}{"success": true, "data": store})
 			writer.Write(jsonResponse)
+		})
+
+		adminRouter.HandleFunc("/admin/route-groups/upsert", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			var req routeGroupUpsertRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			store, err := cfg.UpsertRouteGroup(req.Group, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("保存规则组失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]interface{}{"success": true, "data": store})
+		})
+
+		adminRouter.HandleFunc("/admin/route-groups/toggle", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			var req routeGroupMutationRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			store, err := cfg.ToggleRouteGroup(req.GroupID, req.Enabled, tunnel.AppConfig())
+			if err != nil {
+				respondWithError(writer, fmt.Sprintf("切换规则组失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]interface{}{"success": true, "data": store})
+		})
+
+		adminRouter.HandleFunc("/admin/route-groups/delete", func(writer http.ResponseWriter, request *http.Request) {
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if request.Method != http.MethodPost {
+				respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+				return
+			}
+			var req routeGroupMutationRequest
+			if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+				respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			store, err := cfg.DeleteRouteGroup(req.GroupID, req.Cascade, tunnel.AppConfig())
+			if err != nil {
+				if conflict, ok := err.(*cfg.RouteGroupNotEmptyError); ok {
+					writer.WriteHeader(http.StatusConflict)
+					_ = json.NewEncoder(writer).Encode(map[string]interface{}{"success": false, "error": true, "message": conflict.Error(), "groupId": conflict.GroupID, "groupName": conflict.GroupName, "ruleCount": conflict.RuleCount})
+					return
+				}
+				respondWithError(writer, fmt.Sprintf("删除规则组失败: %v", err), http.StatusBadRequest)
+				return
+			}
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]interface{}{"success": true, "data": store})
 		})
 
 		adminRouter.HandleFunc("/admin/routes/toggle", func(writer http.ResponseWriter, request *http.Request) {
@@ -778,17 +863,19 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				respondWithError(writer, "profileId不能为空", http.StatusBadRequest)
 				return
 			}
-			routeIDs, err := cfg.ReferencingRouteIDs(profileID, tunnel.AppConfig())
+			refs, err := cfg.FindRouteReferences(profileID, tunnel.AppConfig())
 			if err != nil {
 				respondWithError(writer, fmt.Sprintf("检查路由引用失败: %v", err), http.StatusInternalServerError)
 				return
 			}
-			if len(routeIDs) > 0 {
+			if len(refs.GroupIDs) > 0 || len(refs.RouteIDs) > 0 {
+				allRefs := append(append([]string(nil), refs.GroupIDs...), refs.RouteIDs...)
 				response := map[string]interface{}{
 					"success":             false,
 					"error":               true,
-					"message":             fmt.Sprintf("Profile正被路由规则引用: %s", strings.Join(routeIDs, ", ")),
-					"referencingRouteIds": routeIDs,
+					"message":             fmt.Sprintf("Profile正被路由规则组或规则引用: %s", strings.Join(allRefs, ", ")),
+					"referencingGroupIds": refs.GroupIDs,
+					"referencingRouteIds": refs.RouteIDs,
 				}
 				writer.WriteHeader(http.StatusConflict)
 				_ = json.NewEncoder(writer).Encode(response)
@@ -1348,6 +1435,8 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				RetryMembers        []uint64 `json:"retryMembers,omitempty"`
 				BalanceStrategy     string   `json:"balanceStrategy,omitempty"`
 				RouteID             string   `json:"routeId,omitempty"`
+				RouteGroupID        string   `json:"routeGroupId,omitempty"`
+				RouteGroupName      string   `json:"routeGroupName,omitempty"`
 				RouteStrategy       string   `json:"routeStrategy,omitempty"`
 				AttemptedProfileIDs []string `json:"attemptedProfileIds,omitempty"`
 			}
@@ -1389,6 +1478,8 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 					RetryMembers:        r.RetryMembers,
 					BalanceStrategy:     r.BalanceStrategy,
 					RouteID:             r.RouteID,
+					RouteGroupID:        r.RouteGroupID,
+					RouteGroupName:      r.RouteGroupName,
 					RouteStrategy:       r.RouteStrategy,
 					AttemptedProfileIDs: r.AttemptedProfileIDs,
 				})

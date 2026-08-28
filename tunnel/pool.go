@@ -106,6 +106,8 @@ type requestRetryState struct {
 	lastMember          *SSHPoolMember
 	reconnectTriggered  bool
 	routeID             string
+	routeGroupID        string
+	routeGroupName      string
 	routeStrategy       string
 	attemptedProfiles   []string
 	attemptedProfileSet map[string]bool
@@ -122,7 +124,7 @@ func (t *Tunnel) newRequestRetryState() *requestRetryState {
 	}
 }
 
-func (s *requestRetryState) setRoute(ruleID, strategy string) {
+func (s *requestRetryState) setRoute(ruleID, groupID, groupName, strategy string) {
 	if s == nil {
 		return
 	}
@@ -132,6 +134,8 @@ func (s *requestRetryState) setRoute(ruleID, strategy string) {
 		s.profileRetryStates = make(map[string]*requestRetryState)
 	}
 	s.routeID = ruleID
+	s.routeGroupID = groupID
+	s.routeGroupName = groupName
 	s.routeStrategy = strategy
 }
 

@@ -121,14 +121,11 @@ func (ptm *ProfileTunnelManager) StopAll() {
 
 // ReloadProfiles diffs current running tunnels against the new profile set,
 // starting/stopping tunnels as needed.
-func (ptm *ProfileTunnelManager) ReloadProfiles(parentCtx context.Context, profiles map[string]cfg.SSHProfile, activeProfileID string, rules []cfg.RouteRule) {
+func (ptm *ProfileTunnelManager) ReloadProfiles(parentCtx context.Context, profiles map[string]cfg.SSHProfile, activeProfileID string, rules []cfg.EffectiveRoute) {
 	ptm.mu.Lock()
 
 	targeted := make(map[string]bool)
 	for _, rule := range rules {
-		if !rule.Enabled {
-			continue
-		}
 		for _, target := range rule.TargetProfileIDs {
 			targeted[target] = true
 		}

@@ -12,7 +12,7 @@ import (
 
 // compiledRoute holds a pre-processed routing rule for efficient matching.
 type compiledRoute struct {
-	Rule    cfg.RouteRule
+	Rule    cfg.EffectiveRoute
 	Pattern string
 	Type    string // "domain", "ip", "cidr"
 	// For domain matching
@@ -29,7 +29,7 @@ type compiledRoute struct {
 type RouteMatcher struct {
 	mu         sync.RWMutex
 	routes     []compiledRoute
-	routesByID map[string]cfg.RouteRule
+	routesByID map[string]cfg.EffectiveRoute
 	cache      map[string]string // host -> routeID (empty string = no match)
 	generation uint64
 }
@@ -37,24 +37,21 @@ type RouteMatcher struct {
 func NewRouteMatcher() *RouteMatcher {
 	return &RouteMatcher{
 		cache:      make(map[string]string),
-		routesByID: make(map[string]cfg.RouteRule),
+		routesByID: make(map[string]cfg.EffectiveRoute),
 	}
 }
 
-// LoadRoutes compiles enabled standalone routing rules.
-func (rm *RouteMatcher) LoadRoutes(rules []cfg.RouteRule) {
+// LoadRoutes compiles already-resolved effective routing rules.
+func (rm *RouteMatcher) LoadRoutes(rules []cfg.EffectiveRoute) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
 	rm.routes = nil
 	rm.cache = make(map[string]string)
-	rm.routesByID = make(map[string]cfg.RouteRule)
+	rm.routesByID = make(map[string]cfg.EffectiveRoute)
 	rm.generation++
 
 	for _, rule := range rules {
-		if !rule.Enabled {
-			continue
-		}
 		cr := compileRoute(rule)
 		if cr != nil {
 			rm.routes = append(rm.routes, *cr)
@@ -69,11 +66,11 @@ func (rm *RouteMatcher) LoadRoutes(rules []cfg.RouteRule) {
 }
 
 // Match finds the standalone route rule that should handle the given host.
-func (rm *RouteMatcher) Match(host string) (cfg.RouteRule, bool) {
+func (rm *RouteMatcher) Match(host string) (cfg.EffectiveRoute, bool) {
 	rm.mu.RLock()
 	if len(rm.routes) == 0 {
 		rm.mu.RUnlock()
-		return cfg.RouteRule{}, false
+		return cfg.EffectiveRoute{}, false
 	}
 
 	// Check cache
@@ -81,7 +78,7 @@ func (rm *RouteMatcher) Match(host string) (cfg.RouteRule, bool) {
 		rule, found := rm.routesByID[cached]
 		rm.mu.RUnlock()
 		if cached == "" || !found {
-			return cfg.RouteRule{}, false
+			return cfg.EffectiveRoute{}, false
 		}
 		return cloneRouteRule(rule), true
 	}
@@ -119,7 +116,7 @@ func (rm *RouteMatcher) Match(host string) (cfg.RouteRule, bool) {
 		rm.cache[host] = ""
 	}
 	rm.mu.Unlock()
-	return cfg.RouteRule{}, false
+	return cfg.EffectiveRoute{}, false
 }
 
 // ClearCache clears the match cache. Call when routes change.
@@ -157,12 +154,12 @@ func (rm *RouteMatcher) ProfilesWithRoutes() map[string]bool {
 	return result
 }
 
-func cloneRouteRule(rule cfg.RouteRule) cfg.RouteRule {
+func cloneRouteRule(rule cfg.EffectiveRoute) cfg.EffectiveRoute {
 	rule.TargetProfileIDs = append([]string(nil), rule.TargetProfileIDs...)
 	return rule
 }
 
-func compileRoute(rule cfg.RouteRule) *compiledRoute {
+func compileRoute(rule cfg.EffectiveRoute) *compiledRoute {
 	pattern := strings.TrimSpace(rule.Pattern)
 	if pattern == "" {
 		return nil

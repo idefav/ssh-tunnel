@@ -19,7 +19,7 @@
 - 进程信息: [docs/features/process-info-feature.md](features/process-info-feature.md)
 - 服务重启: [docs/features/restart-service-feature.md](features/restart-service-feature.md)
 - 多 Profile 切换: [docs/features/multi-profile-switch-design.md](features/multi-profile-switch-design.md)
-- v1.5.0 独立路由与持久化流量: [docs/features/routes-traffic-v1.5.md](features/routes-traffic-v1.5.md)
+- v1.5.0 独立路由与流量统计、v1.6.0 规则组: [docs/features/routes-traffic-v1.5.md](features/routes-traffic-v1.5.md)
 - SSH 稳定性修复: [docs/features/ssh-stability-fix-2026-03.md](features/ssh-stability-fix-2026-03.md)
 - 日志清理: [docs/features/log-clear-feature.md](features/log-clear-feature.md)
 

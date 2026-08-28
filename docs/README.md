@@ -13,7 +13,7 @@
 - `back-to-top-optimization.md` - 置顶按钮样式优化说明 🆕
 - `domain-management-ui-optimization.md` - 域名管理UI优化说明 🆕
 - `multi-profile-switch-design.md` - 多 SSH Profile 动态切换技术方案 🆕
-- `routes-traffic-v1.5.md` - v1.5.0 独立路由、持久化流量与升级说明 🆕
+- `routes-traffic-v1.5.md` - v1.5.0 独立路由与流量、v1.6.0 规则组及升级说明 🆕
 
 ### 📁 setup/
 部署和配置文档

@@ -1048,7 +1048,7 @@
                     html += '<td><span class="badge ' + reqProfileBadge + '" style="font-size:0.7rem;">' + escapeHtml(reqProfile) + '</span></td>';
                     const attempted = (r.attemptedProfileIds || []).join(' → ');
                     const routeTitle = attempted ? ' title="尝试: ' + escapeHtml(attempted) + '"' : '';
-                    html += '<td' + routeTitle + '>' + (r.routeId ? '<span class="badge bg-secondary">' + escapeHtml(r.routeStrategy || 'fixed') + '</span><div class="small text-muted text-truncate" style="max-width:105px">' + escapeHtml(r.routeId) + '</div>' : '--') + '</td>';
+                    html += '<td' + routeTitle + '>' + (r.routeId ? '<span class="badge bg-secondary">' + escapeHtml(r.routeStrategy || 'fixed') + '</span><div class="small fw-medium text-truncate" style="max-width:105px" title="' + escapeHtml(r.routeGroupId || '') + '">' + escapeHtml(r.routeGroupName || '未分组') + '</div><div class="small text-muted text-truncate" style="max-width:105px">' + escapeHtml(r.routeId) + '</div>' : '--') + '</td>';
                     const retryText = r.retryCount ? (r.retryCount + '次') : '--';
                     const retryTitle = r.retryReason ? (' title="' + escapeHtml(r.retryReason) + '"') : '';
                     html += '<td style="color:#64748b;"' + retryTitle + '>' + retryText + '</td>';

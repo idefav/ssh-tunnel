@@ -53,7 +53,7 @@
                     <a href="#manual-layout" class="list-group-item list-group-item-action">落盘与服务布局</a>
                     <a href="#manual-config" class="list-group-item list-group-item-action">配置示例</a>
                     <a href="#update-flow" class="list-group-item list-group-item-action">后续更新</a>
-                    <a href="#v150-upgrade" class="list-group-item list-group-item-action">v1.5.0 升级检查</a>
+                    <a href="#v160-upgrade" class="list-group-item list-group-item-action">v1.6.0 升级检查</a>
                 </div>
             </div>
             <div class="col-lg-9">
@@ -171,15 +171,15 @@ auto-update.check-interval=3600</code></pre>
                     <div class="alert alert-info mb-0"><code>auto-update.enabled=true</code> 只会定时检查新版本。下载和安装需在版本页人工确认，更新过程会短暂中断代理服务。</div>
                 </section>
 
-                <section id="v150-upgrade">
-                    <h2>v1.5.0 升级检查</h2>
+                <section id="v160-upgrade">
+                    <h2>v1.6.0 升级检查</h2>
                     <ol>
-                        <li>备份活动配置文件和同目录的 <code>profiles.json</code>。</li>
+                        <li>备份活动配置文件及同目录的 <code>profiles.json</code> 和已有的 <code>routes.json</code>。</li>
                         <li>确保只有一个 SSH-Tunnel 进程使用该配置目录，并确保服务账号可写该目录。</li>
-                        <li>首次启动会把旧 Profile 内的 <code>domainRoutes</code> 自动迁移到 <code>routes.json</code>。多个 Profile 中的重复规范化规则会导致启动失败，日志会列出冲突。</li>
+                        <li>首次启动会把版本 1 平铺规则和旧 Profile 内的 <code>domainRoutes</code> 自动迁入版本 2 的“未分组（自动迁移）”，并为每条旧规则保留原出口覆盖。重复规范化规则会导致启动失败，日志会列出冲突。</li>
                         <li>确认生成了 <code>routes.json</code> 和 <code>traffic.db</code>，再在 <code>/view/routes</code> 及 <code>/view/ssh/state</code> 验证路由和统计。</li>
-                        <li>旧版本的内存流量无法迁移；持久化累计从 v1.5.0 首次启动后开始。</li>
-                        <li>如果降级到 v1.4.x，请同时恢复升级前的 Profile 备份，因为旧版本不识别 <code>routes.json</code>。</li>
+                        <li>从 v1.5.0 升级会继续使用原有 <code>traffic.db</code>；更早版本的内存流量仍无法补录。</li>
+                        <li>如果降级到不支持规则组的版本，请同时恢复升级前的 <code>profiles.json</code> 和 <code>routes.json</code>。</li>
                     </ol>
                 </section>
             </div>

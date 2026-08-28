@@ -187,6 +187,8 @@ type destinationConn struct {
 	generation          uint64
 	retryInfo           SSHRetryInfo
 	routeID             string
+	routeGroupID        string
+	routeGroupName      string
 	routeStrategy       string
 	attemptedProfileIDs []string
 }
@@ -534,7 +536,7 @@ func (t *Tunnel) proxyBidirectionalWithEarlyRetry(ctx context.Context, client ne
 					retryInfo := retryState.info()
 					tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
 					tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-					tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+					tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 					tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 					continue
 				}
@@ -557,7 +559,7 @@ func (t *Tunnel) proxyBidirectionalWithEarlyRetry(ctx context.Context, client ne
 		if serverN > 0 {
 			tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
 			tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-			tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+			tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 			retryInfo := retryState.info()
 			tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 			t.proxyBidirectional(&prefixReadConn{Conn: dest.conn, prefix: firstServerByte[:serverN]}, client, req)
@@ -572,7 +574,7 @@ func (t *Tunnel) proxyBidirectionalWithEarlyRetry(ctx context.Context, client ne
 				retryInfo := retryState.info()
 				tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
 				tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-				tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+				tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 				tracker.UpdateRetryInfo(req, retryInfo.RetryCount, retryInfo.RetryReason, retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 				continue
 			}
@@ -812,7 +814,7 @@ func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (dest
 	if retryState == nil {
 		retryState = t.newRequestRetryState()
 	}
-	retryState.setRoute(rule.ID, rule.Strategy)
+	retryState.setRoute(rule.ID, rule.GroupID, rule.GroupName, rule.Strategy)
 	targets := append([]string(nil), rule.TargetProfileIDs...)
 	if rule.Strategy == cfg.RouteStrategyRandom {
 		remaining := targets[:0]
@@ -825,7 +827,7 @@ func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (dest
 		rand.Shuffle(len(targets), func(i, j int) { targets[i], targets[j] = targets[j], targets[i] })
 	}
 	if len(targets) == 0 {
-		dest := destinationConn{viaSSH: true, routeID: rule.ID, routeStrategy: rule.Strategy, attemptedProfileIDs: retryState.routeProfiles()}
+		dest := destinationConn{viaSSH: true, routeID: rule.ID, routeGroupID: rule.GroupID, routeGroupName: rule.GroupName, routeStrategy: rule.Strategy, attemptedProfileIDs: retryState.routeProfiles()}
 		return dest, true, fmt.Errorf("路由%s的目标Profile均不可用", rule.ID)
 	}
 
@@ -852,6 +854,8 @@ func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (dest
 
 		dest, err := t.dialRouteProfile(profileID, host, profileState)
 		dest.routeID = rule.ID
+		dest.routeGroupID = rule.GroupID
+		dest.routeGroupName = rule.GroupName
 		dest.routeStrategy = rule.Strategy
 		dest.attemptedProfileIDs = retryState.routeProfiles()
 		last = dest
@@ -865,6 +869,8 @@ func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (dest
 	}
 	last.viaSSH = true
 	last.routeID = rule.ID
+	last.routeGroupID = rule.GroupID
+	last.routeGroupName = rule.GroupName
 	last.routeStrategy = rule.Strategy
 	last.attemptedProfileIDs = retryState.routeProfiles()
 	log.Printf("独立路由连接失败(route=%s, host=%s, targets=%v): %s", rule.ID, host, rule.TargetProfileIDs, strings.Join(failures, "; "))
@@ -910,7 +916,7 @@ func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http
 		reconnectTriggered := dest.viaSSH && shouldReconnect(err)
 		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClass, reconnectTriggered, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClass, err.Error(), reconnectTriggered)
 		http.Error(w, err.Error(), proxyHTTPStatus(err, dest.viaSSH))
@@ -918,7 +924,7 @@ func (t *Tunnel) handleHTTPS(ctx context.Context, w http.ResponseWriter, r *http
 	}
 	tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), "", false, dest.generation)
 	tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-	tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+	tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 	tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 	tracker.MarkActive(req)
 	tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
@@ -1052,7 +1058,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 		reconnectTriggered := dest.viaSSH && shouldReconnect(err)
 		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClass, reconnectTriggered, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClass, err.Error(), reconnectTriggered)
 		return
@@ -1060,7 +1066,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 	if dest.conn == nil {
 		tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), failureClassUnknown, false, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 		tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 		tracker.MarkFailedDetailed(req, requestPhaseDial, failureClassUnknown, "destination connection is nil", false)
 		log.Println("Get Dest Connection Failed: destination connection is nil")
@@ -1070,7 +1076,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 	destConn := dest.conn
 	tracker.UpdateMetadata(req, requestPhaseDial, dest.viaSSH, time.Since(dialStartedAt), "", false, dest.generation)
 	tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-	tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+	tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 	tracker.UpdateRetryInfo(req, dest.retryInfo.RetryCount, dest.retryInfo.RetryReason, dest.retryInfo.RetryMembers, dest.retryInfo.BalanceStrategy)
 	tracker.MarkActive(req)
 	tracker.UpdateMetadata(req, requestPhaseProxying, dest.viaSSH, 0, "", false, dest.generation)
@@ -1093,7 +1099,7 @@ func (t *Tunnel) handleClientRequest(ctx context.Context, client net.Conn) {
 					retryInfo := retryState.info()
 					tracker.UpdateMetadata(req, requestPhaseInitialWrite, dest.viaSSH, 0, "", false, dest.generation)
 					tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-					tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+					tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 					tracker.UpdateRetryInfo(req, retryInfo.RetryCount, writeErr.Error(), retryInfo.RetryMembers, retryInfo.BalanceStrategy)
 					writeErr = nil
 					written = retryWritten
@@ -1351,7 +1357,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 		if routeErr != nil {
 			log.Println(routeErr)
 			_ = writeSocks5Reply(conn, mapSocks5ReplyCode(routeErr), nil)
-			tracker.UpdateRouteInfo(req, retryState.routeID, retryState.routeStrategy, retryState.routeProfiles())
+			tracker.UpdateRouteInfo(req, retryState.routeID, retryState.routeStrategy, retryState.routeProfiles(), retryState.routeGroupID, retryState.routeGroupName)
 			tracker.MarkFailed(req, routeErr.Error())
 			return routeErr
 		}
@@ -1364,7 +1370,7 @@ func (t *Tunnel) socks5Proxy(ctx context.Context, conn net.Conn) error {
 		}
 		tracker.UpdateMetadata(req, requestPhaseDial, true, 0, "", false, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 		tracker.MarkActive(req)
 		tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, dest.generation)
 		_ = conn.SetReadDeadline(time.Time{})
@@ -1556,14 +1562,14 @@ func (t *Tunnel) httpProxy(ctx context.Context, conn net.Conn) error {
 	if dest, matched, routeErr := t.tryRouteMatch(addr, retryState); matched {
 		if routeErr != nil {
 			log.Println(routeErr)
-			tracker.UpdateRouteInfo(req, retryState.routeID, retryState.routeStrategy, retryState.routeProfiles())
+			tracker.UpdateRouteInfo(req, retryState.routeID, retryState.routeStrategy, retryState.routeProfiles(), retryState.routeGroupID, retryState.routeGroupName)
 			tracker.MarkFailed(req, routeErr.Error())
 			return NetworkError
 		}
 		dest = t.meterDestination(dest)
 		tracker.UpdateMetadata(req, requestPhaseDial, true, 0, "", false, dest.generation)
 		tracker.UpdateSSHMember(req, dest.sshMemberID, dest.profileID)
-		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs)
+		tracker.UpdateRouteInfo(req, dest.routeID, dest.routeStrategy, dest.attemptedProfileIDs, dest.routeGroupID, dest.routeGroupName)
 		tracker.MarkActive(req)
 		tracker.UpdateMetadata(req, requestPhaseProxying, true, 0, "", false, dest.generation)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})

@@ -532,17 +532,18 @@ ssh.probe.failure.threshold=2</code></pre>
                     <div class="accordion-item">
                         <h2 class="accordion-header" id="headingTwelve">
                             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwelve" aria-expanded="false" aria-controls="collapseTwelve">
-                                从 v1.4.x 升级到 v1.5.0 需要注意什么？
+                                升级到 v1.6.0 需要注意什么？
                             </button>
                         </h2>
                         <div id="collapseTwelve" class="accordion-collapse collapse" aria-labelledby="headingTwelve" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
                                 <ul>
-                                    <li>升级前备份配置文件和 <code>profiles.json</code>，并停止旧进程。</li>
-                                    <li>旧 <code>domainRoutes</code> 会自动迁移到 <code>routes.json</code>；如多个 Profile 有重复的规范化路由，程序会报冲突并拒绝启动。</li>
-                                    <li>新 <code>traffic.db</code> 从升级后开始累计，旧版本的内存流量不能补录。</li>
+                                    <li>升级前备份配置文件、<code>profiles.json</code> 和已有的 <code>routes.json</code>，并停止旧进程。</li>
+                                    <li>版本 1 平铺规则与旧 <code>domainRoutes</code> 会自动迁入版本 2 的“未分组（自动迁移）”；每条旧规则保留原出口作为独立覆盖。</li>
+                                    <li>如存在重复的规范化路由，程序会报冲突并拒绝启动；迁移成功前不会静默改变路由语义。</li>
+                                    <li>从 v1.5.0 升级会保留现有 <code>traffic.db</code>；更早版本未持久化的内存流量不能补录。</li>
                                     <li>确保服务账号可写配置目录，且同一目录只由一个进程使用。</li>
-                                    <li>降级到 v1.4.x 时需同时恢复升级前的 Profile 备份。</li>
+                                    <li>降级到不支持规则组的版本时，需同时恢复升级前的 <code>profiles.json</code> 和 <code>routes.json</code>。</li>
                                 </ul>
                             </div>
                         </div>

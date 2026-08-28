@@ -14,8 +14,11 @@ import (
 	"testing"
 )
 
-func testRoute(id, pattern, routeType string, enabled bool, targets ...string) cfg.RouteRule {
-	return cfg.RouteRule{ID: id, Pattern: pattern, Type: routeType, Enabled: enabled, Strategy: cfg.RouteStrategyFixed, TargetProfileIDs: targets}
+func testRoute(id, pattern, routeType string, enabled bool, targets ...string) cfg.EffectiveRoute {
+	if !enabled {
+		pattern = ""
+	}
+	return cfg.EffectiveRoute{ID: id, GroupID: "group-test", GroupName: "Test", Pattern: pattern, Type: routeType, Strategy: cfg.RouteStrategyFixed, TargetProfileIDs: targets}
 }
 
 func assertRouteMatch(t *testing.T, matcher *RouteMatcher, host, wantID string, wantMatch bool) {
@@ -28,7 +31,7 @@ func assertRouteMatch(t *testing.T, matcher *RouteMatcher, host, wantID string, 
 
 func TestRouteMatcher_DomainSuffixAndWildcard(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{
+	matcher.LoadRoutes([]cfg.EffectiveRoute{
 		testRoute("suffix", "google.com", cfg.RouteTypeDomain, true, "jp"),
 		testRoute("wildcard", "*.internal.corp", cfg.RouteTypeDomain, true, "us"),
 	})
@@ -41,7 +44,7 @@ func TestRouteMatcher_DomainSuffixAndWildcard(t *testing.T) {
 
 func TestRouteMatcher_IPWildcardAndCIDR(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{
+	matcher.LoadRoutes([]cfg.EffectiveRoute{
 		testRoute("wildcard", "192.168.*.*", cfg.RouteTypeIP, true, "hk"),
 		testRoute("exact", "10.0.1.5", cfg.RouteTypeIP, true, "hk"),
 		testRoute("cidr", "172.16.0.0/12", cfg.RouteTypeCIDR, true, "sg"),
@@ -59,7 +62,7 @@ func TestRouteMatcher_IPWildcardAndCIDR(t *testing.T) {
 
 func TestRouteMatcher_IPAndCIDRSpecificity(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{
+	matcher.LoadRoutes([]cfg.EffectiveRoute{
 		testRoute("wildcard", "10.*.*.*", cfg.RouteTypeIP, true, "wildcard"),
 		testRoute("cidr", "10.20.0.0/16", cfg.RouteTypeCIDR, true, "cidr"),
 		testRoute("exact-cidr", "10.20.1.7/32", cfg.RouteTypeCIDR, true, "cidr"),
@@ -71,7 +74,7 @@ func TestRouteMatcher_IPAndCIDRSpecificity(t *testing.T) {
 
 func TestRouteMatcher_SpecificityStableOrderAndDisabled(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{
+	matcher.LoadRoutes([]cfg.EffectiveRoute{
 		testRoute("general", "*.google.com", cfg.RouteTypeDomain, true, "general"),
 		testRoute("specific-first", "maps.google.com", cfg.RouteTypeDomain, true, "specific"),
 		testRoute("same-specificity-later", "maps.google.com", cfg.RouteTypeDomain, true, "later"),
@@ -84,11 +87,29 @@ func TestRouteMatcher_SpecificityStableOrderAndDisabled(t *testing.T) {
 
 func TestRouteMatcher_ExactSuffixOutranksEquivalentWildcard(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{
+	matcher.LoadRoutes([]cfg.EffectiveRoute{
 		testRoute("wildcard", "*.example.com", cfg.RouteTypeDomain, true, "wildcard"),
 		testRoute("suffix", "example.com", cfg.RouteTypeDomain, true, "suffix"),
 	})
 	assertRouteMatch(t, matcher, "www.example.com", "suffix", true)
+}
+
+func TestRouteMatcher_ResolvedGroupsUseGlobalSpecificityAndGroupEnable(t *testing.T) {
+	store := cfg.RouteStore{Groups: []cfg.RouteGroup{
+		{ID: "general-group", Name: "General", Enabled: true, Strategy: cfg.RouteStrategyFixed, TargetProfileIDs: []string{"general"}, Rules: []cfg.RouteRule{{ID: "general", Pattern: "*.example.com", Type: cfg.RouteTypeDomain, Enabled: true}}},
+		{ID: "specific-group", Name: "Specific", Enabled: true, Strategy: cfg.RouteStrategyFixed, TargetProfileIDs: []string{"specific"}, Rules: []cfg.RouteRule{{ID: "specific", Pattern: "api.example.com", Type: cfg.RouteTypeDomain, Enabled: true}}},
+		{ID: "disabled-group", Name: "Disabled", Enabled: false, Strategy: cfg.RouteStrategyFixed, TargetProfileIDs: []string{"disabled"}, Rules: []cfg.RouteRule{{ID: "disabled", Pattern: "private.example.com", Type: cfg.RouteTypeDomain, Enabled: true}}},
+	}}
+	matcher := NewRouteMatcher()
+	matcher.LoadRoutes(cfg.ResolveEffectiveRoutes(store))
+	route, matched := matcher.Match("api.example.com")
+	if !matched || route.ID != "specific" || route.GroupID != "specific-group" || route.TargetProfileIDs[0] != "specific" {
+		t.Fatalf("specific cross-group route mismatch: %+v matched=%v", route, matched)
+	}
+	route, matched = matcher.Match("private.example.com")
+	if !matched || route.ID != "general" {
+		t.Fatalf("disabled group should be excluded, got %+v matched=%v", route, matched)
+	}
 }
 
 func TestRouteMatcher_CacheStoresRuleIDAndReloadClears(t *testing.T) {
@@ -96,7 +117,7 @@ func TestRouteMatcher_CacheStoresRuleIDAndReloadClears(t *testing.T) {
 	rule := testRoute("route-a", "example.jp", cfg.RouteTypeDomain, true, "jp")
 	rule.Strategy = cfg.RouteStrategyRandom
 	rule.TargetProfileIDs = []string{"jp", "us"}
-	matcher.LoadRoutes([]cfg.RouteRule{rule})
+	matcher.LoadRoutes([]cfg.EffectiveRoute{rule})
 	first, firstOK := matcher.Match("test.example.jp")
 	second, secondOK := matcher.Match("test.example.jp")
 	if !firstOK || !secondOK || first.ID != second.ID || first.Strategy != cfg.RouteStrategyRandom {
@@ -113,9 +134,9 @@ func TestRouteMatcher_CacheStoresRuleIDAndReloadClears(t *testing.T) {
 
 func TestRouteMatcher_ProfilesWithRoutes(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{
+	matcher.LoadRoutes([]cfg.EffectiveRoute{
 		testRoute("fixed", "example.jp", cfg.RouteTypeDomain, true, "jp"),
-		{ID: "random", Pattern: "example.us", Type: cfg.RouteTypeDomain, Enabled: true, Strategy: cfg.RouteStrategyRandom, TargetProfileIDs: []string{"us", "sg"}},
+		{ID: "random", GroupID: "group-test", GroupName: "Test", Pattern: "example.us", Type: cfg.RouteTypeDomain, Strategy: cfg.RouteStrategyRandom, TargetProfileIDs: []string{"us", "sg"}},
 		testRoute("disabled", "off.test", cfg.RouteTypeDomain, false, "off"),
 	})
 	profiles := matcher.ProfilesWithRoutes()
@@ -141,7 +162,7 @@ func TestRouteMatcher_GuessType(t *testing.T) {
 
 func TestTryRouteMatch_FixedAndActiveProfile(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{testRoute("fixed", "active.test", cfg.RouteTypeDomain, true, "active")})
+	matcher.LoadRoutes([]cfg.EffectiveRoute{testRoute("fixed", "active.test", cfg.RouteTypeDomain, true, "active")})
 	tunnel := &Tunnel{routeMatcher: matcher, profileTunnelMgr: NewProfileTunnelManager(matcher), profileID: "active"}
 	var attempted []string
 	tunnel.routeDialer = func(profileID, host string, _ *requestRetryState) (destinationConn, error) {
@@ -151,7 +172,7 @@ func TestTryRouteMatch_FixedAndActiveProfile(t *testing.T) {
 		return destinationConn{conn: client, profileID: profileID, viaSSH: true}, nil
 	}
 	dest, matched, err := tunnel.tryRouteMatch("active.test:443", tunnel.newRequestRetryState())
-	if err != nil || !matched || dest.profileID != "active" || dest.routeID != "fixed" {
+	if err != nil || !matched || dest.profileID != "active" || dest.routeID != "fixed" || dest.routeGroupID != "group-test" || dest.routeGroupName != "Test" {
 		t.Fatalf("unexpected fixed result: dest=%+v matched=%v err=%v", dest, matched, err)
 	}
 	_ = dest.conn.Close()
@@ -162,7 +183,7 @@ func TestTryRouteMatch_FixedAndActiveProfile(t *testing.T) {
 
 func TestTryRouteMatch_RandomFailoverAndNoDefaultFallback(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{{ID: "random", Pattern: "random.test", Type: cfg.RouteTypeDomain, Enabled: true, Strategy: cfg.RouteStrategyRandom, TargetProfileIDs: []string{"a", "b", "c"}}})
+	matcher.LoadRoutes([]cfg.EffectiveRoute{{ID: "random", GroupID: "group-random", GroupName: "Random", Pattern: "random.test", Type: cfg.RouteTypeDomain, Strategy: cfg.RouteStrategyRandom, TargetProfileIDs: []string{"a", "b", "c"}}})
 	tunnel := &Tunnel{routeMatcher: matcher, profileTunnelMgr: NewProfileTunnelManager(matcher), profileID: "default"}
 	var attempted []string
 	tunnel.routeDialer = func(profileID, host string, _ *requestRetryState) (destinationConn, error) {
@@ -193,7 +214,7 @@ func TestTryRouteMatch_RandomFailoverAndNoDefaultFallback(t *testing.T) {
 
 func TestTryRouteMatch_RandomSelectionRunsPerConnection(t *testing.T) {
 	matcher := NewRouteMatcher()
-	matcher.LoadRoutes([]cfg.RouteRule{{ID: "random", Pattern: "cached.test", Type: cfg.RouteTypeDomain, Enabled: true, Strategy: cfg.RouteStrategyRandom, TargetProfileIDs: []string{"a", "b"}}})
+	matcher.LoadRoutes([]cfg.EffectiveRoute{{ID: "random", GroupID: "group-random", GroupName: "Random", Pattern: "cached.test", Type: cfg.RouteTypeDomain, Strategy: cfg.RouteStrategyRandom, TargetProfileIDs: []string{"a", "b"}}})
 	tunnel := &Tunnel{routeMatcher: matcher, profileTunnelMgr: NewProfileTunnelManager(matcher)}
 	dials := 0
 	tunnel.routeDialer = func(profileID, host string, _ *requestRetryState) (destinationConn, error) {
@@ -259,10 +280,9 @@ func TestProfileTunnelManagerHotAddsRebuildsAndStopsReferencedPools(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	defer manager.StopAll()
-	rules := []cfg.RouteRule{
+	rules := []cfg.EffectiveRoute{
 		testRoute("backup-rule", "backup.test", cfg.RouteTypeDomain, true, "backup"),
 		testRoute("active-rule", "active.test", cfg.RouteTypeDomain, true, "active"),
-		testRoute("disabled-rule", "unused.test", cfg.RouteTypeDomain, false, "unused"),
 	}
 	manager.ReloadProfiles(ctx, profiles, "active", rules)
 	ids := manager.ActiveProfileIDs()

@@ -134,7 +134,7 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 - ⚙️ **配置管理** - 在线修改配置参数，支持实时预览
 - 🧩 **多 Profile 管理** - 支持维护多套 SSH 配置并在管理页动态切换 🆕
 - 🗂️ **Profile 文件持久化** - 保存 Profile 时同步写入 `profiles.json`（格式化JSON）🆕
-- 🧭 **独立路由管理** - 在 `/view/routes` 按域名、IP 通配符或 CIDR 配置固定/随机多 Profile 出口，支持启停和目标故障转移 🆕
+- 🧭 **路由规则组** - 在 `/view/routes` 将同一服务的多个域名、IP 或 CIDR 归组管理；规则可继承组出口，也可覆盖为固定/随机多 Profile 出口 🆕
 - 📁 **进程信息** - 显示程序执行路径和工作目录，便于故障排查
 - 📶 **持久化流量统计** - SSH 状态页展示总体、各 Profile 与直连的实时/累计流量及 24 小时、7 天、30 天、按月历史；重启不丢累计 🆕
 - 🔢 **连接统计** - SSH状态页新增当前SSH连接数与累计重连次数展示 🆕
@@ -163,11 +163,12 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 
 访问版本管理页面: `http://localhost:1083/view/version`
 
-### 独立路由文件与流量数据库
+### 路由规则组文件与流量数据库
 
-- 路由规则写入活动配置文件同目录的 `routes.json`；未显式指定配置文件时写入 `~/.ssh-tunnel/routes.json`。示例见 [`examples/routes.json.template`](examples/routes.json.template)。
-- `fixed` 规则必须选择一个 Profile；`random` 规则至少选择两个不同 Profile。随机规则在每个新 TCP 连接上重新打乱目标，并在失败时依次尝试，全部失败后不会回退默认 Profile。
-- 旧 `profiles.json` 中的 `domainRoutes` 会在首次启动时迁移为独立规则并从 Profile 清除。
+- 路由规则组写入活动配置文件同目录的 `routes.json`（格式版本 2）；未显式指定配置文件时写入 `~/.ssh-tunnel/routes.json`。示例见 [`examples/routes.json.template`](examples/routes.json.template)。
+- 每个组必须配置名称、启停状态和默认出口。组内规则同时省略 `strategy` 与 `targetProfileIds` 时继承组出口；也可以单独覆盖为 `fixed` 或 `random`。
+- `fixed` 必须选择一个 Profile；`random` 至少选择两个不同 Profile。随机出口在每个新 TCP 连接上重新打乱目标，并在失败时依次尝试，全部失败后不会回退默认 Profile。
+- v1 平铺 `routes.json` 和旧 `profiles.json` 中的 `domainRoutes` 会自动迁入确定 ID 的“未分组（自动迁移）”，每条旧规则保留独立出口，升级前后路由行为不变。
 - 流量累计与最近 365 天小时历史保存在同目录的 `traffic.db`。数据库基于纯 Go 的 [bbolt v1.4.3](https://github.com/etcd-io/bbolt/blob/v1.4.3/README.md)（[Go 版本声明](https://github.com/etcd-io/bbolt/blob/v1.4.3/go.mod)），每 5 秒批量刷盘，正常停止时强制同步。
 
 ### v1.5.0 从旧版本升级
@@ -178,6 +179,13 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 4. 迁移后若需降级到 v1.4.x，必须同时恢复升级前的 Profile 备份，因为旧版本不识别独立 `routes.json`。
 
 程序支持在 `/view/version` 下载、SHA256 校验并安装 GitHub Release。`auto-update.enabled=true` 开启的是定时检查，不会在无人确认时自动替换程序。
+
+### v1.6.0 从平铺路由升级到规则组
+
+1. 启动前备份 `routes.json` 和 `profiles.json`。
+2. 首次加载版本 1 的 `routes.json` 时，程序会原子写入版本 2，并将原规则迁入“未分组（自动迁移）”；旧规则的策略和目标作为单规则覆盖保留。
+3. 组开关与规则开关共同决定是否生效。关闭组不会改变组内规则各自的开关状态，再次开启后会恢复。
+4. 版本 2 的 `routes.json` 不能直接被只支持平铺路由的旧程序读取；如需降级，请同时恢复升级前备份。
 
 ## SSH快速重连参数（建议）
 
@@ -330,6 +338,12 @@ win+r 输入 services.svc 打开服务管理窗口
 ### 4. 在windows配置中启动代理
 
 ### 最近更新 🆕
+
+#### 2026-08-28 (v1.6.0)
+- ✅ 路由升级为可折叠规则组，支持名称、说明、组级开关和默认固定/随机出口
+- ✅ 单规则可继承组出口，也可独立覆盖策略与多个目标 Profile，并支持跨组移动
+- ✅ v1 平铺路由和旧 Profile 路由自动、幂等迁入版本 2 `routes.json`
+- ✅ 请求追踪显示规则组，Profile 引用保护和后台连接池热加载同步覆盖组出口
 
 #### 2026-08-27 (v1.5.0)
 - ✅ 域名/IP/CIDR 路由拆分为独立页面、`routes.json` 与 API，支持固定、随机多目标、启停和实时热加载

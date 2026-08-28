@@ -38,6 +38,8 @@ type ProxyRequest struct {
 	RetryMembers        []uint64           `json:"retryMembers,omitempty"`
 	BalanceStrategy     string             `json:"balanceStrategy,omitempty"`
 	RouteID             string             `json:"routeId,omitempty"`
+	RouteGroupID        string             `json:"routeGroupId,omitempty"`
+	RouteGroupName      string             `json:"routeGroupName,omitempty"`
 	RouteStrategy       string             `json:"routeStrategy,omitempty"`
 	AttemptedProfileIDs []string           `json:"attemptedProfileIds,omitempty"`
 }
@@ -171,13 +173,19 @@ func (prt *ProxyRequestTracker) UpdateSSHMember(req *ProxyRequest, memberID uint
 	}
 }
 
-func (prt *ProxyRequestTracker) UpdateRouteInfo(req *ProxyRequest, routeID, strategy string, attemptedProfileIDs []string) {
+func (prt *ProxyRequestTracker) UpdateRouteInfo(req *ProxyRequest, routeID, strategy string, attemptedProfileIDs []string, routeGroup ...string) {
 	if req == nil {
 		return
 	}
 	prt.mu.Lock()
 	defer prt.mu.Unlock()
 	req.RouteID = routeID
+	if len(routeGroup) > 0 {
+		req.RouteGroupID = routeGroup[0]
+	}
+	if len(routeGroup) > 1 {
+		req.RouteGroupName = routeGroup[1]
+	}
 	req.RouteStrategy = strategy
 	if len(attemptedProfileIDs) > 0 {
 		req.AttemptedProfileIDs = append([]string(nil), attemptedProfileIDs...)
