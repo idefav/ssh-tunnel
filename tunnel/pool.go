@@ -737,20 +737,26 @@ func (t *Tunnel) probeSSHMemberURL(ctx context.Context, httpClient *http.Client,
 }
 
 func (t *Tunnel) probeSSHMember(ctx context.Context, member *SSHPoolMember) error {
+	_, _, err := t.probeSSHMemberDetailed(ctx, member)
+	return err
+}
+
+func (t *Tunnel) probeSSHMemberDetailed(ctx context.Context, member *SSHPoolMember) (string, time.Duration, error) {
 	if member == nil || member.Client == nil {
-		return errors.New("ssh member is not connected")
+		return "", 0, errors.New("ssh member is not connected")
 	}
 	httpClient, err := t.sshHTTPClientForClient(member.Client, t.configuredProbeTimeout())
 	if err != nil {
-		return err
+		return "", 0, err
 	}
 	if transport, ok := httpClient.Transport.(*http.Transport); ok {
 		defer transport.CloseIdleConnections()
 	}
 	probeURLs := t.configuredProbeURLs()
 	type probeResult struct {
-		url string
-		err error
+		url      string
+		duration time.Duration
+		err      error
 	}
 	resultCh := make(chan probeResult, len(probeURLs))
 	probeCtx, cancel := context.WithTimeout(ctx, t.configuredProbeTimeout())
@@ -758,18 +764,20 @@ func (t *Tunnel) probeSSHMember(ctx context.Context, member *SSHPoolMember) erro
 	for _, probeURL := range probeURLs {
 		url := probeURL
 		go func() {
-			resultCh <- probeResult{url: url, err: t.probeSSHMemberURL(probeCtx, httpClient, url)}
+			startedAt := time.Now()
+			probeErr := t.probeSSHMemberURL(probeCtx, httpClient, url)
+			resultCh <- probeResult{url: url, duration: time.Since(startedAt), err: probeErr}
 		}()
 	}
 	var failures []string
 	for range probeURLs {
 		result := <-resultCh
 		if result.err == nil {
-			return nil
+			return result.url, result.duration, nil
 		}
 		failures = append(failures, result.url+": "+result.err.Error())
 	}
-	return errors.New("all probe urls failed: " + strings.Join(failures, "; "))
+	return "", 0, errors.New("all probe urls failed: " + strings.Join(failures, "; "))
 }
 
 func (t *Tunnel) markMemberProbe(member *SSHPoolMember, result string, err error) {
@@ -969,6 +977,15 @@ func (t *Tunnel) recordMemberDialFailure(ctx context.Context, member *SSHPoolMem
 }
 
 func (t *Tunnel) dialSSHConn(ctx context.Context, target string, retryState *requestRetryState) (net.Conn, *SSHPoolMember, string, bool, SSHRetryInfo, error) {
+	startedAt := time.Now()
+	conn, member, failureClass, reconnectTriggered, retryInfo, err := t.dialSSHConnUntracked(ctx, target, retryState)
+	if t.trafficStore != nil && strings.TrimSpace(t.profileID) != "" {
+		t.trafficStore.RecordProfileAccess(t.profileID, t.profileIdentity, target, time.Since(startedAt), err == nil, failureClass, err)
+	}
+	return conn, member, failureClass, reconnectTriggered, retryInfo, err
+}
+
+func (t *Tunnel) dialSSHConnUntracked(ctx context.Context, target string, retryState *requestRetryState) (net.Conn, *SSHPoolMember, string, bool, SSHRetryInfo, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}

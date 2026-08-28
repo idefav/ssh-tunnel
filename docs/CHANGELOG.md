@@ -1,5 +1,16 @@
 # 更新日志
 
+## v1.7.0 (2026-08-28)
+
+### 📊 Profile 节点质量
+- Profile 管理列表新增最近 24 小时真实访问成功率、平均/P95 建连延迟、连续失败、最近错误和 SSH 连接池摘要。
+- 新增单节点及全部节点手动测试，分别报告 SSH 握手和出口探测耗时；批次最多并发 3 个节点且不会切换活动 Profile。
+- 健康统计写入现有 `traffic.db`，新增 `/admin/profiles/health`、`/admin/profiles/test` 与 `/admin/profiles/test/status` API。
+
+### 🔄 兼容性
+- 直连流量不计入节点质量；HTTP、HTTPS、SOCKS5 和随机路由故障转移共用实际目标建连统计边界。
+- Profile 连接参数改变或 Profile 删除时自动清除对应健康数据；现有配置文件无需迁移。
+
 ## v1.6.1 (2026-08-28)
 
 ### 🧰 路由规则批量管理

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"ssh-tunnel/cfg"
+	"ssh-tunnel/tunnel"
 	"testing"
 )
 
@@ -158,5 +159,95 @@ func TestRouteBatchHandlerReturnsReloadFailureAfterSuccessfulUpdate(t *testing.T
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/admin/routes/batch", bytes.NewBufferString(`{"routeIds":["a"],"enabled":true}`)))
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestProfileHealthHandlerReturnsStableShape(t *testing.T) {
+	handler := newProfileHealthHandler(func() (cfg.ProfileStore, error) {
+		return cfg.ProfileStore{Profiles: map[string]cfg.SSHProfile{"jp": {}}}, nil
+	}, func(store cfg.ProfileStore) (map[string]tunnel.ProfileHealthSummary, error) {
+		if _, ok := store.Profiles["jp"]; !ok {
+			t.Fatal("profile store was not passed to snapshot")
+		}
+		return map[string]tunnel.ProfileHealthSummary{"jp": {ProfileID: "jp", Status: tunnel.ProfileHealthStatusReachable, WindowHours: 24}}, nil
+	})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/admin/profiles/health", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Success bool `json:"success"`
+		Data    struct {
+			WindowHours int                                    `json:"windowHours"`
+			Profiles    map[string]tunnel.ProfileHealthSummary `json:"profiles"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Success || payload.Data.WindowHours != 24 || payload.Data.Profiles["jp"].Status != tunnel.ProfileHealthStatusReachable {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/admin/profiles/health", nil))
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status=%d", response.Code)
+	}
+}
+
+func TestProfileTestStartHandlerValidationSuccessAndConflict(t *testing.T) {
+	load := func() (cfg.ProfileStore, error) {
+		return cfg.ProfileStore{Profiles: map[string]cfg.SSHProfile{"jp": {ServerIp: "127.0.0.1"}}}, nil
+	}
+	var selected map[string]cfg.SSHProfile
+	handler := newProfileTestStartHandler(load, func(profiles map[string]cfg.SSHProfile) (tunnel.ProfileTestBatch, error) {
+		selected = profiles
+		return tunnel.ProfileTestBatch{TestID: "pt_1", Status: "RUNNING", Total: len(profiles), Results: map[string]tunnel.ProfileManualTestResult{}}, nil
+	})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/admin/profiles/test", bytes.NewBufferString(`{"profileIds":["jp","jp"]}`)))
+	if response.Code != http.StatusAccepted || len(selected) != 1 || selected["jp"].ServerIp != "127.0.0.1" {
+		t.Fatalf("unexpected start: status=%d selected=%+v body=%s", response.Code, selected, response.Body.String())
+	}
+
+	for _, body := range []string{`{"profileIds":[]}`, `{"profileIds":["missing"]}`, `{`} {
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/admin/profiles/test", bytes.NewBufferString(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body=%q status=%d response=%s", body, response.Code, response.Body.String())
+		}
+	}
+	conflict := newProfileTestStartHandler(load, func(map[string]cfg.SSHProfile) (tunnel.ProfileTestBatch, error) {
+		return tunnel.ProfileTestBatch{}, tunnel.ErrProfileTestRunning
+	})
+	response = httptest.NewRecorder()
+	conflict.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/admin/profiles/test", bytes.NewBufferString(`{"profileIds":["jp"]}`)))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("conflict status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestProfileTestStatusHandlerValidationAndLookup(t *testing.T) {
+	handler := newProfileTestStatusHandler(func(testID string) (tunnel.ProfileTestBatch, bool) {
+		if testID != "pt_1" {
+			return tunnel.ProfileTestBatch{}, false
+		}
+		return tunnel.ProfileTestBatch{TestID: testID, Status: "COMPLETED", Total: 1, Completed: 1}, true
+	})
+	tests := []struct {
+		url    string
+		status int
+	}{
+		{url: "/admin/profiles/test/status", status: http.StatusBadRequest},
+		{url: "/admin/profiles/test/status?testId=missing", status: http.StatusNotFound},
+		{url: "/admin/profiles/test/status?testId=pt_1", status: http.StatusOK},
+	}
+	for _, test := range tests {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.url, nil))
+		if response.Code != test.status {
+			t.Fatalf("url=%s status=%d want=%d body=%s", test.url, response.Code, test.status, response.Body.String())
+		}
 	}
 }

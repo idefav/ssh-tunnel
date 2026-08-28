@@ -59,6 +59,7 @@
                         <a href="#proxy-modes" class="list-group-item list-group-item-action">代理模式</a>
                         <a href="#admin-ui" class="list-group-item list-group-item-action">管理界面</a>
                         <a href="#multi-profile" class="list-group-item list-group-item-action">多 Profile 管理</a>
+                        <a href="#profile-health" class="list-group-item list-group-item-action">Profile 节点质量</a>
                         <a href="#standalone-routing" class="list-group-item list-group-item-action">独立路由</a>
                         <a href="#traffic-statistics" class="list-group-item list-group-item-action">流量统计</a>
                         <a href="#connection-pool" class="list-group-item list-group-item-action">SSH 连接池</a>
@@ -273,6 +274,7 @@
                         <li><strong>SSH 状态</strong>：显示 SSH 连接状态、延迟、持久化总体/Profile/直连流量和历史图表</li>
                         <li><strong>连接池管理</strong>：实时查看连接池成员（健康/可疑/探测中/已摘除），支持手动探测、手动摘除指定成员、一键清理已摘除历史</li>
                         <li><strong>多 Profile 管理</strong>：维护多套 SSH 配置，支持动态切换与持久化写入 <code>profiles.json</code></li>
+                        <li><strong>节点质量</strong>：展示最近 24 小时真实访问成功率、平均/P95 建连延迟、连续失败，并支持 SSH 握手与出口手测</li>
                         <li><strong>独立路由</strong>：在 <code>/view/routes</code> 管理域名、IP 通配符和 CIDR 规则，支持固定或随机多 Profile 出口</li>
                         <li><strong>日志查看</strong>：默认加载最近 1000 行历史并继续实时追踪；支持一键清空日志</li>
                         <li><strong>域名列表</strong>：响应式域名过滤列表，支持增删改查</li>
@@ -292,6 +294,28 @@
                     <h2>多 Profile 管理 <span class="badge bg-success">v1.4.18+</span></h2>
                     <p>Multi-Profile 功能允许维护多套 SSH 服务器、账号、私钥和连接池配置。在管理界面 <code>/view/index</code> 的 Profile 卡片中可新增、编辑、复制、删除和切换 Profile。</p>
                     <p>从 v1.5.0 开始，路由不再作为 Profile 的内嵌字段编辑。被任何规则组默认出口或单规则独立出口引用的 Profile 不能删除，需先调整或删除引用。</p>
+                </div>
+
+                <div id="profile-health" class="doc-section">
+                    <h2>Profile 节点质量 <span class="badge bg-success">v1.7.0+</span></h2>
+                    <p>应用配置页的 Profile 表格会根据最近 24 小时真实代理访问，展示 <code>testing</code>、<code>reachable</code>、<code>degraded</code>、<code>unreachable</code>、<code>unknown</code> 五种状态，以及成功率、成功/失败数、连续失败、平均和近似 P95 建连延迟、最近目标与错误。</p>
+
+                    <h3>三种延迟不可混用</h3>
+                    <ul>
+                        <li><strong>访问建连延迟</strong>：代理请求通过某个 Profile 建立目标 TCP 连接的耗时；平均和 P95 只统计成功访问。</li>
+                        <li><strong>SSH 握手延迟</strong>：手动测试建立一次性 SSH 连接的耗时。</li>
+                        <li><strong>出口探测延迟</strong>：通过该一次性 SSH 连接访问 <code>ssh.probe.urls</code>、兼容地址或默认探测地址的耗时。</li>
+                    </ul>
+                    <p>它们都不是纯网络 RTT。HTTP、HTTPS、SOCKS5 和随机路由故障转移会在同一真实建连边界记录，每个候选 Profile 分别统计；直连流量不计入。</p>
+
+                    <h3>按需测试与数据保留</h3>
+                    <ul>
+                        <li>每行“测试”测试单个 Profile，“测试全部”测试整个列表；批次内部最多并发 3 个节点，服务同时只运行一个批次。</li>
+                        <li>测试不会切换活动 Profile，不会加入连接池或被动成功率，完成后立即关闭 SSH 连接。</li>
+                        <li>健康分钟桶和最新状态保存在现有 <code>traffic.db</code>，有效窗口为 24 小时；无样本或样本过期显示未知。</li>
+                        <li>服务器、端口、用户、私钥路径改变或 Profile 被删除时，会清除对应旧健康数据。</li>
+                    </ul>
+                    <p>接口包括 <code>GET /admin/profiles/health</code>、<code>POST /admin/profiles/test</code> 和 <code>GET /admin/profiles/test/status?testId=...</code>。参见 <a href="config-api.md">配置 API</a> 和 <a href="features/profile-health-v1.7.md">完整功能说明</a>。</p>
                 </div>
 
                 <div id="standalone-routing" class="doc-section">

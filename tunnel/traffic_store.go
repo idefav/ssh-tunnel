@@ -129,16 +129,20 @@ type TrafficHistory struct {
 }
 
 type TrafficStore struct {
-	db          *bolt.DB
-	location    *time.Location
-	lifecycleMu sync.RWMutex
-	flushMu     sync.Mutex
-	totals      sync.Map // map[string]*trafficCounter
-	pending     sync.Map // map[trafficHourKey]*trafficCounter
-	samplesMu   sync.Mutex
-	samples     map[string]trafficSpeedSample
-	closed      atomic.Bool
-	lastClean   time.Time
+	db            *bolt.DB
+	location      *time.Location
+	lifecycleMu   sync.RWMutex
+	flushMu       sync.Mutex
+	totals        sync.Map // map[string]*trafficCounter
+	pending       sync.Map // map[trafficHourKey]*trafficCounter
+	samplesMu     sync.Mutex
+	samples       map[string]trafficSpeedSample
+	closed        atomic.Bool
+	lastClean     time.Time
+	healthMu      sync.Mutex
+	healthPending map[profileHealthMinuteKey]profileHealthMinuteValue
+	healthLatest  map[string]profileHealthLatestValue
+	healthDirty   map[string]bool
 }
 
 func OpenTrafficStore() (*TrafficStore, error) {
@@ -162,9 +166,12 @@ func openTrafficStoreAt(dbPath string, location *time.Location) (*TrafficStore, 
 		return nil, fmt.Errorf("设置流量数据库权限失败(%s): %w", dbPath, err)
 	}
 	store := &TrafficStore{
-		db:       db,
-		location: location,
-		samples:  make(map[string]trafficSpeedSample),
+		db:            db,
+		location:      location,
+		samples:       make(map[string]trafficSpeedSample),
+		healthPending: make(map[profileHealthMinuteKey]profileHealthMinuteValue),
+		healthLatest:  make(map[string]profileHealthLatestValue),
+		healthDirty:   make(map[string]bool),
 	}
 	if err := store.initialize(); err != nil {
 		_ = db.Close()
@@ -178,7 +185,13 @@ func (s *TrafficStore) initialize() error {
 		if _, err := tx.CreateBucketIfNotExists(trafficTotalsBucket); err != nil {
 			return err
 		}
-		_, err := tx.CreateBucketIfNotExists(trafficHourlyBucket)
+		if _, err := tx.CreateBucketIfNotExists(trafficHourlyBucket); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists(profileHealthMinuteBucket); err != nil {
+			return err
+		}
+		_, err := tx.CreateBucketIfNotExists(profileHealthLatestBucket)
 		return err
 	}); err != nil {
 		return fmt.Errorf("初始化流量数据库失败: %w", err)
@@ -194,6 +207,9 @@ func (s *TrafficStore) initialize() error {
 			return nil
 		})
 	}); err != nil {
+		return err
+	}
+	if err := s.loadProfileHealthLatest(); err != nil {
 		return err
 	}
 	s.counterForScope(trafficScopeAll)
@@ -330,7 +346,8 @@ func (s *TrafficStore) flushLocked(now time.Time) error {
 		}
 		return true
 	})
-	if len(deltas) == 0 {
+	healthDeltas, healthLatest := s.takeProfileHealthPending()
+	if len(deltas) == 0 && len(healthDeltas) == 0 && len(healthLatest) == 0 {
 		if s.lastClean.IsZero() || now.Sub(s.lastClean) >= 24*time.Hour {
 			return s.cleanupLocked(now)
 		}
@@ -368,13 +385,14 @@ func (s *TrafficStore) flushLocked(now time.Time) error {
 				return err
 			}
 		}
-		return nil
+		return persistProfileHealth(tx, healthDeltas, healthLatest)
 	}); err != nil {
 		for key, delta := range deltas {
 			counter := s.pendingCounter(key)
 			counter.upload.Add(delta.UploadBytes)
 			counter.download.Add(delta.DownloadBytes)
 		}
+		s.restoreProfileHealthPending(healthDeltas, healthLatest)
 		return fmt.Errorf("持久化流量统计失败: %w", err)
 	}
 	if s.lastClean.IsZero() || now.Sub(s.lastClean) >= 24*time.Hour {
@@ -420,6 +438,24 @@ func (s *TrafficStore) cleanupLocked(now time.Time) error {
 		}
 		for _, key := range expired {
 			if err := bucket.Delete(key); err != nil {
+				return err
+			}
+		}
+		healthCutoff := localMinuteStart(now.Add(-profileHealthRetention), s.location).Unix()
+		healthBucket := tx.Bucket(profileHealthMinuteBucket)
+		healthCursor := healthBucket.Cursor()
+		expired = expired[:0]
+		for key, _ := healthCursor.First(); key != nil; key, _ = healthCursor.Next() {
+			if len(key) < 8 {
+				continue
+			}
+			minute := int64(binary.BigEndian.Uint64(key[len(key)-8:]))
+			if minute < healthCutoff {
+				expired = append(expired, append([]byte(nil), key...))
+			}
+		}
+		for _, key := range expired {
+			if err := healthBucket.Delete(key); err != nil {
 				return err
 			}
 		}

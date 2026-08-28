@@ -138,6 +138,7 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 - 🧰 **路由批量管理** - 支持跨组多选、搜索筛选、批量迁移到现有/新规则组、继承切换、统一独立出口及批量启停 🆕
 - 📁 **进程信息** - 显示程序执行路径和工作目录，便于故障排查
 - 📶 **持久化流量统计** - SSH 状态页展示总体、各 Profile 与直连的实时/累计流量及 24 小时、7 天、30 天、按月历史；重启不丢累计 🆕
+- 📊 **Profile 节点质量** - 配置页展示近 24 小时真实访问成功率、平均/P95 建连延迟、连续失败，并支持单节点或全部节点手动测试 SSH 握手和出口延迟 🆕
 - 🔢 **连接统计** - SSH状态页新增当前SSH连接数与累计重连次数展示 🆕
 - ♻️ **计数清零** - SSH状态页支持一键清零重连次数，便于分阶段观测 🆕
 - 🏊 **连接池管理** - SSH状态页展示连接池成员状态（健康/可疑/探测中/已摘除），支持手动探测指定成员 🆕
@@ -172,6 +173,7 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 - `fixed` 必须选择一个 Profile；`random` 至少选择两个不同 Profile。随机出口在每个新 TCP 连接上重新打乱目标，并在失败时依次尝试，全部失败后不会回退默认 Profile。
 - v1 平铺 `routes.json` 和旧 `profiles.json` 中的 `domainRoutes` 会自动迁入确定 ID 的“未分组（自动迁移）”，每条旧规则保留独立出口，升级前后路由行为不变。
 - 流量累计与最近 365 天小时历史保存在同目录的 `traffic.db`。数据库基于纯 Go 的 [bbolt v1.4.3](https://github.com/etcd-io/bbolt/blob/v1.4.3/README.md)（[Go 版本声明](https://github.com/etcd-io/bbolt/blob/v1.4.3/go.mod)），每 5 秒批量刷盘，正常停止时强制同步。
+- v1.7.0 在同一数据库中增加最近 24 小时 Profile 健康桶：真实访问统计成功率、平均/P95 建连延迟和连续失败；手动测试单独报告 SSH 握手与出口探测耗时。直连请求不会污染 Profile 数据。
 
 ### v1.5.0 从旧版本升级
 
@@ -192,6 +194,10 @@ Usage of ./bin/ssh-tunnel-amd64-darwin:
 ### v1.6.1 批量管理升级
 
 v1.6.1 继续使用版本 2 `routes.json`，无需迁移配置。升级后可直接在路由页跨组选择规则，并批量迁移、切换继承方式、统一独立出口或启停；“取消继承并保持当前出口”会固化操作前的实际出口，避免迁移时意外改变流量路径。
+
+### v1.7.0 Profile 节点质量升级
+
+v1.7.0 无需迁移 `profiles.json` 或 `routes.json`。启动后会在现有 `traffic.db` 自动创建健康统计桶；访问配置页即可查看五种节点状态和最近 24 小时指标，并可按需测试单节点或全部节点。指标定义、状态规则和 API 见 [`docs/features/profile-health-v1.7.md`](docs/features/profile-health-v1.7.md)。
 
 ## SSH快速重连参数（建议）
 
@@ -345,6 +351,12 @@ win+r 输入 services.svc 打开服务管理窗口
 
 ### 最近更新 🆕
 
+#### 2026-08-28 (v1.7.0)
+- ✅ Profile 列表新增可用、异常、不通、未知、测试中五种状态
+- ✅ 统计最近 24 小时真实访问成功率、平均/P95 建连延迟、连续失败和最近错误
+- ✅ 支持单节点/全部节点手测，分别展示 SSH 握手和出口探测耗时
+- ✅ 新增三个管理 API，健康数据持久化到现有 `traffic.db`
+
 #### 2026-08-28 (v1.6.1)
 - ✅ 路由页新增跨组多选、组内/全页筛选结果全选及半选状态
 - ✅ 支持批量迁移到现有组或原子创建新组、切换继承方式、统一独立出口及批量启停
@@ -436,6 +448,7 @@ ssh-tunnel/
 
 - [进程信息功能](docs/features/process-info-feature.md) - 新增的进程信息显示功能
 - [服务重启功能](docs/features/restart-service-feature.md) - 服务重启功能说明
+- [Profile 节点质量](docs/features/profile-health-v1.7.md) - 24 小时真实访问统计、状态与手动测试
 - [多平台部署](docs/setup/MULTIPLATFORM_SERVICE_SETUP.md) - Windows/macOS/Linux服务部署
 - [测试脚本使用](scripts/test/README.md) - 测试脚本使用说明
 - [日志清理功能](docs/features/) - 日志文件内容清理功能 🆕

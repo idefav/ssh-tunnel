@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"ssh-tunnel/cfg"
 	"ssh-tunnel/safe"
 	"strconv"
@@ -16,9 +17,11 @@ import (
 
 // ProfileTunnelManager manages per-profile Tunnel instances for standalone routing rules.
 type ProfileTunnelManager struct {
-	mu      sync.RWMutex
-	tunnels map[string]*profileTunnelEntry
-	matcher *RouteMatcher
+	mu         sync.RWMutex
+	tunnels    map[string]*profileTunnelEntry
+	identities map[string]string
+	matcher    *RouteMatcher
+	store      *TrafficStore
 }
 
 type profileTunnelEntry struct {
@@ -28,11 +31,16 @@ type profileTunnelEntry struct {
 	profile cfg.SSHProfile
 }
 
-func NewProfileTunnelManager(matcher *RouteMatcher) *ProfileTunnelManager {
-	return &ProfileTunnelManager{
-		tunnels: make(map[string]*profileTunnelEntry),
-		matcher: matcher,
+func NewProfileTunnelManager(matcher *RouteMatcher, stores ...*TrafficStore) *ProfileTunnelManager {
+	manager := &ProfileTunnelManager{
+		tunnels:    make(map[string]*profileTunnelEntry),
+		identities: make(map[string]string),
+		matcher:    matcher,
 	}
+	if len(stores) > 0 {
+		manager.store = stores[0]
+	}
+	return manager
 }
 
 // StartProfileTunnel creates and starts a Tunnel for the given profile.
@@ -50,6 +58,7 @@ func (ptm *ProfileTunnelManager) StartProfileTunnel(parentCtx context.Context, p
 	if err != nil {
 		return fmt.Errorf("failed to create tunnel for profile %s: %w", profileID, err)
 	}
+	t.trafficStore = ptm.store
 
 	ctx, cancel := context.WithCancel(parentCtx)
 	t.SetTunnelContext(ctx)
@@ -123,6 +132,10 @@ func (ptm *ProfileTunnelManager) StopAll() {
 // starting/stopping tunnels as needed.
 func (ptm *ProfileTunnelManager) ReloadProfiles(parentCtx context.Context, profiles map[string]cfg.SSHProfile, activeProfileID string, rules []cfg.EffectiveRoute) {
 	ptm.mu.Lock()
+	ptm.identities = make(map[string]string, len(profiles))
+	for id, profile := range profiles {
+		ptm.identities[id] = cfg.SSHProfileConnectionFingerprint(profile)
+	}
 
 	targeted := make(map[string]bool)
 	for _, rule := range rules {
@@ -159,6 +172,12 @@ func (ptm *ProfileTunnelManager) ReloadProfiles(parentCtx context.Context, profi
 	if ptm.matcher != nil {
 		ptm.matcher.LoadRoutes(rules)
 	}
+}
+
+func (ptm *ProfileTunnelManager) ProfileIdentity(profileID string) string {
+	ptm.mu.RLock()
+	defer ptm.mu.RUnlock()
+	return ptm.identities[profileID]
 }
 
 func sameProfileConnection(left, right cfg.SSHProfile) bool {
@@ -243,6 +262,7 @@ func (ptm *ProfileTunnelManager) EvictMemberByID(memberID uint64) bool {
 func newProfileTunnel(profileID string, profile cfg.SSHProfile) (*Tunnel, error) {
 	t := &Tunnel{}
 	t.profileID = profileID
+	t.profileIdentity = cfg.SSHProfileConnectionFingerprint(profile)
 	t.enableHttpOverSSH = true // Profile tunnels are always SSH-capable
 	t.serverAddress = profile.ServerIp + ":" + strconv.Itoa(profile.ServerSshPort)
 	t.user = profile.LoginUser
@@ -288,6 +308,14 @@ func newProfileTunnel(profileID string, profile cfg.SSHProfile) (*Tunnel, error)
 // CreateSSHConnForProfile creates an SSH connection through the profile's tunnel.
 // This is the entry point used by getDestConn for routed requests.
 func (ptm *ProfileTunnelManager) CreateSSHConnForProfile(profileID string, host string, retryState *requestRetryState) (destinationConn, error) {
+	return ptm.createSSHConnForProfile(profileID, host, retryState, false)
+}
+
+func (ptm *ProfileTunnelManager) createSSHConnForProfileUntracked(profileID string, host string, retryState *requestRetryState) (destinationConn, error) {
+	return ptm.createSSHConnForProfile(profileID, host, retryState, true)
+}
+
+func (ptm *ProfileTunnelManager) createSSHConnForProfile(profileID string, host string, retryState *requestRetryState, untracked bool) (destinationConn, error) {
 	ptm.mu.RLock()
 	entry, ok := ptm.tunnels[profileID]
 	ptm.mu.RUnlock()
@@ -301,7 +329,16 @@ func (ptm *ProfileTunnelManager) CreateSSHConnForProfile(profileID string, host 
 		retryState = t.newRequestRetryState()
 	}
 
-	conn, client, generation, memberID, retryInfo, err := t.createSSHConn(host, retryState)
+	var conn net.Conn
+	var client *ssh.Client
+	var generation, memberID uint64
+	var retryInfo SSHRetryInfo
+	var err error
+	if untracked {
+		conn, client, generation, memberID, retryInfo, err = t.createSSHConnUntracked(host, retryState)
+	} else {
+		conn, client, generation, memberID, retryInfo, err = t.createSSHConn(host, retryState)
+	}
 	dest := destinationConn{
 		conn:        conn,
 		sshClient:   client,

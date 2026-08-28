@@ -296,7 +296,7 @@ func domainFilterFileWatcher(filePath string, tunnel *Tunnel) error {
 // initProfileRouting sets up the route matcher and starts profile tunnels targeted by enabled rules.
 func initProfileRouting(ctx context.Context, config *cfg.AppConfig) error {
 	matcher := NewRouteMatcher()
-	mgr := NewProfileTunnelManager(matcher)
+	mgr := NewProfileTunnelManager(matcher, DefaultSshTunnel.trafficStore)
 	DefaultSshTunnel.routeMatcher = matcher
 	DefaultSshTunnel.profileTunnelMgr = mgr
 
@@ -313,6 +313,9 @@ func initProfileRouting(ctx context.Context, config *cfg.AppConfig) error {
 		activeID = cfg.DEFAULT_PROFILE_ID
 	}
 	DefaultSshTunnel.profileID = activeID
+	if activeProfile, ok := store.Profiles[activeID]; ok {
+		DefaultSshTunnel.profileIdentity = cfg.SSHProfileConnectionFingerprint(activeProfile)
+	}
 	for profileID := range store.Profiles {
 		DefaultSshTunnel.trafficStore.EnsureProfile(profileID)
 	}
@@ -340,6 +343,9 @@ func (t *Tunnel) ReloadProfileRouting(config *cfg.AppConfig) error {
 		activeID = cfg.DEFAULT_PROFILE_ID
 	}
 	t.profileID = activeID
+	if activeProfile, ok := store.Profiles[activeID]; ok {
+		t.profileIdentity = cfg.SSHProfileConnectionFingerprint(activeProfile)
+	}
 	if t.trafficStore != nil {
 		for profileID := range store.Profiles {
 			t.trafficStore.EnsureProfile(profileID)

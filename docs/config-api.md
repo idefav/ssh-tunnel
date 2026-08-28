@@ -30,12 +30,19 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 | 接口 | 方法 | 描述 | 参数 |
 |------|------|------|------|
 | `/admin/profiles` | GET | 获取 Profile 列表与当前激活 Profile | 无 |
+| `/admin/profiles/health` | GET | 获取各 Profile 最近 24 小时访问质量、状态、连接池与最后手测结果 | 无 |
+| `/admin/profiles/test` | POST | 异步手测一个或多个 Profile | JSON: `profileIds`（非空数组） |
+| `/admin/profiles/test/status` | GET | 查询手测批次与逐 Profile 结果 | Query: `testId` |
 | `/admin/profiles/upsert` | POST | 新增或更新 Profile | JSON: `profileId`, `profile` |
 | `/admin/profiles/switch` | POST | 切换当前激活 Profile 并触发重连 | JSON: `targetProfileId` |
 | `/admin/profiles/switch/status` | GET | 查询最近一次或指定 switchId 的切换状态 | Query: `switchId`(可选) |
 | `/admin/profiles/delete` | POST | 删除指定 Profile（不可删除当前激活） | JSON: `profileId` |
 
 > 说明：Profile 保存后会同时写入配置键 `profiles.json` 与文件 `profiles.json`（美化格式，便于人工查看和维护）。
+
+健康统计使用真实代理请求的目标建连结果，分别累计成功/失败、成功率、平均建连延迟、近似 P95、连续失败和最近错误。手动测试会建立一次性 SSH 连接并通过 `ssh.probe.urls`（或兼容/默认探测地址）验证出口，返回 `sshHandshakeLatencyMs` 与 `egressProbeLatencyMs`；它不会切换活动 Profile，也不会计入真实访问成功率。健康桶保存在现有 `traffic.db`，保留 24 小时；无新样本或样本过期时状态为 `unknown`。
+
+`POST /admin/profiles/test` 成功返回 HTTP 202、`testId` 和 `RUNNING` 批次。服务同时只运行一个批次，重复启动返回 409；批次内部最多并发测试 3 个 Profile。单项状态为 `pending`、`running`、`completed` 或 `failed`。
 
 `domainRoutes` 不再由 Profile API 编辑。旧文件中的该字段只在启动迁移时读取；完成迁移后规则写入 `routes.json` 的自动迁移组并清理旧字段。被任意规则组默认出口或单规则独立出口引用的 Profile 不允许删除，冲突响应会返回 `referencingGroupIds` 和 `referencingRouteIds`。
 

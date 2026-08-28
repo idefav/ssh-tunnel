@@ -52,6 +52,9 @@
                 <small class="text-muted" id="profileSwitchStatusText">切换状态：未执行</small>
             </div>
             <div class="btn-group" role="group">
+                <button class="btn btn-sm btn-outline-success" type="button" id="testAllProfilesBtn">
+                    <i class="bi bi-activity"></i> 测试全部
+                </button>
                 <button class="btn btn-sm btn-primary" type="button" id="openCreateProfileBtn">
                     <i class="bi bi-plus-circle"></i> 新增 Profile
                 </button>
@@ -64,18 +67,20 @@
             <div class="row">
                 <div class="col-12">
                     <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0">
+                        <table class="table table-sm table-hover mb-0 align-middle" style="min-width: 1180px;">
                             <thead>
                             <tr>
-                                <th style="width: 25%">Profile ID</th>
-                                <th style="width: 20%">SSH用户</th>
-                                <th style="width: 30%">目标地址</th>
-                                <th style="width: 25%">操作</th>
+                                <th style="width: 14%">Profile ID</th>
+                                <th style="width: 10%">SSH用户</th>
+                                <th style="width: 15%">目标地址</th>
+                                <th style="width: 12%">状态</th>
+                                <th style="width: 27%">近 24 小时访问质量</th>
+                                <th style="width: 22%">操作</th>
                             </tr>
                             </thead>
                             <tbody id="profilesTableBody">
                             <tr>
-                                <td colspan="4" class="text-muted">正在加载...</td>
+                                <td colspan="6" class="text-muted">正在加载...</td>
                             </tr>
                             </tbody>
                         </table>
@@ -427,6 +432,10 @@
         </div>    </div>    <script>
         // 页面加载时检查运行模式
         let profilesStore = { activeProfileId: '', profiles: {} };
+        let profileHealthStore = {};
+        let profileTestProgress = {};
+        let currentProfileTestId = '';
+        let profileHealthTimer = null;
         let currentSwitchId = '';
         let profileModalMode = 'create';
         let profileModalOriginalId = '';
@@ -452,6 +461,7 @@
             checkRunningMode();
             loadProfiles();
             loadSwitchStatus();
+            startProfileHealthRefresh();
         });
 
         // 检查运行模式
@@ -501,11 +511,33 @@
                     return;
                 }
                 profilesStore = result.data || { activeProfileId: '', profiles: {} };
+                await loadProfileHealth(false);
                 renderProfilesTable();
             } catch (error) {
                 console.error('加载profiles失败:', error);
                 showToast('error', '加载 profiles 失败：' + error.message);
             }
+        }
+
+        async function loadProfileHealth(render = true) {
+            try {
+                const response = await fetch('/admin/profiles/health', { method: 'GET' });
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    return;
+                }
+                profileHealthStore = (result.data && result.data.profiles) || {};
+                if (render) renderProfilesTable();
+            } catch (error) {
+                console.error('加载Profile健康统计失败:', error);
+            }
+        }
+
+        function startProfileHealthRefresh() {
+            if (profileHealthTimer) clearInterval(profileHealthTimer);
+            profileHealthTimer = setInterval(() => {
+                if (!document.hidden) loadProfileHealth();
+            }, 5000);
         }
 
         function renderSwitchStatus(statusData) {
@@ -588,9 +620,18 @@
             const tbody = document.getElementById('profilesTableBody');
             const profiles = profilesStore.profiles || {};
             const profileIds = Object.keys(profiles);
+			const batchRunning = Object.values(profileTestProgress || {}).some(item => item && (item.status === 'pending' || item.status === 'running'))
+				|| Object.values(profileHealthStore || {}).some(item => item && item.status === 'testing');
+			const testAllBtn = document.getElementById('testAllProfilesBtn');
+			if (testAllBtn) {
+				testAllBtn.disabled = batchRunning || profileIds.length === 0;
+				testAllBtn.innerHTML = batchRunning
+					? '<span class="spinner-border spinner-border-sm me-1"></span>测试中'
+					: '<i class="bi bi-activity"></i> 测试全部';
+			}
 
             if (profileIds.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-muted">暂无 profile</td></tr>';
+				tbody.innerHTML = '<tr><td colspan="6" class="text-muted">暂无 profile</td></tr>';
                 return;
             }
 
@@ -598,6 +639,9 @@
             profileIds.forEach(profileId => {
                 const profile = profiles[profileId] || {};
                 const isActive = profileId === profilesStore.activeProfileId;
+				const health = profileHealthStore[profileId] || { status: 'unknown', windowHours: 24, pool: {} };
+				const progress = profileTestProgress[profileId];
+				const effectiveStatus = progress && (progress.status === 'pending' || progress.status === 'running') ? 'testing' : health.status;
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>
@@ -607,17 +651,89 @@
                     <td><small>${escapeHtml(profile.loginUser || '-')}</small></td>
                     <td><small>${escapeHtml(profile.serverIp || '-')} : ${profile.serverSshPort || '-'}</small></td>
                     <td>
-                        <button class="btn btn-sm btn-outline-primary me-1" onclick="fillProfileForm('${escapeAttr(profileId)}')">编辑</button>
-                        <button class="btn btn-sm btn-outline-info me-1" onclick="copyProfile('${escapeAttr(profileId)}')">复制</button>
+						${renderProfileStatus(effectiveStatus, health)}
+					</td>
+					<td>
+						${renderProfileQuality(health, progress)}
+					</td>
+					<td>
+						<div class="d-flex flex-wrap gap-1">
+						<button class="btn btn-sm btn-outline-success" onclick="testProfile('${escapeAttr(profileId)}')" ${batchRunning ? 'disabled' : ''}><i class="bi bi-activity"></i> 测试</button>
+						<button class="btn btn-sm btn-outline-primary" onclick="fillProfileForm('${escapeAttr(profileId)}')">编辑</button>
+						<button class="btn btn-sm btn-outline-info" onclick="copyProfile('${escapeAttr(profileId)}')">复制</button>
                         <button class="btn btn-sm ${isActive ? 'btn-secondary' : 'btn-outline-success'}" 
                             onclick="switchProfile('${escapeAttr(profileId)}')" ${isActive ? 'disabled' : ''}>切换</button>
-                        <button class="btn btn-sm btn-outline-danger ms-1"
+						<button class="btn btn-sm btn-outline-danger"
                             onclick="deleteProfile('${escapeAttr(profileId)}')" ${isActive ? 'disabled' : ''}>删除</button>
+						</div>
                     </td>
                 `;
                 tbody.appendChild(row);
             });
         }
+
+		function renderProfileStatus(status, health) {
+			const definitions = {
+				testing: { label: '测试中', className: 'bg-primary', icon: 'bi-arrow-repeat' },
+				reachable: { label: '可用', className: 'bg-success', icon: 'bi-check-circle' },
+				degraded: { label: '异常', className: 'bg-warning text-dark', icon: 'bi-exclamation-triangle' },
+				unreachable: { label: '不通', className: 'bg-danger', icon: 'bi-x-circle' },
+				unknown: { label: '未知', className: 'bg-secondary', icon: 'bi-question-circle' }
+			};
+			const item = definitions[status] || definitions.unknown;
+			const pool = health.pool || {};
+			const poolIssues = (pool.suspect || 0) + (pool.probing || 0) + (pool.reconnecting || 0);
+			const poolText = (pool.healthy || poolIssues || pool.evicted)
+				? `SSH池 健康 ${pool.healthy || 0} / 异常 ${poolIssues}${pool.evicted ? ` / 摘除 ${pool.evicted}` : ''}`
+				: 'SSH池 未运行';
+			return `<span class="badge ${item.className}"><i class="bi ${item.icon} me-1"></i>${item.label}</span><div class="small text-muted mt-1">${poolText}</div>`;
+		}
+
+		function formatHealthLatency(value) {
+			const numeric = Number(value);
+			if (!Number.isFinite(numeric) || numeric < 0) return '--';
+			return `${numeric < 10 ? numeric.toFixed(1) : Math.round(numeric)} ms`;
+		}
+
+		function formatHealthTime(value) {
+			if (!value) return '--';
+			const date = new Date(value);
+			if (Number.isNaN(date.getTime())) return '--';
+			return date.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+		}
+
+		function renderProfileQuality(health, progress) {
+			const sampleCount = Number(health.sampleCount || 0);
+			const accessLine = Number(health.successCount || 0) > 0
+				? `访问 平均 ${formatHealthLatency(health.avgDialLatencyMs)} / P95≈${formatHealthLatency(health.p95DialLatencyMs)}`
+				: (sampleCount > 0 ? '访问 暂无成功延迟样本' : '访问 暂无样本');
+			const successLine = sampleCount > 0
+				? `成功率 ${Number(health.successRate || 0).toFixed(1)}%（${health.successCount || 0} 成功 / ${health.failureCount || 0} 失败） · 连败 ${health.consecutiveFailures || 0}`
+				: '成功率 --';
+			const manual = health.lastManualTest || {};
+			const hasEgressLatency = Object.prototype.hasOwnProperty.call(manual, 'egressProbeLatencyMs');
+			const manualLine = manual.completedAt
+				? `手测 SSH ${formatHealthLatency(manual.sshHandshakeLatencyMs)} / 出口 ${hasEgressLatency ? formatHealthLatency(manual.egressProbeLatencyMs) : '--'}`
+				: '手测 尚未执行';
+			const access = health.lastAccess || {};
+			let latestAt = access.at || '';
+			let latestTarget = access.target || '';
+			let latestError = access.error || '';
+			if (manual.completedAt && (!latestAt || new Date(manual.completedAt) > new Date(latestAt))) {
+				latestAt = manual.completedAt;
+				latestTarget = manual.probeTarget || '手动出口探测';
+				latestError = manual.error || '';
+			}
+			if (progress && progress.status === 'failed') latestError = progress.error || latestError;
+			const errorLine = latestError
+				? `<div class="small text-danger text-truncate" style="max-width:360px" title="${escapeHtml(latestError)}"><i class="bi bi-exclamation-circle me-1"></i>${escapeHtml(latestError)}</div>`
+				: '';
+			return `<div class="small fw-medium">${accessLine}</div>
+				<div class="small text-muted">${successLine}</div>
+				<div class="small text-muted">${manualLine}</div>
+				<div class="small text-muted text-truncate" style="max-width:360px" title="${escapeHtml(latestTarget)}">最近 ${formatHealthTime(latestAt)}${latestTarget ? ` · ${escapeHtml(latestTarget)}` : ''}</div>
+				${errorLine}`;
+		}
 
         function escapeHtml(text) {
             if (text === null || text === undefined) return '';
@@ -725,6 +841,72 @@
                 showToast('error', '切换 profile 失败：' + error.message);
             }
         }
+
+		async function startProfileTests(profileIds) {
+			if (!Array.isArray(profileIds) || profileIds.length === 0) return;
+			try {
+				const response = await fetch('/admin/profiles/test', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ profileIds })
+				});
+				const result = await response.json();
+				if (!response.ok || !result.success) {
+					showToast('error', result.message || '启动 Profile 测试失败');
+					return;
+				}
+				currentProfileTestId = result.testId || '';
+				profileTestProgress = (result.data && result.data.results) || {};
+				renderProfilesTable();
+				showToast('info', `已开始测试 ${profileIds.length} 个 Profile`);
+				await pollProfileTest(currentProfileTestId);
+			} catch (error) {
+				console.error('启动Profile测试失败:', error);
+				showToast('error', '启动 Profile 测试失败：' + error.message);
+			}
+		}
+
+		async function pollProfileTest(testId) {
+			if (!testId) return;
+			let attempts = 0;
+			while (currentProfileTestId === testId && attempts < 180) {
+				try {
+					const response = await fetch(`/admin/profiles/test/status?testId=${encodeURIComponent(testId)}`);
+					const result = await response.json();
+					if (!response.ok || !result.success) {
+						throw new Error(result.message || '读取测试状态失败');
+					}
+					const batch = result.data || {};
+					profileTestProgress = batch.results || {};
+					await loadProfileHealth(false);
+					renderProfilesTable();
+					if (batch.status === 'COMPLETED') {
+						currentProfileTestId = '';
+						const failures = Object.values(profileTestProgress).filter(item => item && item.status === 'failed').length;
+						showToast(failures ? 'info' : 'success', failures ? `测试完成，${failures} 个 Profile 不通` : '全部 Profile 测试通过');
+						return;
+					}
+				} catch (error) {
+					console.error('读取Profile测试状态失败:', error);
+				}
+				attempts++;
+				await new Promise(resolve => setTimeout(resolve, 1000));
+			}
+			if (currentProfileTestId === testId) {
+				currentProfileTestId = '';
+				showToast('error', 'Profile 测试状态等待超时');
+				renderProfilesTable();
+			}
+		}
+
+		function testProfile(profileId) {
+			startProfileTests([profileId]);
+		}
+
+		function testAllProfiles() {
+			const profileIds = Object.keys(profilesStore.profiles || {});
+			startProfileTests(profileIds);
+		}
 
         async function deleteProfile(profileId) {
             if (!profileId) return;
@@ -848,6 +1030,7 @@
         document.getElementById('clearProfileFormBtn').addEventListener('click', clearProfileForm);
         document.getElementById('openCreateProfileBtn').addEventListener('click', openCreateProfileModal);
         document.getElementById('reloadProfilesBtn').addEventListener('click', loadProfiles);
+		document.getElementById('testAllProfilesBtn').addEventListener('click', testAllProfiles);
 
         // 搜索功能
         document.getElementById('configSearch').addEventListener('keyup', function() {

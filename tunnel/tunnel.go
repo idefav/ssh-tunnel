@@ -128,8 +128,11 @@ type Tunnel struct {
 	routeMatcher     *RouteMatcher
 	profileTunnelMgr *ProfileTunnelManager
 	profileID        string // profileID for this tunnel instance (empty for main tunnel)
+	profileIdentity  string
 	trafficStore     *TrafficStore
 	routeDialer      func(profileID, host string, retryState *requestRetryState) (destinationConn, error)
+	profileTestOnce  sync.Once
+	profileTestMgr   *ProfileTestManager
 }
 
 type ProxyMetrics struct {
@@ -844,7 +847,11 @@ func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (dest
 			if t.routeDialer == nil && profileID != t.profileID {
 				stateTunnel = t.profileTunnelMgr.GetTunnel(profileID)
 				if stateTunnel == nil {
-					failures = append(failures, profileID+": tunnel unavailable")
+					unavailableErr := fmt.Errorf("profile tunnel unavailable")
+					if t.trafficStore != nil {
+						t.trafficStore.RecordProfileAccess(profileID, t.profileTunnelMgr.ProfileIdentity(profileID), host, 0, false, failureClassSSHTransportDead, unavailableErr)
+					}
+					failures = append(failures, profileID+": "+unavailableErr.Error())
 					continue
 				}
 			}
@@ -852,7 +859,19 @@ func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (dest
 			retryState.profileRetryStates[profileID] = profileState
 		}
 
+		dialStartedAt := time.Now()
 		dest, err := t.dialRouteProfile(profileID, host, profileState)
+		if t.trafficStore != nil {
+			identity := t.profileTunnelMgr.ProfileIdentity(profileID)
+			if identity == "" && profileID == t.profileID {
+				identity = t.profileIdentity
+			}
+			failureClass := ""
+			if err != nil {
+				failureClass = t.classifyDialError(err, true)
+			}
+			t.trafficStore.RecordProfileAccess(profileID, identity, host, time.Since(dialStartedAt), err == nil, failureClass, err)
+		}
 		dest.routeID = rule.ID
 		dest.routeGroupID = rule.GroupID
 		dest.routeGroupName = rule.GroupName
@@ -882,14 +901,23 @@ func (t *Tunnel) dialRouteProfile(profileID, host string, retryState *requestRet
 		return t.routeDialer(profileID, host, retryState)
 	}
 	if profileID == t.profileID {
-		conn, client, generation, memberID, retryInfo, err := t.createSSHConn(host, retryState)
+		conn, client, generation, memberID, retryInfo, err := t.createSSHConnUntracked(host, retryState)
 		return destinationConn{conn: conn, sshClient: client, sshMemberID: memberID, profileID: profileID, viaSSH: true, generation: generation, retryInfo: retryInfo}, err
 	}
-	return t.profileTunnelMgr.CreateSSHConnForProfile(profileID, host, retryState)
+	return t.profileTunnelMgr.createSSHConnForProfileUntracked(profileID, host, retryState)
 }
 
 func (t *Tunnel) createSSHConn(host string, retryState *requestRetryState) (net.Conn, *ssh.Client, uint64, uint64, SSHRetryInfo, error) {
 	conn, member, _, reconnectTriggered, retryInfo, err := t.dialSSHConn(context.Background(), host, retryState)
+	return sshConnectionResult(conn, member, reconnectTriggered, retryInfo, err)
+}
+
+func (t *Tunnel) createSSHConnUntracked(host string, retryState *requestRetryState) (net.Conn, *ssh.Client, uint64, uint64, SSHRetryInfo, error) {
+	conn, member, _, reconnectTriggered, retryInfo, err := t.dialSSHConnUntracked(context.Background(), host, retryState)
+	return sshConnectionResult(conn, member, reconnectTriggered, retryInfo, err)
+}
+
+func sshConnectionResult(conn net.Conn, member *SSHPoolMember, reconnectTriggered bool, retryInfo SSHRetryInfo, err error) (net.Conn, *ssh.Client, uint64, uint64, SSHRetryInfo, error) {
 	if err != nil {
 		if reconnectTriggered {
 			return nil, nil, 0, memberID(member), retryInfo, fmt.Errorf("%w: %v", SSHDialError, err)

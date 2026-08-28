@@ -1,6 +1,7 @@
 package cfg
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -44,6 +45,19 @@ type SSHProfile struct {
 type ProfileStore struct {
 	ActiveProfileID string                `json:"activeProfileId"`
 	Profiles        map[string]SSHProfile `json:"profiles"`
+}
+
+// SSHProfileConnectionFingerprint identifies only the fields that change the
+// actual SSH endpoint or credentials. It is stored with runtime health data so
+// an edited/reused profile ID never inherits measurements from another node.
+func SSHProfileConnectionFingerprint(profile SSHProfile) string {
+	value := fmt.Sprintf("%s\x00%d\x00%s\x00%s",
+		strings.TrimSpace(profile.ServerIp),
+		profile.ServerSshPort,
+		strings.TrimSpace(profile.LoginUser),
+		strings.TrimSpace(profile.SshPrivateKeyPath),
+	)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
 }
 
 func defaultProfileFromAppConfig(appConfig *AppConfig) SSHProfile {

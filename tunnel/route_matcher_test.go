@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"ssh-tunnel/cfg"
 	"testing"
+	"time"
 )
 
 func testRoute(id, pattern, routeType string, enabled bool, targets ...string) cfg.EffectiveRoute {
@@ -209,6 +210,50 @@ func TestTryRouteMatch_RandomFailoverAndNoDefaultFallback(t *testing.T) {
 	dest, matched, err = tunnel.tryRouteMatch("random.test", tunnel.newRequestRetryState())
 	if !matched || err == nil || len(attempted) != 3 || dest.profileID == "default" {
 		t.Fatalf("all failures must fail closed: attempted=%v dest=%+v matched=%v err=%v", attempted, dest, matched, err)
+	}
+}
+
+func TestTryRouteMatchRecordsEachProfileCandidateExactlyOnce(t *testing.T) {
+	matcher := NewRouteMatcher()
+	matcher.LoadRoutes([]cfg.EffectiveRoute{{ID: "health-random", GroupID: "group-health", Pattern: "health.test", Type: cfg.RouteTypeDomain, Strategy: cfg.RouteStrategyRandom, TargetProfileIDs: []string{"a", "b", "c"}}})
+	store, _ := newTestTrafficStore(t, time.UTC)
+	manager := NewProfileTunnelManager(matcher, store)
+	manager.identities = map[string]string{"a": "id-a", "b": "id-b", "c": "id-c", "default": "id-default"}
+	tunnel := &Tunnel{routeMatcher: matcher, profileTunnelMgr: manager, profileID: "default", profileIdentity: "id-default", trafficStore: store}
+	var attempted []string
+	tunnel.routeDialer = func(profileID, host string, _ *requestRetryState) (destinationConn, error) {
+		attempted = append(attempted, profileID)
+		if len(attempted) < 3 {
+			return destinationConn{profileID: profileID, viaSSH: true}, errors.New("dial failed")
+		}
+		client, server := net.Pipe()
+		_ = server.Close()
+		return destinationConn{conn: client, profileID: profileID, viaSSH: true}, nil
+	}
+	dest, matched, err := tunnel.tryRouteMatch("health.test:443", tunnel.newRequestRetryState())
+	if err != nil || !matched || len(attempted) != 3 {
+		t.Fatalf("unexpected failover: attempted=%v matched=%v err=%v", attempted, matched, err)
+	}
+	_ = dest.conn.Close()
+
+	summaries, err := store.ProfileHealthSummaries(manager.identities, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, profileID := range attempted {
+		summary := summaries[profileID]
+		if summary.SampleCount != 1 {
+			t.Fatalf("profile %s recorded %d attempts, want exactly one", profileID, summary.SampleCount)
+		}
+		if index < 2 && (summary.FailureCount != 1 || summary.Status != ProfileHealthStatusDegraded) {
+			t.Fatalf("failed candidate %s has unexpected health: %+v", profileID, summary)
+		}
+		if index == 2 && (summary.SuccessCount != 1 || summary.Status != ProfileHealthStatusReachable) {
+			t.Fatalf("successful candidate %s has unexpected health: %+v", profileID, summary)
+		}
+	}
+	if summaries["default"].SampleCount != 0 {
+		t.Fatalf("default/direct profile was incorrectly counted: %+v", summaries["default"])
 	}
 }
 

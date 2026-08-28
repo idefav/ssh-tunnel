@@ -548,6 +548,24 @@ ssh.probe.failure.threshold=2</code></pre>
                             </div>
                         </div>
                     </div>
+
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingThirteen">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThirteen" aria-expanded="false" aria-controls="collapseThirteen">
+                                Profile 节点状态和三种延迟分别代表什么？
+                            </button>
+                        </h2>
+                        <div id="collapseThirteen" class="accordion-collapse collapse" aria-labelledby="headingThirteen" data-bs-parent="#faqAccordion">
+                            <div class="accordion-body">
+                                <ul>
+                                    <li><strong>访问建连</strong>来自真实 HTTP、HTTPS 或 SOCKS5 请求通过 Profile 连接目标服务的耗时。</li>
+                                    <li><strong>SSH 握手</strong>和<strong>出口探测</strong>只在点击 Profile 的“测试”或“测试全部”时产生，分别测量一次性 SSH 连接和通过该连接访问探测地址的耗时。</li>
+                                    <li><strong>可用</strong>表示最新结果成功；<strong>异常</strong>表示连续失败尚未达到阈值；达到阈值或手测失败显示<strong>不通</strong>；无样本或超过 24 小时显示<strong>未知</strong>。</li>
+                                </ul>
+                                <p class="mb-0">三种延迟都不等同于 ICMP 或纯网络 RTT。手动测试不会切换当前 Profile，也不会计入真实访问成功率。</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="mt-5">

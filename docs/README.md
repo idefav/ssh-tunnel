@@ -14,6 +14,7 @@
 - `domain-management-ui-optimization.md` - 域名管理UI优化说明 🆕
 - `multi-profile-switch-design.md` - 多 SSH Profile 动态切换技术方案 🆕
 - `routes-traffic-v1.5.md` - v1.5.0 独立路由与流量、v1.6.0 规则组、v1.6.1 批量编辑及升级说明 🆕
+- `profile-health-v1.7.md` - v1.7.0 Profile 节点质量、24 小时访问统计与手动测试 🆕
 
 ### 📁 setup/
 部署和配置文档
