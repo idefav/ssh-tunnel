@@ -64,9 +64,95 @@
             </div>
         </div>
         <div class="card-body">
+            <div class="profile-list-toolbar mb-3" aria-label="Profile 列表排序与筛选">
+                <div class="profile-list-toolbar-grid">
+                    <div class="profile-list-search">
+                        <label class="form-label small text-muted" for="profileListSearch">搜索</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input class="form-control" id="profileListSearch" type="search"
+                                   placeholder="Profile ID、SSH 用户或目标地址" autocomplete="off">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label small text-muted" for="profileStatusFilterBtn">状态</label>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start"
+                                    id="profileStatusFilterBtn" type="button" data-bs-toggle="dropdown"
+                                    data-bs-auto-close="outside" aria-expanded="false">
+                                全部状态
+                            </button>
+                            <div class="dropdown-menu p-2 profile-status-filter-menu" aria-labelledby="profileStatusFilterBtn">
+                                <div class="form-check">
+                                    <input class="form-check-input profile-status-filter" type="checkbox" value="testing" id="profileStatusTesting">
+                                    <label class="form-check-label" for="profileStatusTesting">测试中</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input profile-status-filter" type="checkbox" value="reachable" id="profileStatusReachable">
+                                    <label class="form-check-label" for="profileStatusReachable">可用</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input profile-status-filter" type="checkbox" value="degraded" id="profileStatusDegraded">
+                                    <label class="form-check-label" for="profileStatusDegraded">异常</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input profile-status-filter" type="checkbox" value="unreachable" id="profileStatusUnreachable">
+                                    <label class="form-check-label" for="profileStatusUnreachable">不通</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input profile-status-filter" type="checkbox" value="unknown" id="profileStatusUnknown">
+                                    <label class="form-check-label" for="profileStatusUnknown">未知</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label small text-muted" for="profileAccessDataFilter">访问数据</label>
+                        <select class="form-select form-select-sm" id="profileAccessDataFilter">
+                            <option value="all">全部</option>
+                            <option value="present">有访问样本</option>
+                            <option value="missing">无访问样本</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label small text-muted" for="profileManualDataFilter">手测数据</label>
+                        <select class="form-select form-select-sm" id="profileManualDataFilter">
+                            <option value="all">全部</option>
+                            <option value="present">已手测</option>
+                            <option value="missing">未手测</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label small text-muted" for="profileSortKey">排序</label>
+                        <select class="form-select form-select-sm" id="profileSortKey">
+                            <option value="quality">综合质量</option>
+                            <option value="status">状态</option>
+                            <option value="successRate">成功率</option>
+                            <option value="avgLatency">访问平均延迟</option>
+                            <option value="p95Latency">访问 P95</option>
+                            <option value="sshLatency">SSH 握手延迟</option>
+                            <option value="egressLatency">出口探测延迟</option>
+                            <option value="recent">最近活动</option>
+                            <option value="profileId">Profile ID</option>
+                        </select>
+                    </div>
+                    <div class="profile-list-direction">
+                        <label class="form-label small text-muted" for="profileSortDirection">方向</label>
+                        <button class="btn btn-sm btn-outline-primary w-100" id="profileSortDirection" type="button">
+                            <i class="bi bi-sort-down me-1"></i><span>好 → 差</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+                    <small class="text-muted" id="profileListResultCount" aria-live="polite">显示 0 / 共 0 个 Profile</small>
+                    <button class="btn btn-sm btn-link text-decoration-none" id="resetProfileListViewBtn" type="button">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>重置排序与筛选
+                    </button>
+                </div>
+            </div>
             <div class="row">
                 <div class="col-12">
-                    <div class="table-responsive">
+                    <div class="table-responsive" id="profilesTableContainer">
                         <table class="table table-sm table-hover mb-0 align-middle" style="min-width: 1180px;">
                             <thead>
                             <tr>
@@ -439,6 +525,30 @@
         let currentSwitchId = '';
         let profileModalMode = 'create';
         let profileModalOriginalId = '';
+        let profileTablePointerInside = false;
+        let pendingProfileTableRender = false;
+        const profileTableRows = new Map();
+        let profileTestSortSnapshot = {};
+        const profileListStorageKey = 'sshTunnel.profileListView.v1';
+        const profileListStatuses = ['testing', 'reachable', 'degraded', 'unreachable', 'unknown'];
+        const profileListSortKeys = ['quality', 'status', 'successRate', 'avgLatency', 'p95Latency', 'sshLatency', 'egressLatency', 'recent', 'profileId'];
+        const profileListDataFilters = ['all', 'present', 'missing'];
+        const profileStatusLabels = {
+            testing: '测试中',
+            reachable: '可用',
+            degraded: '异常',
+            unreachable: '不通',
+            unknown: '未知'
+        };
+        const defaultProfileListView = () => ({
+            query: '',
+            statuses: [...profileListStatuses],
+            accessData: 'all',
+            manualData: 'all',
+            sortKey: 'quality',
+            sortDirection: 'default'
+        });
+        let profileListView = loadProfileListView();
         const currentConfigProfileDefaults = {
             serverIp: {{index .Config "ServerIp"}},
             serverSshPort: {{index .Config "ServerSshPort"}},
@@ -458,6 +568,8 @@
         };
 
         document.addEventListener('DOMContentLoaded', function() {
+            initializeProfileListControls();
+            initializeProfileTableInteractionGuard();
             checkRunningMode();
             loadProfiles();
             loadSwitchStatus();
@@ -616,7 +728,358 @@
             }
         }
 
-        function renderProfilesTable() {
+        function loadProfileListView() {
+            const defaults = defaultProfileListView();
+            try {
+                const parsed = JSON.parse(localStorage.getItem(profileListStorageKey) || '{}');
+                const statuses = Array.isArray(parsed.statuses)
+                    ? [...new Set(parsed.statuses.filter(status => profileListStatuses.includes(status)))]
+                    : defaults.statuses;
+                return {
+                    query: typeof parsed.query === 'string' ? parsed.query : defaults.query,
+                    statuses: statuses.length > 0 ? statuses : defaults.statuses,
+                    accessData: profileListDataFilters.includes(parsed.accessData) ? parsed.accessData : defaults.accessData,
+                    manualData: profileListDataFilters.includes(parsed.manualData) ? parsed.manualData : defaults.manualData,
+                    sortKey: profileListSortKeys.includes(parsed.sortKey) ? parsed.sortKey : defaults.sortKey,
+                    sortDirection: parsed.sortDirection === 'reverse' ? 'reverse' : defaults.sortDirection
+                };
+            } catch (error) {
+                console.warn('读取 Profile 列表视图设置失败，已使用默认值:', error);
+                return defaults;
+            }
+        }
+
+        function saveProfileListView() {
+            try {
+                localStorage.setItem(profileListStorageKey, JSON.stringify(profileListView));
+            } catch (error) {
+                console.warn('保存 Profile 列表视图设置失败:', error);
+            }
+        }
+
+        function initializeProfileListControls() {
+            syncProfileListControls();
+            document.getElementById('profileListSearch').addEventListener('input', function() {
+                profileListView.query = this.value;
+                applyProfileListViewChange();
+            });
+            document.querySelectorAll('.profile-status-filter').forEach(input => {
+                input.addEventListener('change', function() {
+                    let selected = Array.from(document.querySelectorAll('.profile-status-filter:checked')).map(item => item.value);
+                    if (selected.length === 0) {
+                        selected = [...profileListStatuses];
+                        document.querySelectorAll('.profile-status-filter').forEach(item => { item.checked = true; });
+                    }
+                    profileListView.statuses = selected;
+                    applyProfileListViewChange();
+                });
+            });
+            document.getElementById('profileAccessDataFilter').addEventListener('change', function() {
+                profileListView.accessData = this.value;
+                applyProfileListViewChange();
+            });
+            document.getElementById('profileManualDataFilter').addEventListener('change', function() {
+                profileListView.manualData = this.value;
+                applyProfileListViewChange();
+            });
+            document.getElementById('profileSortKey').addEventListener('change', function() {
+                profileListView.sortKey = this.value;
+                profileListView.sortDirection = 'default';
+                applyProfileListViewChange();
+            });
+            document.getElementById('profileSortDirection').addEventListener('click', function() {
+                profileListView.sortDirection = profileListView.sortDirection === 'default' ? 'reverse' : 'default';
+                applyProfileListViewChange();
+            });
+            document.getElementById('resetProfileListViewBtn').addEventListener('click', resetProfileListView);
+        }
+
+        function syncProfileListControls() {
+            document.getElementById('profileListSearch').value = profileListView.query;
+            document.getElementById('profileAccessDataFilter').value = profileListView.accessData;
+            document.getElementById('profileManualDataFilter').value = profileListView.manualData;
+            document.getElementById('profileSortKey').value = profileListView.sortKey;
+            const selectedStatuses = new Set(profileListView.statuses);
+            document.querySelectorAll('.profile-status-filter').forEach(input => {
+                input.checked = selectedStatuses.has(input.value);
+            });
+            updateProfileStatusFilterLabel();
+            updateProfileSortDirectionButton();
+        }
+
+        function applyProfileListViewChange() {
+            saveProfileListView();
+            updateProfileStatusFilterLabel();
+            updateProfileSortDirectionButton();
+            renderProfilesTable({ force: true });
+        }
+
+        function resetProfileListView() {
+            profileListView = defaultProfileListView();
+            syncProfileListControls();
+            saveProfileListView();
+            renderProfilesTable({ force: true });
+        }
+
+        function updateProfileStatusFilterLabel() {
+            const button = document.getElementById('profileStatusFilterBtn');
+            if (!button) return;
+            const statuses = profileListView.statuses;
+            if (statuses.length === profileListStatuses.length) {
+                button.textContent = '全部状态';
+            } else if (statuses.length === 1) {
+                button.textContent = profileStatusLabels[statuses[0]] || '状态';
+            } else {
+                button.textContent = `已选 ${statuses.length} 种状态`;
+            }
+        }
+
+        function updateProfileSortDirectionButton() {
+            const button = document.getElementById('profileSortDirection');
+            if (!button) return;
+            const labels = {
+                quality: ['好 → 差', '差 → 好'],
+                status: ['好 → 差', '差 → 好'],
+                successRate: ['高 → 低', '低 → 高'],
+                avgLatency: ['低 → 高', '高 → 低'],
+                p95Latency: ['低 → 高', '高 → 低'],
+                sshLatency: ['低 → 高', '高 → 低'],
+                egressLatency: ['低 → 高', '高 → 低'],
+                recent: ['新 → 旧', '旧 → 新'],
+                profileId: ['A → Z', 'Z → A']
+            };
+            const reverse = profileListView.sortDirection === 'reverse';
+            const label = (labels[profileListView.sortKey] || labels.quality)[reverse ? 1 : 0];
+            const icon = reverse ? 'bi-sort-up' : 'bi-sort-down';
+            button.innerHTML = `<i class="bi ${icon} me-1"></i><span>${label}</span>`;
+            button.title = `切换排序方向，当前为 ${label}`;
+            button.setAttribute('aria-label', button.title);
+        }
+
+        function initializeProfileTableInteractionGuard() {
+            const container = document.getElementById('profilesTableContainer');
+            if (!container) return;
+            container.addEventListener('pointerenter', () => { profileTablePointerInside = true; });
+            container.addEventListener('pointerleave', () => {
+                profileTablePointerInside = false;
+                flushPendingProfileTableRender();
+            });
+            container.addEventListener('focusout', () => {
+                setTimeout(flushPendingProfileTableRender, 0);
+            });
+        }
+
+        function profileTableInteractionActive() {
+            const container = document.getElementById('profilesTableContainer');
+            return profileTablePointerInside || (container && container.contains(document.activeElement));
+        }
+
+        function flushPendingProfileTableRender() {
+            if (!pendingProfileTableRender || profileTableInteractionActive()) return;
+            pendingProfileTableRender = false;
+            renderProfilesTable({ force: true });
+        }
+
+        function numericOrNull(value) {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : null;
+        }
+
+        function timeOrZero(value) {
+            if (!value) return 0;
+            const timestamp = new Date(value).getTime();
+            return Number.isFinite(timestamp) ? timestamp : 0;
+        }
+
+        function buildProfileListRow(profileId, profile) {
+            const health = profileHealthStore[profileId] || { status: 'unknown', windowHours: 24, pool: {} };
+            const progress = profileTestProgress[profileId];
+            const progressTesting = progress && (progress.status === 'pending' || progress.status === 'running');
+            const effectiveStatus = progressTesting || health.status === 'testing' ? 'testing' : (health.status || 'unknown');
+            let sortHealth = profileTestSortSnapshot[profileId] || health;
+            if (sortHealth.status === 'testing') sortHealth = { ...sortHealth, status: 'unknown' };
+            const sampleCount = Number(sortHealth.sampleCount || 0);
+            const successCount = Number(sortHealth.successCount || 0);
+            const manual = sortHealth.lastManualTest || {};
+            const hasManual = !!manual.completedAt;
+            const lastAccessAt = timeOrZero(sortHealth.lastAccess && sortHealth.lastAccess.at);
+            const lastManualAt = timeOrZero(manual.completedAt);
+            return {
+                profileId,
+                profile,
+                health,
+                progress,
+                effectiveStatus,
+                sortStatus: sortHealth.status || 'unknown',
+                isActive: profileId === profilesStore.activeProfileId,
+                hasAccessSamples: sampleCount > 0,
+                hasSuccessfulAccess: successCount > 0,
+                sampleCount,
+                successCount,
+                successRate: sampleCount > 0 ? numericOrNull(sortHealth.successRate) : null,
+                consecutiveFailures: Number(sortHealth.consecutiveFailures || 0),
+                avgLatency: successCount > 0 ? numericOrNull(sortHealth.avgDialLatencyMs) : null,
+                p95Latency: successCount > 0 ? numericOrNull(sortHealth.p95DialLatencyMs) : null,
+                hasManual,
+                sshLatency: hasManual && Object.prototype.hasOwnProperty.call(manual, 'sshHandshakeLatencyMs')
+                    ? numericOrNull(manual.sshHandshakeLatencyMs) : null,
+                egressLatency: hasManual && Object.prototype.hasOwnProperty.call(manual, 'egressProbeLatencyMs')
+                    ? numericOrNull(manual.egressProbeLatencyMs) : null,
+                manualCompletedAt: lastManualAt,
+                lastActivityAt: Math.max(lastAccessAt, lastManualAt)
+            };
+        }
+
+        function compareNumbers(left, right) {
+            if (left === right) return 0;
+            return left < right ? -1 : 1;
+        }
+
+        function compareOptionalMetric(left, right, ascending, reverse) {
+            const leftPresent = left !== null && left !== undefined;
+            const rightPresent = right !== null && right !== undefined;
+            if (leftPresent !== rightPresent) return leftPresent ? -1 : 1;
+            if (!leftPresent) return 0;
+            let result = compareNumbers(left, right);
+            if (!ascending) result *= -1;
+            if (reverse) result *= -1;
+            return result;
+        }
+
+        function compareQualityCore(left, right) {
+            const statusRank = { reachable: 0, degraded: 1, unknown: 2, unreachable: 3 };
+            let result = compareNumbers(statusRank[left.sortStatus] ?? 2, statusRank[right.sortStatus] ?? 2);
+            if (result !== 0) return result;
+            if (left.hasAccessSamples !== right.hasAccessSamples) return left.hasAccessSamples ? -1 : 1;
+            if (left.hasAccessSamples) {
+                result = compareNumbers(right.successRate ?? 0, left.successRate ?? 0);
+                if (result !== 0) return result;
+                result = compareNumbers(left.consecutiveFailures, right.consecutiveFailures);
+                if (result !== 0) return result;
+                result = compareOptionalMetric(left.p95Latency, right.p95Latency, true, false);
+                if (result !== 0) return result;
+                result = compareOptionalMetric(left.avgLatency, right.avgLatency, true, false);
+                if (result !== 0) return result;
+                return compareNumbers(right.sampleCount, left.sampleCount);
+            }
+            if (left.hasManual !== right.hasManual) return left.hasManual ? -1 : 1;
+            if (left.hasManual) {
+                result = compareOptionalMetric(left.egressLatency, right.egressLatency, true, false);
+                if (result !== 0) return result;
+                result = compareOptionalMetric(left.sshLatency, right.sshLatency, true, false);
+                if (result !== 0) return result;
+                return compareNumbers(right.manualCompletedAt, left.manualCompletedAt);
+            }
+            return 0;
+        }
+
+        function compareProfileListRows(left, right) {
+            const reverse = profileListView.sortDirection === 'reverse';
+            let result = 0;
+            switch (profileListView.sortKey) {
+                case 'status': {
+                    const rank = { testing: 0, reachable: 1, degraded: 2, unknown: 3, unreachable: 4 };
+                    result = compareNumbers(rank[left.effectiveStatus] ?? 3, rank[right.effectiveStatus] ?? 3);
+                    if (reverse) result *= -1;
+                    break;
+                }
+                case 'successRate':
+                    result = compareOptionalMetric(left.hasAccessSamples ? left.successRate : null, right.hasAccessSamples ? right.successRate : null, false, reverse);
+                    break;
+                case 'avgLatency':
+                    result = compareOptionalMetric(left.avgLatency, right.avgLatency, true, reverse);
+                    break;
+                case 'p95Latency':
+                    result = compareOptionalMetric(left.p95Latency, right.p95Latency, true, reverse);
+                    break;
+                case 'sshLatency':
+                    result = compareOptionalMetric(left.sshLatency, right.sshLatency, true, reverse);
+                    break;
+                case 'egressLatency':
+                    result = compareOptionalMetric(left.egressLatency, right.egressLatency, true, reverse);
+                    break;
+                case 'recent':
+                    result = compareOptionalMetric(left.lastActivityAt > 0 ? left.lastActivityAt : null, right.lastActivityAt > 0 ? right.lastActivityAt : null, false, reverse);
+                    break;
+                case 'profileId':
+                    result = left.profileId.localeCompare(right.profileId, 'zh-CN', { numeric: true, sensitivity: 'base' });
+                    if (reverse) result *= -1;
+                    break;
+                case 'quality':
+                default:
+                    result = compareQualityCore(left, right);
+                    if (reverse) result *= -1;
+                    break;
+            }
+            if (result !== 0) return result;
+            if (left.isActive !== right.isActive) return left.isActive ? -1 : 1;
+            return left.profileId.localeCompare(right.profileId, 'zh-CN', { numeric: true, sensitivity: 'base' });
+        }
+
+        function profileRowMatchesFilters(row) {
+            if (!profileListView.statuses.includes(row.effectiveStatus)) return false;
+            if (profileListView.accessData === 'present' && !row.hasAccessSamples) return false;
+            if (profileListView.accessData === 'missing' && row.hasAccessSamples) return false;
+            if (profileListView.manualData === 'present' && !row.hasManual) return false;
+            if (profileListView.manualData === 'missing' && row.hasManual) return false;
+            const query = profileListView.query.trim().toLocaleLowerCase('zh-CN');
+            if (!query) return true;
+            const profile = row.profile || {};
+            const target = `${profile.serverIp || ''}:${profile.serverSshPort || ''}`;
+            return [row.profileId, profile.loginUser, profile.serverIp, profile.serverSshPort, target]
+                .some(value => String(value || '').toLocaleLowerCase('zh-CN').includes(query));
+        }
+
+        function updateProfileTableRow(item, batchRunning) {
+            const { profileId, profile, health, progress, effectiveStatus, isActive } = item;
+            let row = profileTableRows.get(profileId);
+            if (!row) {
+                row = document.createElement('tr');
+                row.dataset.profileId = profileId;
+                row.innerHTML = `
+                    <td data-profile-cell="identity"></td>
+                    <td data-profile-cell="user"></td>
+                    <td data-profile-cell="target"></td>
+                    <td data-profile-cell="status"></td>
+                    <td data-profile-cell="quality"></td>
+                    <td>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button class="btn btn-sm btn-outline-success" type="button" data-profile-action="test" onclick="testProfile('${escapeAttr(profileId)}')"><i class="bi bi-activity"></i> 测试</button>
+                            <button class="btn btn-sm btn-outline-primary" type="button" onclick="fillProfileForm('${escapeAttr(profileId)}')">编辑</button>
+                            <button class="btn btn-sm btn-outline-info" type="button" onclick="copyProfile('${escapeAttr(profileId)}')">复制</button>
+                            <button class="btn btn-sm" type="button" data-profile-action="switch" onclick="switchProfile('${escapeAttr(profileId)}')">切换</button>
+                            <button class="btn btn-sm btn-outline-danger" type="button" data-profile-action="delete" onclick="deleteProfile('${escapeAttr(profileId)}')">删除</button>
+                        </div>
+                    </td>
+                `;
+                profileTableRows.set(profileId, row);
+            }
+
+            row.querySelector('[data-profile-cell="identity"]').innerHTML = `<code>${escapeHtml(profileId)}</code>${isActive ? '<span class="badge bg-success ms-1">当前</span>' : ''}`;
+            row.querySelector('[data-profile-cell="user"]').innerHTML = `<small>${escapeHtml(profile.loginUser || '-')}</small>`;
+            row.querySelector('[data-profile-cell="target"]').innerHTML = `<small>${escapeHtml(profile.serverIp || '-')} : ${escapeHtml(profile.serverSshPort || '-')}</small>`;
+            row.querySelector('[data-profile-cell="status"]').innerHTML = renderProfileStatus(effectiveStatus, health);
+            row.querySelector('[data-profile-cell="quality"]').innerHTML = renderProfileQuality(health, progress);
+
+            const testButton = row.querySelector('[data-profile-action="test"]');
+            const switchButton = row.querySelector('[data-profile-action="switch"]');
+            const deleteButton = row.querySelector('[data-profile-action="delete"]');
+            testButton.disabled = batchRunning;
+            switchButton.disabled = isActive;
+            switchButton.className = `btn btn-sm ${isActive ? 'btn-secondary' : 'btn-outline-success'}`;
+            deleteButton.disabled = isActive;
+            return row;
+        }
+
+        function updateVisibleProfileRowsInPlace(items, batchRunning) {
+            const itemsById = new Map(items.map(item => [item.profileId, item]));
+            document.querySelectorAll('#profilesTableBody tr[data-profile-id]').forEach(row => {
+                const item = itemsById.get(row.dataset.profileId);
+                if (item) updateProfileTableRow(item, batchRunning);
+            });
+        }
+
+        function renderProfilesTable(options = {}) {
             const tbody = document.getElementById('profilesTableBody');
             const profiles = profilesStore.profiles || {};
             const profileIds = Object.keys(profiles);
@@ -630,45 +1093,42 @@
 					: '<i class="bi bi-activity"></i> 测试全部';
 			}
 
+            const allRows = profileIds
+                .map(profileId => buildProfileListRow(profileId, profiles[profileId] || {}));
+            const rows = allRows
+                .filter(profileRowMatchesFilters)
+                .sort(compareProfileListRows);
+
+            if (!options.force && profileTableInteractionActive()) {
+                updateVisibleProfileRowsInPlace(allRows, batchRunning);
+                pendingProfileTableRender = true;
+                return;
+            }
+            pendingProfileTableRender = false;
+
+            const resultCount = document.getElementById('profileListResultCount');
+            if (resultCount) resultCount.textContent = `显示 ${rows.length} / 共 ${profileIds.length} 个 Profile`;
+
+            const currentIds = new Set(profileIds);
+            profileTableRows.forEach((row, profileId) => {
+                if (!currentIds.has(profileId)) profileTableRows.delete(profileId);
+            });
+
             if (profileIds.length === 0) {
-				tbody.innerHTML = '<tr><td colspan="6" class="text-muted">暂无 profile</td></tr>';
+				tbody.innerHTML = '<tr data-profile-empty="true"><td colspan="6" class="text-muted text-center py-4">暂无 Profile</td></tr>';
+                return;
+            }
+            if (rows.length === 0) {
+                tbody.innerHTML = '<tr data-profile-empty="true"><td colspan="6" class="text-muted text-center py-4">没有符合当前筛选条件的 Profile。<button class="btn btn-sm btn-link" type="button" onclick="resetProfileListView()">重置筛选</button></td></tr>';
                 return;
             }
 
-            tbody.innerHTML = '';
-            profileIds.forEach(profileId => {
-                const profile = profiles[profileId] || {};
-                const isActive = profileId === profilesStore.activeProfileId;
-				const health = profileHealthStore[profileId] || { status: 'unknown', windowHours: 24, pool: {} };
-				const progress = profileTestProgress[profileId];
-				const effectiveStatus = progress && (progress.status === 'pending' || progress.status === 'running') ? 'testing' : health.status;
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>
-                        <code>${escapeHtml(profileId)}</code>
-                        ${isActive ? '<span class="badge bg-success ms-1">当前</span>' : ''}
-                    </td>
-                    <td><small>${escapeHtml(profile.loginUser || '-')}</small></td>
-                    <td><small>${escapeHtml(profile.serverIp || '-')} : ${profile.serverSshPort || '-'}</small></td>
-                    <td>
-						${renderProfileStatus(effectiveStatus, health)}
-					</td>
-					<td>
-						${renderProfileQuality(health, progress)}
-					</td>
-					<td>
-						<div class="d-flex flex-wrap gap-1">
-						<button class="btn btn-sm btn-outline-success" onclick="testProfile('${escapeAttr(profileId)}')" ${batchRunning ? 'disabled' : ''}><i class="bi bi-activity"></i> 测试</button>
-						<button class="btn btn-sm btn-outline-primary" onclick="fillProfileForm('${escapeAttr(profileId)}')">编辑</button>
-						<button class="btn btn-sm btn-outline-info" onclick="copyProfile('${escapeAttr(profileId)}')">复制</button>
-                        <button class="btn btn-sm ${isActive ? 'btn-secondary' : 'btn-outline-success'}" 
-                            onclick="switchProfile('${escapeAttr(profileId)}')" ${isActive ? 'disabled' : ''}>切换</button>
-						<button class="btn btn-sm btn-outline-danger"
-                            onclick="deleteProfile('${escapeAttr(profileId)}')" ${isActive ? 'disabled' : ''}>删除</button>
-						</div>
-                    </td>
-                `;
-                tbody.appendChild(row);
+            const visibleIds = new Set(rows.map(item => item.profileId));
+            tbody.querySelectorAll('tr').forEach(row => {
+                if (row.dataset.profileEmpty || !visibleIds.has(row.dataset.profileId)) row.remove();
+            });
+            rows.forEach(item => {
+                tbody.appendChild(updateProfileTableRow(item, batchRunning));
             });
         }
 
@@ -844,6 +1304,10 @@
 
 		async function startProfileTests(profileIds) {
 			if (!Array.isArray(profileIds) || profileIds.length === 0) return;
+			const sortSnapshot = {};
+			profileIds.forEach(profileId => {
+				sortSnapshot[profileId] = profileHealthStore[profileId] || { status: 'unknown', sampleCount: 0 };
+			});
 			try {
 				const response = await fetch('/admin/profiles/test', {
 					method: 'POST',
@@ -856,6 +1320,7 @@
 					return;
 				}
 				currentProfileTestId = result.testId || '';
+				profileTestSortSnapshot = sortSnapshot;
 				profileTestProgress = (result.data && result.data.results) || {};
 				renderProfilesTable();
 				showToast('info', `已开始测试 ${profileIds.length} 个 Profile`);
@@ -879,13 +1344,15 @@
 					const batch = result.data || {};
 					profileTestProgress = batch.results || {};
 					await loadProfileHealth(false);
-					renderProfilesTable();
 					if (batch.status === 'COMPLETED') {
 						currentProfileTestId = '';
+						profileTestSortSnapshot = {};
+						renderProfilesTable();
 						const failures = Object.values(profileTestProgress).filter(item => item && item.status === 'failed').length;
 						showToast(failures ? 'info' : 'success', failures ? `测试完成，${failures} 个 Profile 不通` : '全部 Profile 测试通过');
 						return;
 					}
+					renderProfilesTable();
 				} catch (error) {
 					console.error('读取Profile测试状态失败:', error);
 				}
@@ -894,6 +1361,7 @@
 			}
 			if (currentProfileTestId === testId) {
 				currentProfileTestId = '';
+				profileTestSortSnapshot = {};
 				showToast('error', 'Profile 测试状态等待超时');
 				renderProfilesTable();
 			}
@@ -1426,6 +1894,36 @@
             bsToast.show();
         }
     </script>    <style>
+        .profile-list-toolbar {
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            background: #f8fafc;
+        }
+        .profile-list-toolbar-grid {
+            display: grid;
+            grid-template-columns: minmax(240px, 2fr) minmax(130px, 1fr) minmax(125px, 1fr) minmax(115px, 1fr) minmax(170px, 1.25fr) minmax(105px, auto);
+            gap: 0.65rem;
+            align-items: end;
+        }
+        .profile-list-toolbar-grid > * {
+            min-width: 0;
+        }
+        .profile-list-toolbar .form-label {
+            margin-bottom: 0.2rem;
+        }
+        .profile-status-filter-menu {
+            min-width: 170px;
+        }
+        .profile-status-filter-menu .form-check {
+            margin-bottom: 0.25rem;
+        }
+        .profile-status-filter-menu .form-check:last-child {
+            margin-bottom: 0;
+        }
+        .profile-list-direction .btn {
+            white-space: nowrap;
+        }
         pre {
             white-space: pre-wrap;
             word-break: break-all;
@@ -1477,12 +1975,34 @@
         }
         /* 响应式表格 */
         @media (max-width: 768px) {
+            .profile-list-toolbar-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .profile-list-search {
+                grid-column: 1 / -1;
+            }
             .table-responsive {
                 font-size: 0.875rem;
             }
             .edit-config-btn {
                 width: 28px;
                 height: 28px;
+            }
+        }
+        @media (min-width: 769px) and (max-width: 1199px) {
+            .profile-list-toolbar-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+            .profile-list-search {
+                grid-column: span 2;
+            }
+        }
+        @media (max-width: 480px) {
+            .profile-list-toolbar-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .profile-list-search {
+                grid-column: auto;
             }
         }
         /* 配置项描述样式 */
