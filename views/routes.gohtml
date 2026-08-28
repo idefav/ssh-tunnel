@@ -5,6 +5,9 @@
     .route-target-badge { font-weight: 500; }
     .route-pattern { color: #d63384; }
     .route-group-disabled .route-group-body { opacity: .62; }
+    .batch-toolbar { position: sticky; top: .75rem; z-index: 1010; }
+    .route-select-cell { width: 42px; }
+    .filter-card .form-select, .filter-card .form-control { min-width: 150px; }
 </style>
 
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
@@ -13,6 +16,31 @@
         <div class="small text-muted">把同一服务的多个域名、IP 或 CIDR 放入一组；规则默认继承组出口，也可单独覆盖。</div>
     </div>
     <button class="btn btn-primary" id="createGroupBtn"><i class="bi bi-folder-plus me-1"></i>新增规则组</button>
+</div>
+
+<div class="card shadow-sm mb-3 filter-card">
+    <div class="card-body d-flex flex-wrap align-items-center gap-2">
+        <input class="form-control flex-grow-1" style="max-width:360px" id="routeSearch" placeholder="搜索组、模式、规则 ID、类型或 Profile">
+        <select class="form-select w-auto" id="filterGroup"><option value="">全部规则组</option></select>
+        <select class="form-select w-auto" id="filterInheritance">
+            <option value="">全部出口方式</option><option value="inherit">继承组出口</option><option value="override">独立出口</option>
+        </select>
+        <select class="form-select w-auto" id="filterEnabled">
+            <option value="">全部规则状态</option><option value="enabled">已启用</option><option value="disabled">已停用</option>
+        </select>
+        <div class="form-check ms-lg-auto mb-0">
+            <input class="form-check-input" type="checkbox" id="selectVisibleRoutes">
+            <label class="form-check-label" for="selectVisibleRoutes">全选当前筛选结果 <span id="visibleRouteCount" class="text-muted"></span></label>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-primary shadow-sm batch-toolbar d-none d-flex align-items-center flex-wrap gap-3" id="batchToolbar">
+    <div><strong id="selectedRouteCount">已选择 0 条</strong><span class="small ms-2" id="hiddenSelectedCount"></span></div>
+    <div class="ms-auto d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary" id="clearRouteSelection">清空选择</button>
+        <button class="btn btn-sm btn-primary" id="openBatchEdit"><i class="bi bi-pencil-square me-1"></i>批量编辑</button>
+    </div>
 </div>
 
 <div id="routeGroups"><div class="card shadow-sm"><div class="card-body text-center text-muted py-5">正在加载...</div></div></div>
@@ -128,6 +156,70 @@
     </div>
 </div>
 
+<div class="modal" id="batchModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <form class="modal-content" id="batchForm">
+            <div class="modal-header">
+                <h5 class="modal-title">批量编辑路由规则</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-light border" id="batchSummary"></div>
+                <div class="row g-4">
+                    <div class="col-lg-4">
+                        <label class="form-label" for="batchDestinationMode">所属规则组</label>
+                        <select class="form-select" id="batchDestinationMode">
+                            <option value="">保持不变</option>
+                            <option value="existing">移动到现有组</option>
+                            <option value="new">创建新组并移动</option>
+                        </select>
+                        <div class="mt-3 d-none" id="batchExistingGroupFields">
+                            <label class="form-label" for="batchDestinationGroup">目标规则组</label>
+                            <select class="form-select" id="batchDestinationGroup"></select>
+                        </div>
+                        <div class="mt-3 d-none" id="batchNewGroupFields">
+                            <div class="mb-3"><label class="form-label" for="batchNewGroupName">新组名称</label><input class="form-control" id="batchNewGroupName" maxlength="100"></div>
+                            <div class="mb-3"><label class="form-label" for="batchNewGroupDescription">说明</label><textarea class="form-control" id="batchNewGroupDescription" rows="2" maxlength="500"></textarea></div>
+                            <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" id="batchNewGroupEnabled" checked><label class="form-check-label" for="batchNewGroupEnabled">启用新规则组</label></div>
+                            <div class="mb-3"><label class="form-label" for="batchNewGroupStrategy">默认策略</label><select class="form-select" id="batchNewGroupStrategy"><option value="fixed">固定 Profile</option><option value="random">随机并故障转移</option></select></div>
+                            <label class="form-label">默认目标 Profile</label>
+                            <div id="batchNewGroupProfileChoices" class="border rounded p-3 d-flex flex-wrap gap-3"></div>
+                            <div class="form-text" id="batchNewGroupStrategyHelp"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <label class="form-label" for="batchInheritanceMode">出口方式</label>
+                        <select class="form-select" id="batchInheritanceMode">
+                            <option value="">保持不变</option>
+                            <option value="inherit">全部改为继承组出口</option>
+                            <option value="preserve-current">取消继承并保持当前出口</option>
+                            <option value="override">统一设置独立出口</option>
+                        </select>
+                        <div class="form-text mt-2" id="batchInheritanceHelp"></div>
+                        <div class="mt-3 d-none" id="batchOverrideFields">
+                            <div class="mb-3"><label class="form-label" for="batchOverrideStrategy">独立策略</label><select class="form-select" id="batchOverrideStrategy"><option value="fixed">固定 Profile</option><option value="random">随机并故障转移</option></select></div>
+                            <label class="form-label">独立目标 Profile</label>
+                            <div id="batchOverrideProfileChoices" class="border rounded p-3 d-flex flex-wrap gap-3"></div>
+                            <div class="form-text" id="batchOverrideStrategyHelp"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <label class="form-label" for="batchEnabledMode">规则状态</label>
+                        <select class="form-select" id="batchEnabledMode">
+                            <option value="">保持不变</option><option value="enabled">全部启用</option><option value="disabled">全部停用</option>
+                        </select>
+                        <div class="alert alert-warning mt-4 d-none" id="batchRouteChangeWarning"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary">应用批量修改</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
     <div class="toast" id="routeToast" role="alert">
         <div class="toast-header"><strong class="me-auto">路由管理</strong><button class="btn-close" data-bs-dismiss="toast"></button></div>
@@ -141,8 +233,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let profiles = {};
     let activeProfileId = '';
     const expandedGroups = new Set();
+    const selectedRouteIds = new Set();
     const groupModal = new bootstrap.Modal(document.getElementById('groupModal'));
     const routeModal = new bootstrap.Modal(document.getElementById('routeModal'));
+    const batchModal = new bootstrap.Modal(document.getElementById('batchModal'));
     const toast = new bootstrap.Toast(document.getElementById('routeToast'));
     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const showMessage = message => { document.getElementById('routeToastMessage').textContent = message; toast.show(); };
@@ -166,7 +260,10 @@ document.addEventListener('DOMContentLoaded', () => {
             groups = (result.data && result.data.groups) || [];
             profiles = result.profiles || {};
             activeProfileId = result.activeProfileId || '';
+            const existingRouteIds = new Set(groups.flatMap(group => (group.rules || []).map(route => route.id)));
+            Array.from(selectedRouteIds).forEach(routeId => { if (!existingRouteIds.has(routeId)) selectedRouteIds.delete(routeId); });
             groups.forEach(group => { if (!expandedGroups.has(group.id)) expandedGroups.add(group.id); });
+            populateGroupFilters();
             renderGroups();
         } catch (error) {
             document.getElementById('routeGroups').innerHTML = '<div class="alert alert-danger">' + esc(error.message) + '</div>';
@@ -186,20 +283,99 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function populateGroupFilters() {
+        const filter = document.getElementById('filterGroup');
+        const previous = filter.value;
+        filter.innerHTML = '<option value="">全部规则组</option>' + groups.map(group => '<option value="' + esc(group.id) + '">' + esc(group.name) + '</option>').join('');
+        if (groups.some(group => group.id === previous)) filter.value = previous;
+    }
+
+    function routeMatchesFilters(group, route) {
+        const groupFilter = document.getElementById('filterGroup').value;
+        const inheritanceFilter = document.getElementById('filterInheritance').value;
+        const enabledFilter = document.getElementById('filterEnabled').value;
+        const query = document.getElementById('routeSearch').value.trim().toLowerCase();
+        if (groupFilter && group.id !== groupFilter) return false;
+        if (inheritanceFilter === 'inherit' && route.strategy) return false;
+        if (inheritanceFilter === 'override' && !route.strategy) return false;
+        if (enabledFilter === 'enabled' && !route.enabled) return false;
+        if (enabledFilter === 'disabled' && route.enabled) return false;
+        if (!query) return true;
+        const policy = effectivePolicy(group, route);
+        const haystack = [group.id, group.name, group.description, route.id, route.pattern, route.type, route.strategy, policy.strategy].concat(route.targetProfileIds || [], policy.targets || []).join(' ').toLowerCase();
+        return haystack.includes(query);
+    }
+
+    function visibleRoutesForGroup(group) {
+        return (group.rules || []).filter(route => routeMatchesFilters(group, route));
+    }
+
+    function visibleRouteIds() {
+        return groups.flatMap(group => visibleRoutesForGroup(group).map(route => route.id));
+    }
+
+    function selectedRecords() {
+        const records = [];
+        groups.forEach(group => (group.rules || []).forEach(route => {
+            if (selectedRouteIds.has(route.id)) records.push({group, route});
+        }));
+        return records;
+    }
+
+    function syncSelectionUI() {
+        const visibleIds = visibleRouteIds();
+        const visibleSelected = visibleIds.filter(id => selectedRouteIds.has(id)).length;
+        const global = document.getElementById('selectVisibleRoutes');
+        global.checked = visibleIds.length > 0 && visibleSelected === visibleIds.length;
+        global.indeterminate = visibleSelected > 0 && visibleSelected < visibleIds.length;
+        document.getElementById('visibleRouteCount').textContent = '(' + visibleIds.length + ')';
+        document.querySelectorAll('.group-select').forEach(input => {
+            const group = groups.find(item => item.id === input.dataset.groupId);
+            const ids = group ? visibleRoutesForGroup(group).map(route => route.id) : [];
+            const count = ids.filter(id => selectedRouteIds.has(id)).length;
+            input.checked = ids.length > 0 && count === ids.length;
+            input.indeterminate = count > 0 && count < ids.length;
+            input.disabled = ids.length === 0;
+        });
+        document.querySelectorAll('.route-select').forEach(input => { input.checked = selectedRouteIds.has(input.dataset.routeId); });
+        const hidden = selectedRouteIds.size - visibleSelected;
+        document.getElementById('selectedRouteCount').textContent = '已选择 ' + selectedRouteIds.size + ' 条';
+        document.getElementById('hiddenSelectedCount').textContent = hidden > 0 ? '其中 ' + hidden + ' 条不在当前筛选结果中' : '';
+        document.getElementById('batchToolbar').classList.toggle('d-none', selectedRouteIds.size === 0);
+    }
+
     function renderGroups() {
         const root = document.getElementById('routeGroups');
         if (!groups.length) {
             root.innerHTML = '<div class="card shadow-sm"><div class="card-body text-center py-5"><div class="text-muted mb-3">暂无规则组，请先创建一个规则组。</div><button class="btn btn-primary create-first-group"><i class="bi bi-folder-plus me-1"></i>创建规则组</button></div></div>';
+            syncSelectionUI();
             return;
         }
-        root.innerHTML = groups.map(group => {
+        const groupFilter = document.getElementById('filterGroup').value;
+        const inheritanceFilter = document.getElementById('filterInheritance').value;
+        const enabledFilter = document.getElementById('filterEnabled').value;
+        const query = document.getElementById('routeSearch').value.trim().toLowerCase();
+        const filtersActive = Boolean(groupFilter || inheritanceFilter || enabledFilter || query);
+        const displayedGroups = groups.filter(group => {
+            if (groupFilter && group.id !== groupFilter) return false;
+            if (!filtersActive || visibleRoutesForGroup(group).length > 0) return true;
+            return Boolean(query && [group.id, group.name, group.description].join(' ').toLowerCase().includes(query));
+        });
+        if (!displayedGroups.length) {
+            root.innerHTML = '<div class="card shadow-sm"><div class="card-body text-center text-muted py-5">当前筛选条件下没有匹配规则</div></div>';
+            syncSelectionUI();
+            return;
+        }
+        root.innerHTML = displayedGroups.map(group => {
             const expanded = expandedGroups.has(group.id);
             const strategyLabel = group.strategy === 'random' ? '随机' : '固定';
-            const rules = group.rules || [];
+            const allRules = group.rules || [];
+            const rules = visibleRoutesForGroup(group);
             const rows = rules.length ? rules.map(route => {
                 const policy = effectivePolicy(group, route);
                 const effectiveEnabled = group.enabled && route.enabled;
                 return '<tr>' +
+                    '<td class="route-select-cell"><input class="form-check-input route-select" type="checkbox" data-route-id="' + esc(route.id) + '" aria-label="选择规则"></td>' +
                     '<td><div class="form-check form-switch m-0"><input class="form-check-input route-toggle" type="checkbox" data-route-id="' + esc(route.id) + '" ' + (route.enabled ? 'checked' : '') + ' aria-label="启用规则"></div></td>' +
                     '<td><code class="route-pattern">' + esc(route.pattern) + '</code><div class="small text-muted text-truncate" style="max-width:240px">' + esc(route.id) + '</div></td>' +
                     '<td>' + esc(typeNames[route.type] || route.type) + '</td>' +
@@ -208,18 +384,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     '<td><span class="badge ' + (effectiveEnabled ? 'bg-primary' : 'bg-secondary') + '">' + (effectiveEnabled ? '生效' : '未生效') + '</span></td>' +
                     '<td class="text-end text-nowrap"><button class="btn btn-sm btn-outline-primary me-1 route-edit" data-route-id="' + esc(route.id) + '">编辑</button><button class="btn btn-sm btn-outline-danger route-delete" data-route-id="' + esc(route.id) + '">删除</button></td>' +
                     '</tr>';
-            }).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">该组暂无规则</td></tr>';
+            }).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">' + (allRules.length ? '当前筛选条件下没有规则' : '该组暂无规则') + '</td></tr>';
             return '<div class="card shadow-sm mb-3 route-group-card ' + (group.enabled ? '' : 'route-group-disabled') + '" data-group-card="' + esc(group.id) + '">' +
                 '<div class="card-header py-3"><div class="d-flex justify-content-between align-items-start flex-wrap gap-3">' +
-                    '<div class="d-flex align-items-start gap-3"><button class="btn btn-sm btn-outline-secondary group-collapse" data-group-id="' + esc(group.id) + '" aria-expanded="' + expanded + '"><i class="bi ' + (expanded ? 'bi-chevron-down' : 'bi-chevron-right') + '"></i></button>' +
-                    '<div><div class="d-flex align-items-center flex-wrap gap-2"><h5 class="mb-0">' + esc(group.name) + '</h5><span class="badge bg-light text-dark border">' + rules.length + ' 条规则</span></div>' +
+                    '<div class="d-flex align-items-start gap-3"><button class="btn btn-sm btn-outline-secondary group-collapse" data-group-id="' + esc(group.id) + '" aria-expanded="' + expanded + '"><i class="bi ' + (expanded ? 'bi-chevron-down' : 'bi-chevron-right') + '"></i></button><input class="form-check-input group-select mt-2" type="checkbox" data-group-id="' + esc(group.id) + '" aria-label="选择该组当前筛选规则">' +
+                    '<div><div class="d-flex align-items-center flex-wrap gap-2"><h5 class="mb-0">' + esc(group.name) + '</h5><span class="badge bg-light text-dark border">' + allRules.length + ' 条规则' + (rules.length !== allRules.length ? ' · 显示 ' + rules.length : '') + '</span></div>' +
                     (group.description ? '<div class="small text-muted route-group-description mt-1">' + esc(group.description) + '</div>' : '<div class="small text-muted mt-1">暂无说明</div>') +
                     '<div class="small mt-2"><span class="text-muted me-2">默认出口</span><span class="badge ' + (group.strategy === 'random' ? 'bg-info text-dark' : 'bg-secondary') + '">' + strategyLabel + '</span><span class="ms-2">' + profileBadges(group.targetProfileIds) + '</span></div></div></div>' +
                     '<div class="d-flex align-items-center gap-2 flex-wrap"><div class="form-check form-switch me-2"><input class="form-check-input group-toggle" type="checkbox" data-group-id="' + esc(group.id) + '" ' + (group.enabled ? 'checked' : '') + '><label class="form-check-label small">' + (group.enabled ? '已启用' : '已停用') + '</label></div>' +
                     '<button class="btn btn-sm btn-primary route-create" data-group-id="' + esc(group.id) + '"><i class="bi bi-plus-lg me-1"></i>新增规则</button><button class="btn btn-sm btn-outline-primary group-edit" data-group-id="' + esc(group.id) + '">编辑组</button><button class="btn btn-sm btn-outline-danger group-delete" data-group-id="' + esc(group.id) + '">删除组</button></div>' +
                 '</div></div>' +
-                '<div class="route-group-body ' + (expanded ? '' : 'd-none') + '"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>规则状态</th><th>匹配模式</th><th>类型</th><th>出口配置</th><th>最终目标</th><th>最终状态</th><th class="text-end">操作</th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
+                '<div class="route-group-body ' + (expanded ? '' : 'd-none') + '"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th></th><th>规则状态</th><th>匹配模式</th><th>类型</th><th>出口配置</th><th>最终目标</th><th>最终状态</th><th class="text-end">操作</th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
         }).join('');
+        syncSelectionUI();
     }
 
     function renderProfileChoices(containerId, selected, strategy) {
@@ -296,11 +473,98 @@ document.addEventListener('DOMContentLoaded', () => {
         routeModal.show();
     }
 
+    function selectedProfiles(containerId) {
+        return Array.from(document.querySelectorAll('#' + containerId + ' .profile-choice:checked')).map(input => input.value);
+    }
+
+    function updateBatchNewGroupPolicyUI() {
+        const strategy = document.getElementById('batchNewGroupStrategy').value;
+        const selected = selectedProfiles('batchNewGroupProfileChoices');
+        renderProfileChoices('batchNewGroupProfileChoices', selected, strategy);
+        document.getElementById('batchNewGroupStrategyHelp').textContent = strategy === 'random' ? '新组随机策略至少选择 2 个 Profile。' : '新组固定策略必须选择 1 个 Profile。';
+    }
+
+    function updateBatchOverridePolicyUI() {
+        const strategy = document.getElementById('batchOverrideStrategy').value;
+        const selected = selectedProfiles('batchOverrideProfileChoices');
+        renderProfileChoices('batchOverrideProfileChoices', selected, strategy);
+        document.getElementById('batchOverrideStrategyHelp').textContent = strategy === 'random' ? '统一随机出口至少选择 2 个 Profile。' : '统一固定出口必须选择 1 个 Profile。';
+    }
+
+    function updateBatchPreview() {
+        const records = selectedRecords();
+        const sourceGroups = new Set(records.map(item => item.group.id));
+        const inheritedCount = records.filter(item => !item.route.strategy).length;
+        const independentCount = records.length - inheritedCount;
+        document.getElementById('batchSummary').innerHTML = '<strong>已选择 ' + records.length + ' 条规则</strong><span class="ms-3">来自 ' + sourceGroups.size + ' 个规则组</span><span class="ms-3">继承 ' + inheritedCount + ' 条 / 独立 ' + independentCount + ' 条</span>';
+
+        const destinationMode = document.getElementById('batchDestinationMode').value;
+        document.getElementById('batchExistingGroupFields').classList.toggle('d-none', destinationMode !== 'existing');
+        document.getElementById('batchNewGroupFields').classList.toggle('d-none', destinationMode !== 'new');
+        const inheritanceMode = document.getElementById('batchInheritanceMode').value;
+        document.getElementById('batchOverrideFields').classList.toggle('d-none', inheritanceMode !== 'override');
+        const help = {
+            '': '保持每条规则当前的继承或独立配置。',
+            inherit: '清空单规则出口，改用操作后的所属组默认出口。',
+            'preserve-current': '在移动前记录有效出口并固化，切换本身不改变流量路径。',
+            override: '所有选中规则使用同一套独立策略和目标 Profile。'
+        };
+        document.getElementById('batchInheritanceHelp').textContent = help[inheritanceMode] || '';
+
+        let possibleChanges = 0;
+        if (inheritanceMode === 'override') {
+            possibleChanges = records.length;
+        } else if (inheritanceMode === 'inherit') {
+            possibleChanges = independentCount;
+            if (destinationMode) {
+                const target = destinationMode === 'existing' ? document.getElementById('batchDestinationGroup').value : '';
+                possibleChanges += records.filter(item => !item.route.strategy && (destinationMode === 'new' || item.group.id !== target)).length;
+            }
+        } else if (inheritanceMode !== 'preserve-current' && destinationMode) {
+            const target = destinationMode === 'existing' ? document.getElementById('batchDestinationGroup').value : '';
+            possibleChanges = records.filter(item => !item.route.strategy && (destinationMode === 'new' || item.group.id !== target)).length;
+        }
+        const warning = document.getElementById('batchRouteChangeWarning');
+        warning.classList.toggle('d-none', possibleChanges === 0);
+        warning.textContent = possibleChanges > 0 ? '最多有 ' + possibleChanges + ' 条规则的最终出口可能变化，请确认目标组默认出口和继承设置。' : '';
+    }
+
+    function openBatchDialog() {
+        if (!selectedRouteIds.size) return;
+        document.getElementById('batchDestinationMode').value = '';
+        document.getElementById('batchDestinationGroup').innerHTML = groups.map(group => '<option value="' + esc(group.id) + '">' + esc(group.name) + '</option>').join('');
+        document.getElementById('batchNewGroupName').value = '';
+        document.getElementById('batchNewGroupDescription').value = '';
+        document.getElementById('batchNewGroupEnabled').checked = true;
+        document.getElementById('batchNewGroupStrategy').value = 'fixed';
+        renderProfileChoices('batchNewGroupProfileChoices', activeProfileId ? [activeProfileId] : [], 'fixed');
+        document.getElementById('batchInheritanceMode').value = '';
+        document.getElementById('batchOverrideStrategy').value = 'fixed';
+        renderProfileChoices('batchOverrideProfileChoices', activeProfileId ? [activeProfileId] : [], 'fixed');
+        document.getElementById('batchEnabledMode').value = '';
+        updateBatchNewGroupPolicyUI();
+        updateBatchOverridePolicyUI();
+        updateBatchPreview();
+        batchModal.show();
+    }
+
     document.getElementById('createGroupBtn').addEventListener('click', () => openGroup(null));
     document.getElementById('groupStrategy').addEventListener('change', updateGroupPolicyUI);
     document.getElementById('routeInherit').addEventListener('change', updateRoutePolicyUI);
     document.getElementById('routeStrategy').addEventListener('change', updateRoutePolicyUI);
     document.getElementById('routeGroupId').addEventListener('change', updateRoutePolicyUI);
+    ['routeSearch', 'filterGroup', 'filterInheritance', 'filterEnabled'].forEach(id => {
+        document.getElementById(id).addEventListener(id === 'routeSearch' ? 'input' : 'change', renderGroups);
+    });
+    document.getElementById('selectVisibleRoutes').addEventListener('change', event => {
+        visibleRouteIds().forEach(routeId => event.target.checked ? selectedRouteIds.add(routeId) : selectedRouteIds.delete(routeId));
+        syncSelectionUI();
+    });
+    document.getElementById('clearRouteSelection').addEventListener('click', () => { selectedRouteIds.clear(); syncSelectionUI(); });
+    document.getElementById('openBatchEdit').addEventListener('click', openBatchDialog);
+    ['batchDestinationMode', 'batchDestinationGroup', 'batchInheritanceMode', 'batchEnabledMode'].forEach(id => document.getElementById(id).addEventListener('change', updateBatchPreview));
+    document.getElementById('batchNewGroupStrategy').addEventListener('change', () => { updateBatchNewGroupPolicyUI(); updateBatchPreview(); });
+    document.getElementById('batchOverrideStrategy').addEventListener('change', () => { updateBatchOverridePolicyUI(); updateBatchPreview(); });
 
     document.getElementById('routeGroups').addEventListener('click', async event => {
         if (event.target.closest('.create-first-group')) { openGroup(null); return; }
@@ -349,7 +613,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('routeGroups').addEventListener('change', async event => {
         try {
-            if (event.target.classList.contains('group-toggle')) {
+            if (event.target.classList.contains('route-select')) {
+                if (event.target.checked) selectedRouteIds.add(event.target.dataset.routeId); else selectedRouteIds.delete(event.target.dataset.routeId);
+                syncSelectionUI();
+            } else if (event.target.classList.contains('group-select')) {
+                const group = groups.find(item => item.id === event.target.dataset.groupId);
+                if (group) visibleRoutesForGroup(group).forEach(route => event.target.checked ? selectedRouteIds.add(route.id) : selectedRouteIds.delete(route.id));
+                syncSelectionUI();
+            } else if (event.target.classList.contains('group-toggle')) {
                 await api('/admin/route-groups/toggle', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({groupId:event.target.dataset.groupId, enabled:event.target.checked})});
                 showMessage(event.target.checked ? '规则组已启用' : '规则组已停用');
                 await loadRoutes();
@@ -394,6 +665,50 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await api('/admin/routes/upsert', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({groupId:document.getElementById('routeGroupId').value, route})});
             routeModal.hide(); showMessage('路由规则已保存'); await loadRoutes();
+        } catch (error) { showMessage(error.message); }
+    });
+
+    document.getElementById('batchForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!selectedRouteIds.size) { showMessage('请先选择路由规则'); return; }
+        const request = {routeIds:Array.from(selectedRouteIds)};
+        const destinationMode = document.getElementById('batchDestinationMode').value;
+        let expandedTarget = '';
+        if (destinationMode === 'existing') {
+            expandedTarget = document.getElementById('batchDestinationGroup').value;
+            if (!expandedTarget) { showMessage('请选择目标规则组'); return; }
+            request.destination = {groupId:expandedTarget};
+        } else if (destinationMode === 'new') {
+            const name = document.getElementById('batchNewGroupName').value.trim();
+            const strategy = document.getElementById('batchNewGroupStrategy').value;
+            const targets = selectedProfiles('batchNewGroupProfileChoices');
+            if (!name) { showMessage('新规则组名称不能为空'); return; }
+            if ((strategy === 'fixed' && targets.length !== 1) || (strategy === 'random' && targets.length < 2)) {
+                showMessage(strategy === 'fixed' ? '新组固定策略必须选择 1 个 Profile' : '新组随机策略至少选择 2 个 Profile'); return;
+            }
+            request.destination = {newGroup:{name, description:document.getElementById('batchNewGroupDescription').value.trim(), enabled:document.getElementById('batchNewGroupEnabled').checked, strategy, targetProfileIds:targets}};
+        }
+        const inheritanceMode = document.getElementById('batchInheritanceMode').value;
+        if (inheritanceMode) request.inheritanceMode = inheritanceMode;
+        if (inheritanceMode === 'override') {
+            const strategy = document.getElementById('batchOverrideStrategy').value;
+            const targets = selectedProfiles('batchOverrideProfileChoices');
+            if ((strategy === 'fixed' && targets.length !== 1) || (strategy === 'random' && targets.length < 2)) {
+                showMessage(strategy === 'fixed' ? '统一固定出口必须选择 1 个 Profile' : '统一随机出口至少选择 2 个 Profile'); return;
+            }
+            request.overridePolicy = {strategy, targetProfileIds:targets};
+        }
+        const enabledMode = document.getElementById('batchEnabledMode').value;
+        if (enabledMode) request.enabled = enabledMode === 'enabled';
+        if (!request.destination && !request.inheritanceMode && !enabledMode) { showMessage('至少选择一个批量修改项'); return; }
+        try {
+            const result = await api('/admin/routes/batch', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(request)});
+            if (result.createdGroupId) expandedTarget = result.createdGroupId;
+            if (expandedTarget) expandedGroups.add(expandedTarget);
+            batchModal.hide();
+            selectedRouteIds.clear();
+            showMessage('批量修改完成：更新 ' + (result.changedCount || 0) + ' 条，移动 ' + (result.movedCount || 0) + ' 条');
+            await loadRoutes();
         } catch (error) { showMessage(error.message); }
     });
 

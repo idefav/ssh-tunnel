@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -239,3 +240,161 @@ func TestRouteGroupAndRuleCRUDMoveToggleCascadeAndReferences(t *testing.T) {
 		t.Fatalf("empty group delete failed: %v", err)
 	}
 }
+
+func setupBatchRouteTest(t *testing.T, store RouteStore) string {
+	t.Helper()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.properties")
+	if err := os.WriteFile(configPath, []byte("active.profile.id=jp\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	v := viper.New()
+	v.SetConfigFile(configPath)
+	if err := v.ReadInConfig(); err != nil {
+		t.Fatal(err)
+	}
+	previousConfig := configInstance
+	configInstance = v
+	t.Cleanup(func() { configInstance = previousConfig })
+	profileData, _ := json.Marshal(ProfileStore{ActiveProfileID: "jp", Profiles: testProfiles("jp", "us", "sg")})
+	if err := os.WriteFile(filepath.Join(dir, "profiles.json"), profileData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveRouteStoreAt(filepath.Join(dir, "routes.json"), store); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func batchTestStore() RouteStore {
+	return RouteStore{Version: RouteStoreVersion, Groups: []RouteGroup{
+		testGroup("g1", "One", RouteStrategyFixed, []string{"jp"},
+			RouteRule{ID: "a", Pattern: "a.test", Type: RouteTypeDomain, Enabled: true},
+			RouteRule{ID: "b", Pattern: "b.test", Type: RouteTypeDomain, Enabled: true, Strategy: RouteStrategyFixed, TargetProfileIDs: []string{"us"}}),
+		testGroup("g2", "Two", RouteStrategyRandom, []string{"jp", "us"},
+			RouteRule{ID: "c", Pattern: "c.test", Type: RouteTypeDomain, Enabled: true}),
+		testGroup("g3", "Target", RouteStrategyFixed, []string{"sg"},
+			RouteRule{ID: "d", Pattern: "d.test", Type: RouteTypeDomain, Enabled: true}),
+	}}
+}
+
+func TestBatchUpdateRoutesMovePreservesCurrentPolicyAndStableOrder(t *testing.T) {
+	setupBatchRouteTest(t, batchTestStore())
+	disabled := false
+	result, err := BatchUpdateRoutes(RouteBatchUpdate{
+		RouteIDs:        []string{"c", "a", "b"},
+		Destination:     &RouteBatchDestination{GroupID: "g3"},
+		InheritanceMode: RouteInheritanceCurrent,
+		Enabled:         &disabled,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ChangedCount != 3 || result.MovedCount != 3 || result.CreatedGroupID != "" {
+		t.Fatalf("unexpected batch summary: %+v", result)
+	}
+	target := result.Store.Groups[2]
+	if got := []string{target.Rules[0].ID, target.Rules[1].ID, target.Rules[2].ID, target.Rules[3].ID}; !slices.Equal(got, []string{"d", "a", "b", "c"}) {
+		t.Fatalf("incoming rules lost stable global order: %v", got)
+	}
+	wantPolicies := map[string]RoutePolicy{
+		"a": {Strategy: RouteStrategyFixed, TargetProfileIDs: []string{"jp"}},
+		"b": {Strategy: RouteStrategyFixed, TargetProfileIDs: []string{"us"}},
+		"c": {Strategy: RouteStrategyRandom, TargetProfileIDs: []string{"jp", "us"}},
+	}
+	for _, rule := range target.Rules[1:] {
+		want := wantPolicies[rule.ID]
+		if rule.Enabled || rule.Strategy != want.Strategy || !slices.Equal(rule.TargetProfileIDs, want.TargetProfileIDs) {
+			t.Fatalf("route %s did not preserve its source effective policy: %+v", rule.ID, rule)
+		}
+	}
+}
+
+func TestBatchUpdateRoutesCreatesGroupMovesAndSetsInheritance(t *testing.T) {
+	setupBatchRouteTest(t, batchTestStore())
+	result, err := BatchUpdateRoutes(RouteBatchUpdate{
+		RouteIDs: []string{"a", "c"},
+		Destination: &RouteBatchDestination{NewGroup: &RouteGroup{
+			Name: "Created", Description: "batch", Enabled: true, Strategy: RouteStrategyRandom, TargetProfileIDs: []string{"us", "sg"},
+		}},
+		InheritanceMode: RouteInheritanceInherit,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CreatedGroupID == "" || result.MovedCount != 2 || len(result.Store.Groups) != 4 {
+		t.Fatalf("unexpected create-and-move result: %+v", result)
+	}
+	created := result.Store.Groups[3]
+	if created.ID != result.CreatedGroupID || len(created.Rules) != 2 || created.Rules[0].ID != "a" || created.Rules[1].ID != "c" {
+		t.Fatalf("unexpected created group: %+v", created)
+	}
+	for _, rule := range created.Rules {
+		if rule.Strategy != "" || rule.TargetProfileIDs != nil {
+			t.Fatalf("route %s should inherit the new group: %+v", rule.ID, rule)
+		}
+	}
+}
+
+func TestBatchUpdateRoutesOverrideAndEnableWithoutMove(t *testing.T) {
+	setupBatchRouteTest(t, batchTestStore())
+	enabled := false
+	result, err := BatchUpdateRoutes(RouteBatchUpdate{
+		RouteIDs:        []string{"a", "c"},
+		InheritanceMode: RouteInheritanceOverride,
+		OverridePolicy:  &RoutePolicy{Strategy: RouteStrategyRandom, TargetProfileIDs: []string{"us", "sg"}},
+		Enabled:         &enabled,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.MovedCount != 0 || result.ChangedCount != 2 {
+		t.Fatalf("unexpected batch summary: %+v", result)
+	}
+	for _, group := range result.Store.Groups {
+		for _, rule := range group.Rules {
+			if rule.ID != "a" && rule.ID != "c" {
+				continue
+			}
+			if rule.Enabled || rule.Strategy != RouteStrategyRandom || !slices.Equal(rule.TargetProfileIDs, []string{"us", "sg"}) {
+				t.Fatalf("override not applied to %s: %+v", rule.ID, rule)
+			}
+		}
+	}
+}
+
+func TestBatchUpdateRoutesRejectsInvalidRequestsWithoutWriting(t *testing.T) {
+	dir := setupBatchRouteTest(t, batchTestStore())
+	path := filepath.Join(dir, "routes.json")
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []RouteBatchUpdate{
+		{},
+		{RouteIDs: []string{"a", "a"}, Enabled: boolPointer(true)},
+		{RouteIDs: []string{"missing"}, Enabled: boolPointer(true)},
+		{RouteIDs: []string{"a"}},
+		{RouteIDs: []string{"a"}, Destination: &RouteBatchDestination{}},
+		{RouteIDs: []string{"a"}, InheritanceMode: RouteInheritanceOverride},
+		{RouteIDs: []string{"a"}, InheritanceMode: RouteInheritanceOverride, OverridePolicy: &RoutePolicy{Strategy: RouteStrategyRandom, TargetProfileIDs: []string{"jp"}}},
+		{RouteIDs: []string{"a"}, InheritanceMode: RouteInheritanceInherit, OverridePolicy: &RoutePolicy{Strategy: RouteStrategyFixed, TargetProfileIDs: []string{"jp"}}},
+		{RouteIDs: []string{"a"}, Destination: &RouteBatchDestination{GroupID: "missing"}},
+		{RouteIDs: []string{"a"}, Destination: &RouteBatchDestination{NewGroup: &RouteGroup{Name: "One", Enabled: true, Strategy: RouteStrategyFixed, TargetProfileIDs: []string{"jp"}}}},
+		{RouteIDs: []string{"a"}, Destination: &RouteBatchDestination{GroupID: "g3", NewGroup: &RouteGroup{Name: "bad"}}},
+	}
+	for index, update := range tests {
+		if _, err := BatchUpdateRoutes(update, nil); err == nil {
+			t.Fatalf("case %d should fail: %+v", index, update)
+		}
+		current, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !slices.Equal(current, original) {
+			t.Fatalf("case %d modified routes.json on failure", index)
+		}
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }

@@ -1,4 +1,4 @@
-# v1.5.0 独立路由与流量统计 / v1.6.0 规则组
+# v1.5.0 独立路由与流量统计 / v1.6.0 规则组 / v1.6.1 批量编辑
 
 ## 路由规则组
 
@@ -13,6 +13,8 @@
 - 单规则独立出口：可覆盖组默认值为 `fixed` 或 `random`；`random` 会在每个新 TCP 连接重新打乱至少两个 Profile，按顺序尝试故障转移。所有目标失败时不回退默认 Profile。
 
 组开关和规则开关共同决定最终是否生效；关闭组会保留每条规则原有的开关状态。有效规则引用的非激活 Profile 会自动维护后台 SSH 连接池。组默认出口、规则继承/覆盖、规则移动、启停、Profile 参数更新和激活 Profile 切换均会热加载。被任何规则组默认出口或单规则独立出口引用的 Profile 不能删除，即使对应组或规则已停用。
+
+路由页支持跨组多选和批量编辑：可迁移到现有组或在同一次原子操作中新建组，批量切换继承方式、固化各自当前出口、统一独立出口及启用/停用。搜索和筛选后的选择在组折叠或筛选变化时仍会保留。
 
 ## 流量统计
 
@@ -41,6 +43,6 @@ SOCKS5、HTTP、HTTPS CONNECT、初始 HTTP 请求和长连接都在实际 `Read
 
 ## API
 
-规则组 API：`GET /admin/routes`、`POST /admin/route-groups/upsert`、`POST /admin/route-groups/toggle`、`POST /admin/route-groups/delete`。规则继续使用 `POST /admin/routes/upsert`、`POST /admin/routes/toggle`、`POST /admin/routes/delete`。
+规则组 API：`GET /admin/routes`、`POST /admin/route-groups/upsert`、`POST /admin/route-groups/toggle`、`POST /admin/route-groups/delete`。规则使用 `POST /admin/routes/upsert`、`POST /admin/routes/batch`、`POST /admin/routes/toggle`、`POST /admin/routes/delete`。
 
 流量 API：`GET /admin/ssh/metrics`、`GET /admin/traffic/history`、`POST /admin/traffic/reset`。请求参数和返回结构见 [配置 API 文档](../config-api.md)。

@@ -1,9 +1,15 @@
 package admin
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"ssh-tunnel/cfg"
 	"testing"
 )
 
@@ -84,5 +90,73 @@ func TestReadLastLogLines(t *testing.T) {
 				t.Fatalf("readLastLogLines() = %#v, want %#v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRouteBatchHandlerSuccessReloadsOnce(t *testing.T) {
+	var captured cfg.RouteBatchUpdate
+	reloads := 0
+	handler := newRouteBatchHandler(func(update cfg.RouteBatchUpdate) (cfg.RouteBatchResult, error) {
+		captured = update
+		return cfg.RouteBatchResult{Store: cfg.RouteStore{Version: 2}, ChangedCount: 2, MovedCount: 1, CreatedGroupID: "group-new"}, nil
+	}, func() error {
+		reloads++
+		return nil
+	})
+	body := []byte(`{"routeIds":["a","b"],"inheritanceMode":"inherit","enabled":false}`)
+	request := httptest.NewRequest(http.MethodPost, "/admin/routes/batch", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || reloads != 1 || !reflect.DeepEqual(captured.RouteIDs, []string{"a", "b"}) || captured.Enabled == nil || *captured.Enabled {
+		t.Fatalf("unexpected handler result: status=%d reloads=%d captured=%+v body=%s", response.Code, reloads, captured, response.Body.String())
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["success"] != true || payload["changedCount"] != float64(2) || payload["movedCount"] != float64(1) || payload["createdGroupId"] != "group-new" {
+		t.Fatalf("unexpected response payload: %+v", payload)
+	}
+}
+
+func TestRouteBatchHandlerRejectsInvalidMethodPayloadAndUpdate(t *testing.T) {
+	updates := 0
+	reloads := 0
+	handler := newRouteBatchHandler(func(update cfg.RouteBatchUpdate) (cfg.RouteBatchResult, error) {
+		updates++
+		return cfg.RouteBatchResult{}, errors.New("invalid batch")
+	}, func() error {
+		reloads++
+		return nil
+	})
+	tests := []struct {
+		method string
+		body   string
+		status int
+	}{
+		{method: http.MethodGet, status: http.StatusMethodNotAllowed},
+		{method: http.MethodPost, body: "{", status: http.StatusBadRequest},
+		{method: http.MethodPost, body: `{"routeIds":["a"],"enabled":true}`, status: http.StatusBadRequest},
+	}
+	for _, test := range tests {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(test.method, "/admin/routes/batch", bytes.NewBufferString(test.body)))
+		if response.Code != test.status {
+			t.Fatalf("%s %q status=%d want=%d body=%s", test.method, test.body, response.Code, test.status, response.Body.String())
+		}
+	}
+	if updates != 1 || reloads != 0 {
+		t.Fatalf("updates=%d reloads=%d", updates, reloads)
+	}
+}
+
+func TestRouteBatchHandlerReturnsReloadFailureAfterSuccessfulUpdate(t *testing.T) {
+	handler := newRouteBatchHandler(func(update cfg.RouteBatchUpdate) (cfg.RouteBatchResult, error) {
+		return cfg.RouteBatchResult{Store: cfg.RouteStore{Version: 2}}, nil
+	}, func() error { return errors.New("reload failed") })
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/admin/routes/batch", bytes.NewBufferString(`{"routeIds":["a"],"enabled":true}`)))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

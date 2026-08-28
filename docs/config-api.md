@@ -48,6 +48,7 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 | `/admin/route-groups/toggle` | POST | 启用或停用规则组 | `{"groupId":"...","enabled":true}` |
 | `/admin/route-groups/delete` | POST | 删除规则组；非空组必须明确级联 | `{"groupId":"...","cascade":true}` |
 | `/admin/routes/upsert` | POST | 创建、更新或移动规则；空 `id` 创建 | `{"groupId":"...","route":{...}}` |
+| `/admin/routes/batch` | POST | 原子批量移动、修改继承/独立出口和启停 | 见下方批量请求 |
 | `/admin/routes/toggle` | POST | 启用或停用规则 | `{"routeId":"...","enabled":true}` |
 | `/admin/routes/delete` | POST | 删除规则 | `{"routeId":"..."}` |
 
@@ -81,6 +82,19 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 ```
 
 组名称必填且忽略大小写唯一，组默认出口必须合法。规则同时省略 `strategy` 和 `targetProfileIds` 时继承组出口；只提供其中一项会被拒绝。`type` 支持 `domain`、`ip`、`cidr`；IP 通配前缀 `192.168.*` 会规范化为 `192.168.*.*`。`fixed` 必须且只能有一个目标，`random` 至少有两个不同目标。同类型、规范化后相同的模式在所有组之间不可重复。非空组未携带 `cascade:true` 删除时返回 `409` 及 `groupName/ruleCount`。文件采用临时文件和原子替换。
+
+批量请求示例：
+
+```json
+{
+  "routeIds": ["route_a", "route_b"],
+  "destination": {"groupId": "group_target"},
+  "inheritanceMode": "preserve-current",
+  "enabled": true
+}
+```
+
+`destination` 可省略、指定 `groupId`，或使用 `newGroup` 携带新组的名称、说明、启停、策略和目标。`inheritanceMode` 可为 `inherit`、`preserve-current` 或 `override`；`override` 必须同时提供 `overridePolicy:{strategy,targetProfileIds}`。`enabled` 省略时保持原状态。请求先全量校验，再一次性原子写入；任何规则失败都不会产生部分修改。成功响应包含 `changedCount`、`movedCount` 和可选的 `createdGroupId`。
 
 #### SSH连接API 🆕
 

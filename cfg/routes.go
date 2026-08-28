@@ -9,20 +9,24 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 )
 
 const (
-	RouteStoreVersion       = 2
-	legacyRouteStoreVersion = 1
-	RouteTypeDomain         = "domain"
-	RouteTypeIP             = "ip"
-	RouteTypeCIDR           = "cidr"
-	RouteStrategyFixed      = "fixed"
-	RouteStrategyRandom     = "random"
-	migratedRouteGroupName  = "未分组（自动迁移）"
+	RouteStoreVersion        = 2
+	legacyRouteStoreVersion  = 1
+	RouteTypeDomain          = "domain"
+	RouteTypeIP              = "ip"
+	RouteTypeCIDR            = "cidr"
+	RouteStrategyFixed       = "fixed"
+	RouteStrategyRandom      = "random"
+	RouteInheritanceInherit  = "inherit"
+	RouteInheritanceCurrent  = "preserve-current"
+	RouteInheritanceOverride = "override"
+	migratedRouteGroupName   = "未分组（自动迁移）"
 )
 
 type RouteRule struct {
@@ -69,6 +73,31 @@ type routeStoreFile struct {
 type RouteReferences struct {
 	GroupIDs []string `json:"referencingGroupIds"`
 	RouteIDs []string `json:"referencingRouteIds"`
+}
+
+type RoutePolicy struct {
+	Strategy         string   `json:"strategy"`
+	TargetProfileIDs []string `json:"targetProfileIds"`
+}
+
+type RouteBatchDestination struct {
+	GroupID  string      `json:"groupId,omitempty"`
+	NewGroup *RouteGroup `json:"newGroup,omitempty"`
+}
+
+type RouteBatchUpdate struct {
+	RouteIDs        []string               `json:"routeIds"`
+	Destination     *RouteBatchDestination `json:"destination,omitempty"`
+	InheritanceMode string                 `json:"inheritanceMode,omitempty"`
+	OverridePolicy  *RoutePolicy           `json:"overridePolicy,omitempty"`
+	Enabled         *bool                  `json:"enabled,omitempty"`
+}
+
+type RouteBatchResult struct {
+	Store          RouteStore `json:"data"`
+	ChangedCount   int        `json:"changedCount"`
+	MovedCount     int        `json:"movedCount"`
+	CreatedGroupID string     `json:"createdGroupId,omitempty"`
 }
 
 type RouteGroupNotEmptyError struct {
@@ -732,6 +761,223 @@ func UpsertRoute(groupID string, rule RouteRule, appConfig *AppConfig) (RouteSto
 		return RouteStore{}, err
 	}
 	return store, nil
+}
+
+type selectedBatchRoute struct {
+	groupIndex        int
+	rule              RouteRule
+	effectiveStrategy string
+	effectiveTargets  []string
+}
+
+func routeRulesEqual(left, right RouteRule) bool {
+	return left.ID == right.ID &&
+		left.Pattern == right.Pattern &&
+		left.Type == right.Type &&
+		left.Enabled == right.Enabled &&
+		left.Strategy == right.Strategy &&
+		slices.Equal(left.TargetProfileIDs, right.TargetProfileIDs)
+}
+
+// BatchUpdateRoutes applies a batch patch in memory, validates the complete
+// route store, and persists it with a single atomic replacement.
+func BatchUpdateRoutes(update RouteBatchUpdate, appConfig *AppConfig) (RouteBatchResult, error) {
+	store, err := ListRoutes(appConfig)
+	if err != nil {
+		return RouteBatchResult{}, err
+	}
+	profiles, err := ListProfiles(appConfig)
+	if err != nil {
+		return RouteBatchResult{}, err
+	}
+
+	if len(update.RouteIDs) == 0 {
+		return RouteBatchResult{}, fmt.Errorf("至少选择一条路由规则")
+	}
+	selectedIDs := make(map[string]bool, len(update.RouteIDs))
+	for _, rawID := range update.RouteIDs {
+		routeID := strings.TrimSpace(rawID)
+		if routeID == "" {
+			return RouteBatchResult{}, fmt.Errorf("route id不能为空")
+		}
+		if selectedIDs[routeID] {
+			return RouteBatchResult{}, fmt.Errorf("route id重复: %s", routeID)
+		}
+		selectedIDs[routeID] = true
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(update.InheritanceMode))
+	switch mode {
+	case "", RouteInheritanceInherit, RouteInheritanceCurrent, RouteInheritanceOverride:
+	default:
+		return RouteBatchResult{}, fmt.Errorf("不支持的继承模式: %s", update.InheritanceMode)
+	}
+	if mode == RouteInheritanceOverride {
+		if update.OverridePolicy == nil {
+			return RouteBatchResult{}, fmt.Errorf("统一独立出口必须提供overridePolicy")
+		}
+	} else if update.OverridePolicy != nil {
+		return RouteBatchResult{}, fmt.Errorf("overridePolicy仅可用于override继承模式")
+	}
+
+	var overrideStrategy string
+	var overrideTargets []string
+	if update.OverridePolicy != nil {
+		overrideStrategy, overrideTargets, err = normalizeAndValidatePolicy(update.OverridePolicy.Strategy, update.OverridePolicy.TargetProfileIDs, profiles.Profiles)
+		if err != nil {
+			return RouteBatchResult{}, fmt.Errorf("统一独立出口无效: %w", err)
+		}
+	}
+
+	hasDestination := update.Destination != nil
+	if !hasDestination && mode == "" && update.Enabled == nil {
+		return RouteBatchResult{}, fmt.Errorf("至少指定一个批量修改项")
+	}
+
+	selected := make([]selectedBatchRoute, 0, len(selectedIDs))
+	for groupIndex, group := range store.Groups {
+		for _, rule := range group.Rules {
+			if !selectedIDs[rule.ID] {
+				continue
+			}
+			strategy := group.Strategy
+			targets := group.TargetProfileIDs
+			if explicitRoute(rule) {
+				strategy = rule.Strategy
+				targets = rule.TargetProfileIDs
+			}
+			selected = append(selected, selectedBatchRoute{
+				groupIndex:        groupIndex,
+				rule:              rule,
+				effectiveStrategy: strategy,
+				effectiveTargets:  append([]string(nil), targets...),
+			})
+		}
+	}
+	if len(selected) != len(selectedIDs) {
+		found := make(map[string]bool, len(selected))
+		for _, item := range selected {
+			found[item.rule.ID] = true
+		}
+		missing := make([]string, 0)
+		for routeID := range selectedIDs {
+			if !found[routeID] {
+				missing = append(missing, routeID)
+			}
+		}
+		sort.Strings(missing)
+		return RouteBatchResult{}, fmt.Errorf("路由不存在: %s", strings.Join(missing, ", "))
+	}
+
+	destinationGroupID := ""
+	createdGroupID := ""
+	if hasDestination {
+		destinationGroupID = strings.TrimSpace(update.Destination.GroupID)
+		if destinationGroupID != "" && update.Destination.NewGroup != nil {
+			return RouteBatchResult{}, fmt.Errorf("现有目标组和新规则组不能同时配置")
+		}
+		if destinationGroupID == "" && update.Destination.NewGroup == nil {
+			return RouteBatchResult{}, fmt.Errorf("destination必须指定groupId或newGroup")
+		}
+		if destinationGroupID != "" {
+			found := false
+			for _, group := range store.Groups {
+				if group.ID == destinationGroupID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return RouteBatchResult{}, fmt.Errorf("规则组不存在: %s", destinationGroupID)
+			}
+		} else {
+			group := *update.Destination.NewGroup
+			if strings.TrimSpace(group.ID) != "" || len(group.Rules) > 0 {
+				return RouteBatchResult{}, fmt.Errorf("批量新建规则组不能指定id或rules")
+			}
+			group.ID, err = newRouteGroupID()
+			if err != nil {
+				return RouteBatchResult{}, err
+			}
+			group.Rules = []RouteRule{}
+			group, err = normalizeAndValidateGroup(group, profiles.Profiles)
+			if err != nil {
+				return RouteBatchResult{}, err
+			}
+			store.Groups = append(store.Groups, group)
+			destinationGroupID = group.ID
+			createdGroupID = group.ID
+		}
+	}
+
+	updatedByID := make(map[string]RouteRule, len(selected))
+	changedCount := 0
+	for _, item := range selected {
+		rule := item.rule
+		switch mode {
+		case RouteInheritanceInherit:
+			rule.Strategy = ""
+			rule.TargetProfileIDs = nil
+		case RouteInheritanceCurrent:
+			rule.Strategy = item.effectiveStrategy
+			rule.TargetProfileIDs = append([]string(nil), item.effectiveTargets...)
+		case RouteInheritanceOverride:
+			rule.Strategy = overrideStrategy
+			rule.TargetProfileIDs = append([]string(nil), overrideTargets...)
+		}
+		if update.Enabled != nil {
+			rule.Enabled = *update.Enabled
+		}
+		updatedByID[rule.ID] = rule
+		if !routeRulesEqual(rule, item.rule) || (hasDestination && store.Groups[item.groupIndex].ID != destinationGroupID) {
+			changedCount++
+		}
+	}
+
+	movedCount := 0
+	if hasDestination {
+		incoming := make([]RouteRule, 0, len(selected))
+		for groupIndex := range store.Groups {
+			group := &store.Groups[groupIndex]
+			kept := make([]RouteRule, 0, len(group.Rules))
+			for _, rule := range group.Rules {
+				updated, selectedRule := updatedByID[rule.ID]
+				if !selectedRule {
+					kept = append(kept, rule)
+					continue
+				}
+				if group.ID == destinationGroupID {
+					kept = append(kept, updated)
+				} else {
+					incoming = append(incoming, updated)
+					movedCount++
+				}
+			}
+			group.Rules = kept
+		}
+		for groupIndex := range store.Groups {
+			if store.Groups[groupIndex].ID == destinationGroupID {
+				store.Groups[groupIndex].Rules = append(store.Groups[groupIndex].Rules, incoming...)
+				break
+			}
+		}
+	} else {
+		for groupIndex := range store.Groups {
+			for ruleIndex, rule := range store.Groups[groupIndex].Rules {
+				if updated, ok := updatedByID[rule.ID]; ok {
+					store.Groups[groupIndex].Rules[ruleIndex] = updated
+				}
+			}
+		}
+	}
+	store, err = validateRouteStore(store, profiles.Profiles)
+	if err != nil {
+		return RouteBatchResult{}, err
+	}
+	if err := saveRouteStoreFile(store); err != nil {
+		return RouteBatchResult{}, err
+	}
+	return RouteBatchResult{Store: store, ChangedCount: changedCount, MovedCount: movedCount, CreatedGroupID: createdGroupID}, nil
 }
 
 func ToggleRoute(routeID string, enabled bool, appConfig *AppConfig) (RouteStore, error) {

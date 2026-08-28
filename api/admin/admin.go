@@ -247,6 +247,40 @@ func respondWithError(writer http.ResponseWriter, message string, statusCode int
 	writer.Write(jsonResponse)
 }
 
+func newRouteBatchHandler(update func(cfg.RouteBatchUpdate) (cfg.RouteBatchResult, error), reload func() error) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if request.Method != http.MethodPost {
+			respondWithError(writer, "只支持POST方法", http.StatusMethodNotAllowed)
+			return
+		}
+		var req cfg.RouteBatchUpdate
+		if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
+			respondWithError(writer, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+			return
+		}
+		result, err := update(req)
+		if err != nil {
+			respondWithError(writer, fmt.Sprintf("批量保存路由失败: %v", err), http.StatusBadRequest)
+			return
+		}
+		if err := reload(); err != nil {
+			respondWithError(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		response := map[string]interface{}{
+			"success":      true,
+			"data":         result.Store,
+			"changedCount": result.ChangedCount,
+			"movedCount":   result.MovedCount,
+		}
+		if result.CreatedGroupID != "" {
+			response["createdGroupId"] = result.CreatedGroupID
+		}
+		_ = json.NewEncoder(writer).Encode(response)
+	}
+}
+
 func monitorProfileSwitchResult(switchID string, timeout time.Duration, tun *tunnel.Tunnel) {
 	startedAt := time.Now()
 	ticker := time.NewTicker(1 * time.Second)
@@ -540,6 +574,12 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			jsonResponse, _ := json.Marshal(map[string]interface{}{"success": true, "data": store})
 			writer.Write(jsonResponse)
 		})
+
+		adminRouter.HandleFunc("/admin/routes/batch", newRouteBatchHandler(func(update cfg.RouteBatchUpdate) (cfg.RouteBatchResult, error) {
+			return cfg.BatchUpdateRoutes(update, tunnel.AppConfig())
+		}, func() error {
+			return tunnel.ReloadProfileRouting(tunnel.AppConfig())
+		}))
 
 		adminRouter.HandleFunc("/admin/route-groups/upsert", func(writer http.ResponseWriter, request *http.Request) {
 			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
