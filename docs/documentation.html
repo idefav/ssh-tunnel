@@ -61,6 +61,7 @@
                         <a href="#multi-profile" class="list-group-item list-group-item-action">多 Profile 管理</a>
                         <a href="#profile-health" class="list-group-item list-group-item-action">Profile 节点质量</a>
                         <a href="#standalone-routing" class="list-group-item list-group-item-action">独立路由</a>
+                        <a href="#group-dns" class="list-group-item list-group-item-action">分组 DNS</a>
                         <a href="#traffic-statistics" class="list-group-item list-group-item-action">流量统计</a>
                         <a href="#connection-pool" class="list-group-item list-group-item-action">SSH 连接池</a>
                         <a href="#version-management" class="list-group-item list-group-item-action">版本管理</a>
@@ -324,6 +325,19 @@
                         <li>服务器、端口、用户、私钥路径改变或 Profile 被删除时，会清除对应旧健康数据。</li>
                     </ul>
                     <p>接口包括 <code>GET /admin/profiles/health</code>、<code>POST /admin/profiles/test</code> 和 <code>GET /admin/profiles/test/status?testId=...</code>。参见 <a href="config-api.md">配置 API</a> 和 <a href="features/profile-health-v1.7.md">完整功能说明</a>。</p>
+                </div>
+
+                <div id="group-dns" class="doc-section">
+                    <h2>DNS 跟随分组路由</h2>
+                    <p>本地 DNS 按查询域名复用域名分组的优先级、启停、继承和覆盖，通过选中的 SSH 节点向上游查询。未命中时走当前默认 Profile；命中组失败返回 SERVFAIL，不回退其他出口或系统 DNS。本地支持 UDP/TCP，上游使用 SSH 内的 TCP DNS，返回真实 IP。</p>
+                    <pre><code>dns.enable=true
+dns.local.address=127.0.0.1:1053
+dns.upstreams=1.1.1.1:53,8.8.8.8:53</code></pre>
+                    <p>默认关闭，可单独开启而不启用 SOCKS5/HTTP。普通程序和服务程序均支持同名参数。全局设置在管理页“DNS配置”中修改，重启进程生效。Profile 的“DNS 上游覆盖”保存后对新查询生效，仅修改覆盖不会断开已有 TCP。</p>
+                    <p>每个上游列表支持 1–2 个 IP:端口，IPv6 使用 <code>[2001:db8::53]:53</code>。Profile JSON 字段为 <code>"dnsUpstreams":["10.0.0.53:53"]</code>，留空继承全局；覆盖失败不会回退全局。随机组每次查询独立选择，不保证后续 TCP 选中同一个节点。首版不缓存应答，合法负响应直接返回；查询总超时 10 秒，单次上游最多 5 秒。</p>
+                    <pre><code>dig @127.0.0.1 -p 1053 example.com A
+dig @127.0.0.1 -p 1053 example.com AAAA +tcp</code></pre>
+                    <p>程序不会修改系统 DNS；系统接入需使用 53 端口或本地转发到 1053，SSH 服务器域名需有独立的启动解析途径。只有接入此服务的查询生效。客户端若只把真实 IP 交给代理，TCP 无法还原域名；需要域名路由时应向代理提交域名。此功能不提供 Fake-IP、DoH/DoT 或通用 UDP 转发。DNS 日志记录实际出口与上游，不计入业务访问成功率。参见 <a href="config-api.md">配置 API</a>。</p>
                 </div>
 
                 <div id="standalone-routing" class="doc-section">

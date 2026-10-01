@@ -261,6 +261,13 @@
                             </div>
                         </div>
 
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <label for="profileDNSUpstreams" class="form-label">DNS 上游覆盖</label>
+                                <input class="form-control" id="profileDNSUpstreams" placeholder="留空继承全局，例如 10.0.0.53:53,[2001:db8::53]:53">
+                                <small class="form-text text-muted">最多两个 IP:端口，逗号分隔；通过此节点的 SSH 访问。保存后新查询生效。</small>
+                            </div>
+                        </div>
                         <!-- SSH Pool Size -->
                         <div class="row mt-3">
                             <div class="col-md-6 mb-2">
@@ -298,6 +305,7 @@
                 <div class="col-md-3">
                     <select class="form-select" id="categoryFilter">
                         <option value="">所有分类</option>
+                        <option value="DNS配置">DNS配置</option>
                         <option value="服务器配置">服务器配置</option>
                         <option value="SSH配置">SSH配置</option>
                         <option value="代理配置">代理配置</option>
@@ -1239,6 +1247,7 @@
             document.getElementById('profileHttpBasicAuthEnable').checked = !!formProfile.httpBasicAuthEnable;
             document.getElementById('profileEnableHttpDomainFilter').checked = !!formProfile.enableHttpDomainFilter;
             document.getElementById('profileSSHPoolSize').value = formProfile.sshPoolSize || 2;
+            document.getElementById('profileDNSUpstreams').value = (formProfile.dnsUpstreams || []).join(',');
         }
 
         function openCreateProfileModal() {
@@ -1425,7 +1434,8 @@
                     enableHttpDomainFilter: document.getElementById('profileEnableHttpDomainFilter').checked,
                     httpDomainFilterFilePath: document.getElementById('profileHttpDomainFilterFilePath').value.trim(),
                     retryIntervalSec: parseInt(document.getElementById('profileRetryIntervalSec').value, 10) || 5,
-                    sshPoolSize: parseInt(document.getElementById('profileSSHPoolSize').value, 10) || 2
+                    sshPoolSize: parseInt(document.getElementById('profileSSHPoolSize').value, 10) || 2,
+                    dnsUpstreams: document.getElementById('profileDNSUpstreams').value.trim() === '' ? [] : document.getElementById('profileDNSUpstreams').value.split(',').map(value => value.trim())
                 }
             };
         }

@@ -90,10 +90,10 @@
         <div class="container">
             <div class="alert alert-success mb-0 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
                 <div>
-                    <strong>v1.7.1 已发布</strong>
-                    <div>在 v1.7.0 的真实访问质量和五种状态基础上，新增综合质量、成功率及三类延迟排序与组合筛选。</div>
+                    <strong>v1.8.0 已发布</strong>
+                    <div>新增 DNS 跟随分组路由：按查询域名选择 SSH 节点，支持 UDP/TCP、真实 IP 应答和 Profile 上游覆盖。</div>
                 </div>
-                <a href="documentation.html#profile-health" class="btn btn-success text-nowrap">查看新功能</a>
+                <a href="documentation.html#group-dns" class="btn btn-success text-nowrap">查看新功能</a>
             </div>
         </div>
     </section>
@@ -181,6 +181,15 @@
                         </div>
                     </div>
                 </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <i class="bi bi-globe2 fs-1 text-success mb-3"></i>
+                            <h3 class="h5">DNS 跟随分组路由</h3>
+                            <p class="text-muted">按查询域名复用分组规则，通过指定 SSH 节点查询上游，支持 UDP/TCP、Profile 上游覆盖与组内故障转移。</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -190,7 +199,7 @@
             <div class="row align-items-center g-4">
                 <div class="col-lg-6">
                     <h2>后续更新</h2>
-                    <p>后续版本升级请直接在管理页的版本页面执行，不需要再次运行一键安装脚本。v1.7.0 会在现有 <code>traffic.db</code> 自动创建健康统计桶，不修改 <code>profiles.json</code> 或 <code>routes.json</code>。</p>
+                    <p>后续版本升级请直接在管理页的版本页面执行，不需要再次运行一键安装脚本。v1.8.0 的 DNS 服务默认关闭，现有路由无需迁移；启用或修改全局 DNS 设置后需重启进程。Profile 上游覆盖和路由修改对后续查询生效。</p>
                     <p class="mb-3">默认入口：</p>
                     <pre class="bg-dark text-light p-3 rounded"><code>http://127.0.0.1:1083/view/version</code></pre>
                     <a href="installation.html" class="btn btn-primary">查看完整安装说明</a>

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"reflect"
 	"runtime"
 	"sort"
 	"ssh-tunnel/cfg"
@@ -37,6 +38,12 @@ type profileSwitchRequest struct {
 type profileUpsertRequest struct {
 	ProfileID string         `json:"profileId"`
 	Profile   cfg.SSHProfile `json:"profile"`
+}
+
+// DNS overrides are policy-only changes and must not disconnect live TCP flows.
+func profileRuntimeChanged(old, next cfg.SSHProfile) bool {
+	old.DNSUpstreams, next.DNSUpstreams = nil, nil
+	return !reflect.DeepEqual(old, next)
 }
 
 type profileDeleteRequest struct {
@@ -212,6 +219,9 @@ func getConfigKeyMapping() map[string]string {
 		"HttpLocalAddress":             appConfig.HttpLocalAddress.Key,
 		"EnableHttp":                   appConfig.EnableHttp.Key,
 		"EnableSocks5":                 appConfig.EnableSocks5.Key,
+		"EnableDNS":                    appConfig.EnableDNS.Key,
+		"DNSLocalAddress":              appConfig.DNSLocalAddress.Key,
+		"DNSUpstreams":                 appConfig.DNSUpstreams.Key,
 		"EnableHttpOverSSH":            appConfig.EnableHttpOverSSH.Key,
 		"HttpBasicAuthEnable":          appConfig.HttpBasicAuthEnable.Key,
 		"HttpBasicUserName":            appConfig.HttpBasicUserName.Key,
@@ -849,6 +859,10 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			req.Profile.DomainRoutes = nil
 
 			profileID := strings.TrimSpace(req.ProfileID)
+			if _, err := cfg.NormalizeDNSUpstreams(req.Profile.DNSUpstreams, true); err != nil {
+				respondWithError(writer, err.Error(), http.StatusBadRequest)
+				return
+			}
 			beforeStore, err := cfg.ListProfiles(tunnel.AppConfig())
 			if err != nil {
 				respondWithError(writer, fmt.Sprintf("读取原Profile失败: %v", err), http.StatusInternalServerError)
@@ -872,8 +886,8 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			if activeID == "" {
 				activeID = cfg.DEFAULT_PROFILE_ID
 			}
-			reconnectActive := profileID == activeID
-			if profileID == activeID {
+			reconnectActive := profileID == activeID && (!existed || profileRuntimeChanged(oldProfile, req.Profile))
+			if reconnectActive {
 				cfg.ApplyProfileToAppConfig(tunnel.AppConfig(), req.Profile)
 				if err := tunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
 					respondWithError(writer, fmt.Sprintf("刷新当前Profile运行时失败: %v", err), http.StatusInternalServerError)
@@ -1128,6 +1142,10 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 			}
 
 			tunnel.DisconnectSSHClient()
+			if err := tunnel.ReloadProfileRouting(tunnel.AppConfig()); err != nil {
+				respondWithError(writer, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			tunnel.ReconnectSSHWithSource(connCtx, "admin-manual")
 			client := tunnel.PeekSSHClient()
 			if client == nil {
@@ -1833,6 +1851,10 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 				return
 			}
 
+			if err := cfg.ValidateDNSConfigValue(actualConfigKey, typedValue); err != nil {
+				respondWithError(writer, err.Error(), http.StatusBadRequest)
+				return
+			}
 			// 记录配置更新日志
 			log.Printf("配置更新请求: frontend_key=%s -> actual_key=%s, value=%v, type=%s", configKey, actualConfigKey, typedValue, configType)
 
@@ -1887,6 +1909,9 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) {
 
 			appConfig := cfg.NewAppConfig()
 			configMetadata := []map[string]interface{}{
+				{"key": appConfig.EnableDNS.Key, "type": "bool", "description": "启用分组DNS（重启进程生效）", "category": "DNS"},
+				{"key": appConfig.DNSLocalAddress.Key, "type": "string", "description": "DNS监听IP:端口（UDP/TCP，重启进程生效）", "category": "DNS"},
+				{"key": appConfig.DNSUpstreams.Key, "type": "string", "description": "默认DNS上游（逗号分隔，重启进程生效）", "category": "DNS"},
 				{"key": appConfig.ServerIp.Key, "type": "string", "description": "服务器IP地址", "category": "服务器"},
 				{"key": appConfig.ServerSshPort.Key, "type": "int", "description": "SSH端口", "category": "服务器"},
 				{"key": appConfig.LoginUser.Key, "type": "string", "description": "登录用户名", "category": "服务器"},
@@ -2372,6 +2397,9 @@ func cleanupDuplicateConfigs() error {
 
 	// 定义正确的配置键列表
 	validKeys := []string{
+		appConfig.EnableDNS.Key,
+		appConfig.DNSLocalAddress.Key,
+		appConfig.DNSUpstreams.Key,
 		appConfig.HomeDir.Key,
 		appConfig.ServerIp.Key,
 		appConfig.ServerSshPort.Key,

@@ -131,6 +131,7 @@ func (p *program) run() {
 }
 
 func (p *program) Stop(s service.Service) error {
+	tunnel.DefaultSshTunnel.Shutdown()
 	return nil
 }
 
@@ -210,6 +211,9 @@ func innerStart() {
 	vConfig.SetDefault(config.HttpLocalAddress.GetKey(), config.HttpLocalAddress.GetDefaultValue())
 	vConfig.SetDefault(config.EnableHttp.GetKey(), config.EnableHttp.GetDefaultValue())
 	vConfig.SetDefault(config.EnableSocks5.GetKey(), config.EnableSocks5.GetDefaultValue())
+	vConfig.SetDefault(config.EnableDNS.GetKey(), config.EnableDNS.GetDefaultValue())
+	vConfig.SetDefault(config.DNSLocalAddress.GetKey(), config.DNSLocalAddress.GetDefaultValue())
+	vConfig.SetDefault(config.DNSUpstreams.GetKey(), config.DNSUpstreams.GetDefaultValue())
 	vConfig.SetDefault(config.HttpBasicAuthEnable.GetKey(), config.HttpBasicAuthEnable.GetDefaultValue())
 	vConfig.SetDefault(config.EnableHttpOverSSH.GetKey(), config.EnableHttpOverSSH.GetDefaultValue())
 	vConfig.SetDefault(config.EnableHttpDomainFilter.GetKey(), config.EnableHttpDomainFilter.GetDefaultValue())
@@ -273,6 +277,9 @@ func innerStart() {
 	flagSet.String(config.HttpBasicPassword.GetKey(), config.HttpBasicPassword.GetDefaultValue(), config.HttpBasicPassword.GetDescription())
 	flagSet.Bool(config.EnableHttp.GetKey(), config.EnableHttp.GetDefaultValue(), config.EnableHttp.GetDescription())
 	flagSet.Bool(config.EnableSocks5.GetKey(), config.EnableSocks5.GetDefaultValue(), config.EnableSocks5.GetDescription())
+	flagSet.Bool(config.EnableDNS.GetKey(), config.EnableDNS.GetDefaultValue(), config.EnableDNS.GetDescription())
+	flagSet.String(config.DNSLocalAddress.GetKey(), config.DNSLocalAddress.GetDefaultValue(), config.DNSLocalAddress.GetDescription())
+	flagSet.String(config.DNSUpstreams.GetKey(), config.DNSUpstreams.GetDefaultValue(), config.DNSUpstreams.GetDescription())
 	flagSet.Bool(config.EnableHttpOverSSH.GetKey(), config.EnableHttpOverSSH.GetDefaultValue(), config.EnableHttpOverSSH.GetDescription())
 	flagSet.Bool(config.EnableHttpDomainFilter.GetKey(), config.EnableHttpDomainFilter.GetDefaultValue(), config.EnableHttpDomainFilter.GetDescription())
 	flagSet.String(config.HttpDomainFilterFilePath.GetKey(), config.HttpDomainFilterFilePath.GetDefaultValue(), config.HttpDomainFilterFilePath.GetDescription())

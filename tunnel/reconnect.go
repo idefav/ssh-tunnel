@@ -33,22 +33,22 @@ func (t *Tunnel) ReconnectSSHWithSource(ctx context.Context, source string) {
 	}
 	defer t.endReconnect()
 
-	retryInterval := t.retryInterval
+	t.runtimeMu.RLock()
+	retryInterval, maxRetries, maxInterval, address := t.retryInterval, t.reconnectMaxRetries, t.reconnectMaxInterval, t.serverAddress
+	t.runtimeMu.RUnlock()
 	if retryInterval <= 0 {
 		retryInterval = defaultReconnectRetry
 	}
 
-	maxRetries := t.reconnectMaxRetries
 	if maxRetries <= 0 {
 		maxRetries = defaultReconnectMaxRetries
 	}
 
-	maxInterval := t.reconnectMaxInterval
 	if maxInterval <= 0 {
 		maxInterval = defaultReconnectMaxInterval
 	}
 
-	log.Printf("正在尝试重新连接SSH服务器: %s (source=%s)", t.serverAddress, source)
+	log.Printf("正在尝试重新连接SSH服务器: %s (source=%s)", address, source)
 
 	backoff := retryInterval
 	for attempt := 1; attempt <= maxRetries; attempt++ {
@@ -57,12 +57,22 @@ func (t *Tunnel) ReconnectSSHWithSource(ctx context.Context, source string) {
 			return
 		}
 
+		// A runtime refresh must not publish a new identity while an old
+		// handshake can still add a channel-capable member to this pool.
+		t.runtimeMu.RLock()
 		cl, err := t.dialSSH()
+		if reconnectCtx.Err() != nil {
+			closeSSHClient(cl)
+			t.runtimeMu.RUnlock()
+			return
+		}
 		if err == nil {
 			member := t.addSSHMember(cl, source)
+			t.runtimeMu.RUnlock()
 			t.startKeepAlive(reconnectCtx, member)
 			return
 		}
+		t.runtimeMu.RUnlock()
 
 		t.recordReconnectFailure(err)
 		if attempt == maxRetries {
@@ -91,8 +101,11 @@ func (t *Tunnel) ReconnectSSHWithSource(ctx context.Context, source string) {
 
 func (t *Tunnel) beginReconnect(ctx context.Context) bool {
 	for {
+		t.runtimeMu.RLock()
+		targetSize := t.configuredPoolSize()
+		t.runtimeMu.RUnlock()
 		t.reconnectMutex.Lock()
-		if t.currentPoolSize() >= t.configuredPoolSize() {
+		if t.currentPoolSize() >= targetSize {
 			t.reconnectMutex.Unlock()
 			return false
 		}

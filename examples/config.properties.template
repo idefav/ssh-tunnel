@@ -6,6 +6,10 @@ local.address=127.0.0.1:1081
 http.local.address=127.0.0.1:1082
 http.enable=false
 socks5.enable=true
+# 分组DNS：全局设置重启进程生效
+dns.enable=false
+dns.local.address=127.0.0.1:1053
+dns.upstreams=1.1.1.1:53,8.8.8.8:53
 http.over-ssh.enable=false
 http.domain-filter.enable=false
 http.domain-filter.file-path=C:\\Users\\xx\\Documents\\ssh-tunnel\\domain.txt

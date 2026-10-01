@@ -21,6 +21,7 @@
 - 多 Profile 切换: [docs/features/multi-profile-switch-design.md](features/multi-profile-switch-design.md)
 - v1.5.0 独立路由与流量统计、v1.6.0 规则组、v1.6.1 批量编辑: [docs/features/routes-traffic-v1.5.md](features/routes-traffic-v1.5.md)
 - Profile 节点质量、排序筛选与手动测试: [docs/features/profile-health-v1.7.md](features/profile-health-v1.7.md)
+- v1.8.0 DNS 跟随分组路由、上游覆盖与接入示例: [DNS 文档](documentation.html#group-dns)
 - SSH 稳定性修复: [docs/features/ssh-stability-fix-2026-03.md](features/ssh-stability-fix-2026-03.md)
 - 日志清理: [docs/features/log-clear-feature.md](features/log-clear-feature.md)
 

@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path"
 	"ssh-tunnel/cfg"
+	"ssh-tunnel/dnsproxy"
 	"ssh-tunnel/safe"
 	"strconv"
 	"strings"
@@ -23,6 +24,20 @@ import (
 var DefaultSshTunnel = Tunnel{}
 
 const trafficFlushInterval = 5 * time.Second
+
+// Shutdown cancels service work and waits for DNS sockets and channels to close.
+// Service managers do not necessarily deliver the Unix signals handled by Load.
+func (t *Tunnel) Shutdown() {
+	t.lifecycleMu.Lock()
+	cancel, done := t.shutdown, t.dnsStopped
+	t.lifecycleMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+}
 
 func runTrafficStoreLoop(ctx context.Context, store *TrafficStore, interval time.Duration) {
 	ticker := time.NewTicker(interval)
@@ -43,12 +58,29 @@ func runTrafficStoreLoop(ctx context.Context, store *TrafficStore, interval time
 }
 
 func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
+	return loadWithContext(context.Background(), config, wg)
+}
+
+func loadWithContext(parent context.Context, config *cfg.AppConfig, wg *sync.WaitGroup) error {
+	// Global DNS settings are a startup snapshot; profile changes cannot enable
+	// listeners or silently apply settings advertised as requiring a restart.
+	DefaultSshTunnel.enableDNS = config.EnableDNS.GetValue()
+	if DefaultSshTunnel.enableDNS {
+		if err := cfg.ValidateDNSListenAddress(config.DNSLocalAddress.GetValue()); err != nil {
+			return err
+		}
+		servers, err := cfg.ParseDNSUpstreams(config.DNSUpstreams.GetValue())
+		if err != nil {
+			return err
+		}
+		DefaultSshTunnel.dnsUpstreams = servers
+	}
 	DefaultSshTunnel.SetAppConfig(config)
 	if err := DefaultSshTunnel.RefreshRuntimeConfigFromAppConfig(); err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	DefaultSshTunnel.SetTunnelContext(ctx)
 	trafficStore, err := OpenTrafficStore()
 	if err != nil {
@@ -56,6 +88,48 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 		return err
 	}
 	DefaultSshTunnel.trafficStore = trafficStore
+	// Publish routes before any listener accepts work, and bind both DNS sockets
+	// before starting background workers so a bind failure leaves no listeners.
+	if err := initProfileRouting(ctx, config); err != nil {
+		cancel()
+		DefaultSshTunnel.profileTunnelMgr.StopAll()
+		_ = trafficStore.Close()
+		return err
+	}
+	var dnsServer *dnsproxy.Server
+	dnsStopped := make(chan struct{})
+	if DefaultSshTunnel.enableDNS {
+		dnsServer, err = dnsproxy.Listen(config.DNSLocalAddress.GetValue(), DefaultSshTunnel.queryDNS)
+		if err != nil {
+			cancel()
+			DefaultSshTunnel.profileTunnelMgr.StopAll()
+			_ = trafficStore.Close()
+			return fmt.Errorf("DNS监听失败: %w", err)
+		}
+		wg.Add(1)
+		safe.GO(func() {
+			defer wg.Done()
+			defer close(dnsStopped)
+			dnsServer.Serve(ctx)
+			if ctx.Err() == nil {
+				log.Printf("DNS listener stopped unexpectedly")
+				cancel()
+			}
+		})
+		log.Printf("DNS listening on %s (UDP/TCP)", dnsServer.Addr())
+	} else {
+		close(dnsStopped)
+	}
+	DefaultSshTunnel.lifecycleMu.Lock()
+	DefaultSshTunnel.shutdown, DefaultSshTunnel.dnsStopped = cancel, dnsStopped
+	DefaultSshTunnel.lifecycleMu.Unlock()
+	wg.Add(1)
+	safe.GO(func() {
+		defer wg.Done()
+		<-ctx.Done()
+		DefaultSshTunnel.profileTunnelMgr.StopAll()
+		DefaultSshTunnel.DisconnectSSHPool("shutdown")
+	})
 	wg.Add(1)
 	safe.GO(func() {
 		defer wg.Done()
@@ -91,7 +165,12 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 		signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
 		defer signal.Stop(sigc)
 
-		firstSignal := <-sigc
+		var firstSignal os.Signal
+		select {
+		case firstSignal = <-sigc:
+		case <-ctx.Done():
+			return
+		}
 		log.Printf("received %v - initiating shutdown", firstSignal)
 		cancel()
 
@@ -119,8 +198,10 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 	}
 
 	// maintain SSH pool
-	if DefaultSshTunnel.enableSocks5 || DefaultSshTunnel.enableHttpOverSSH {
+	if DefaultSshTunnel.enableSocks5 || DefaultSshTunnel.enableHttpOverSSH || DefaultSshTunnel.enableDNS {
+		wg.Add(1)
 		safe.GO(func() {
+			defer wg.Done()
 			connCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			safe.GO(func() {
@@ -137,31 +218,35 @@ func Load(config *cfg.AppConfig, wg *sync.WaitGroup) error {
 				default:
 				}
 				DefaultSshTunnel.ensurePool(connCtx, "bootstrap-loop")
+				DefaultSshTunnel.runtimeMu.RLock()
+				interval := DefaultSshTunnel.configuredReplenishInterval()
+				DefaultSshTunnel.runtimeMu.RUnlock()
 				select {
 				case <-connCtx.Done():
 					return
-				case <-time.After(DefaultSshTunnel.configuredReplenishInterval()):
+				case <-time.After(interval):
 				}
 			}
 
 		})
 	}
 
-	// Initialize standalone routing rules.
-	if err := initProfileRouting(ctx, config); err != nil {
-		cancel()
-		_ = trafficStore.Close()
-		return err
-	}
-
 	return nil
 }
 
 func (t *Tunnel) RefreshRuntimeConfigFromAppConfig() error {
+	t.runtimeMu.Lock()
+	defer t.runtimeMu.Unlock()
+	t.dnsPolicy = nil
 	config := t.AppConfig()
 	if config == nil {
 		return fmt.Errorf("app config is nil")
 	}
+	identity := fmt.Sprintf("%s\x00%d\x00%s\x00%s", config.ServerIp.GetValue(), config.ServerSshPort.GetValue(), config.LoginUser.GetValue(), config.SshPrivateKeyPath.GetValue())
+	if t.sshRuntimeIdentity != "" && t.sshRuntimeIdentity != identity {
+		t.DisconnectSSHPool("SSH configuration changed")
+	}
+	t.sshRuntimeIdentity = identity
 
 	t.enableSocks5 = config.EnableSocks5.GetValue()
 	t.enableHttp = config.EnableHttp.GetValue()
@@ -200,7 +285,7 @@ func (t *Tunnel) RefreshRuntimeConfigFromAppConfig() error {
 	t.proxyRetryInitialBufferBytes = config.ProxyRetryInitialBufferBytes.GetValue()
 	t.hostKeys = ssh.InsecureIgnoreHostKey()
 
-	if t.enableSocks5 || t.enableHttpOverSSH {
+	if t.enableSocks5 || t.enableHttpOverSSH || t.enableDNS {
 		b, err := ioutil.ReadFile(config.SshPrivateKeyPath.GetValue())
 		if err != nil {
 			log.Printf("Failed to read private key file: %v", err)
@@ -308,6 +393,11 @@ func initProfileRouting(ctx context.Context, config *cfg.AppConfig) error {
 	if err != nil {
 		return fmt.Errorf("加载独立路由失败: %w", err)
 	}
+	policy, err := newDNSPolicy(store, cfg.ResolveEffectiveRoutes(routeStore), DefaultSshTunnel.dnsUpstreams)
+	if err != nil {
+		return err
+	}
+	DefaultSshTunnel.dnsPolicy = policy
 	activeID := store.ActiveProfileID
 	if activeID == "" {
 		activeID = cfg.DEFAULT_PROFILE_ID
@@ -326,6 +416,8 @@ func initProfileRouting(ctx context.Context, config *cfg.AppConfig) error {
 // ReloadProfileRouting reloads routing rules and restarts profile tunnels as needed.
 // Called when profiles are updated via admin API.
 func (t *Tunnel) ReloadProfileRouting(config *cfg.AppConfig) error {
+	t.runtimeMu.Lock()
+	defer t.runtimeMu.Unlock()
 	if t.routeMatcher == nil || t.profileTunnelMgr == nil {
 		return nil
 	}
@@ -337,6 +429,10 @@ func (t *Tunnel) ReloadProfileRouting(config *cfg.AppConfig) error {
 	routeStore, err := cfg.ListRoutes(config)
 	if err != nil {
 		return fmt.Errorf("重载独立路由失败: %w", err)
+	}
+	policy, err := newDNSPolicy(store, cfg.ResolveEffectiveRoutes(routeStore), t.dnsUpstreams)
+	if err != nil {
+		return err
 	}
 	activeID := store.ActiveProfileID
 	if activeID == "" {
@@ -354,6 +450,7 @@ func (t *Tunnel) ReloadProfileRouting(config *cfg.AppConfig) error {
 
 	ctx := t.reconnectContext(context.Background())
 	t.profileTunnelMgr.ReloadProfiles(ctx, store.Profiles, activeID, cfg.ResolveEffectiveRoutes(routeStore))
+	t.dnsPolicy = policy
 
 	// Clear domain match cache on the main tunnel
 	t.SetDomainMatchCache(make(map[string]bool))

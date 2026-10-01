@@ -46,6 +46,22 @@ SSH隧道应用提供了Web管理界面和配置API，允许用户通过浏览�
 
 `domainRoutes` 不再由 Profile API 编辑。旧文件中的该字段只在启动迁移时读取；完成迁移后规则写入 `routes.json` 的自动迁移组并清理旧字段。被任意规则组默认出口或单规则独立出口引用的 Profile 不允许删除，冲突响应会返回 `referencingGroupIds` 和 `referencingRouteIds`。
 
+#### DNS 配置
+
+通过现有 `POST /admin/config/update` 设置：
+
+| 配置键 / 页面字段 | 类型 | 默认值 |
+|---|---|---|
+| `dns.enable` / `EnableDNS` | bool | `false` |
+| `dns.local.address` / `DNSLocalAddress` | string | `127.0.0.1:1053` |
+| `dns.upstreams` / `DNSUpstreams` | string | `1.1.1.1:53,8.8.8.8:53` |
+
+全局 DNS 设置保存后重启进程生效；仅重连 SSH 不会启停 DNS 或应用新的全局上游。监听地址要求 IP:端口；上游是逗号分隔的 1–2 个明确 IP:端口，支持 `[IPv6]:端口`。非法值返回 HTTP 400，写入前校验。
+
+`SSHProfile` 增加可选 `dnsUpstreams []string`，例如 `"dnsUpstreams":["10.0.0.53:53"]`；通过现有 Profile 列表和 upsert 接口读写。省略或 `[]` 继承全局，覆盖失败不回退全局。编辑、复制保留覆盖；更新对后续 DNS 查询生效，仅修改覆盖不重连 SSH。旧 Profile 文件无需迁移。
+
+DNS 按查询域名复用域名分组规则，未命中走当前默认 Profile，不参考 HTTP 直连规则。随机候选每次查询独立选择，全部失败返回 SERVFAIL，不越组、不改用系统解析。合法负响应直接返回；没有应答缓存。记录独立 DNS 日志，不增加业务访问健康样本。
+
 #### 路由规则组 API
 
 | 接口 | 方法 | 描述 | 请求 |

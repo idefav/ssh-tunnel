@@ -40,6 +40,7 @@ type SSHProfile struct {
 	RetryIntervalSec         int           `json:"retryIntervalSec"`
 	DomainRoutes             []DomainRoute `json:"domainRoutes,omitempty"`
 	SSHPoolSize              int           `json:"sshPoolSize,omitempty"`
+	DNSUpstreams             []string      `json:"dnsUpstreams,omitempty"`
 }
 
 type ProfileStore struct {
@@ -362,6 +363,11 @@ func SwitchActiveProfile(profileID string, appConfig *AppConfig) (ProfileStore, 
 }
 
 func UpsertProfile(profileID string, profile SSHProfile, appConfig *AppConfig) (ProfileStore, error) {
+	servers, err := NormalizeDNSUpstreams(profile.DNSUpstreams, true)
+	if err != nil {
+		return ProfileStore{}, err
+	}
+	profile.DNSUpstreams = servers
 	if profileID == "" {
 		return ProfileStore{}, fmt.Errorf("profile id 不能为空")
 	}

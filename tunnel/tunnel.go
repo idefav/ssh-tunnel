@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -43,6 +42,17 @@ type KeepAliveConfig struct {
 }
 
 type Tunnel struct {
+	// runtimeMu serializes DNS queries, policy publication and SSH handshake
+	// publication, so a renamed/default profile cannot reuse an old SSH outlet.
+	runtimeMu              sync.RWMutex
+	lifecycleMu            sync.Mutex
+	shutdown               context.CancelFunc
+	dnsStopped             <-chan struct{}
+	sshRuntimeIdentity     string
+	enableDNS              bool
+	dnsUpstreams           []string
+	dnsPolicy              *dnsPolicy
+	dnsDialer              func(context.Context, string, string) (net.Conn, error)
 	enableSocks5           bool
 	enableHttp             bool
 	enableHttpBasic        bool
@@ -818,17 +828,7 @@ func (t *Tunnel) tryRouteMatch(host string, retryState *requestRetryState) (dest
 		retryState = t.newRequestRetryState()
 	}
 	retryState.setRoute(rule.ID, rule.GroupID, rule.GroupName, rule.Strategy)
-	targets := append([]string(nil), rule.TargetProfileIDs...)
-	if rule.Strategy == cfg.RouteStrategyRandom {
-		remaining := targets[:0]
-		for _, target := range targets {
-			if !retryState.attemptedProfileSet[target] {
-				remaining = append(remaining, target)
-			}
-		}
-		targets = remaining
-		rand.Shuffle(len(targets), func(i, j int) { targets[i], targets[j] = targets[j], targets[i] })
-	}
+	targets := routeCandidates(rule, retryState.attemptedProfileSet)
 	if len(targets) == 0 {
 		dest := destinationConn{viaSSH: true, routeID: rule.ID, routeGroupID: rule.GroupID, routeGroupName: rule.GroupName, routeStrategy: rule.Strategy, attemptedProfileIDs: retryState.routeProfiles()}
 		return dest, true, fmt.Errorf("路由%s的目标Profile均不可用", rule.ID)
@@ -1698,13 +1698,18 @@ func (t *Tunnel) dialTunnel(ctx context.Context, wg *sync.WaitGroup, client *ssh
 }
 
 func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, member *SSHPoolMember) bool {
-	if t.keepAlive.Interval == 0 || t.keepAlive.CountMax == 0 {
+	t.runtimeMu.RLock()
+	keepAlive, probeTimeout, address := t.keepAlive, t.keepAliveProbeTimeout(), t.serverAddress
+	t.runtimeMu.RUnlock()
+	if keepAlive.Interval == 0 || keepAlive.CountMax == 0 {
 		return false
 	}
 	if member == nil {
 		return false
 	}
+	t.sshPoolMu.Lock()
 	client := member.Client
+	t.sshPoolMu.Unlock()
 	if client == nil {
 		return false
 	}
@@ -1713,9 +1718,8 @@ func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, member *
 		wait <- client.Wait()
 	})
 	var aliveCount int32
-	ticker := time.NewTicker(time.Duration(t.keepAlive.Interval) * time.Second)
+	ticker := time.NewTicker(time.Duration(keepAlive.Interval) * time.Second)
 	defer ticker.Stop()
-	probeTimeout := t.keepAliveProbeTimeout()
 	for {
 		select {
 		case <-ctx.Done():
@@ -1757,9 +1761,9 @@ func (t *Tunnel) keepAliveMonitor(ctx context.Context, once *sync.Once, member *
 				continue
 			}
 
-			if n := atomic.AddInt32(&aliveCount, 1); n > int32(t.keepAlive.CountMax) {
+			if n := atomic.AddInt32(&aliveCount, 1); n > int32(keepAlive.CountMax) {
 				once.Do(func() {
-					log.Printf("SSH keep-alive termination(server=%s, memberId=%d, generation=%d, consecutiveFailures=%d)", t.serverAddress, member.ID, member.Generation, n)
+					log.Printf("SSH keep-alive termination(server=%s, memberId=%d, generation=%d, consecutiveFailures=%d)", address, member.ID, member.Generation, n)
 				})
 				return true
 			}

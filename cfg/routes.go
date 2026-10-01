@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
+
+	"github.com/idefav/ssh-tunnel/core/routing"
 )
 
 const (
@@ -29,40 +29,10 @@ const (
 	migratedRouteGroupName   = "未分组（自动迁移）"
 )
 
-type RouteRule struct {
-	ID               string   `json:"id"`
-	Pattern          string   `json:"pattern"`
-	Type             string   `json:"type"`
-	Enabled          bool     `json:"enabled"`
-	Strategy         string   `json:"strategy,omitempty"`
-	TargetProfileIDs []string `json:"targetProfileIds,omitempty"`
-}
-
-type RouteGroup struct {
-	ID               string      `json:"id"`
-	Name             string      `json:"name"`
-	Description      string      `json:"description,omitempty"`
-	Enabled          bool        `json:"enabled"`
-	Strategy         string      `json:"strategy"`
-	TargetProfileIDs []string    `json:"targetProfileIds"`
-	Rules            []RouteRule `json:"rules"`
-}
-
-type RouteStore struct {
-	Version int          `json:"version"`
-	Groups  []RouteGroup `json:"groups"`
-}
-
-// EffectiveRoute is the fully resolved runtime representation of a rule.
-type EffectiveRoute struct {
-	ID               string
-	GroupID          string
-	GroupName        string
-	Pattern          string
-	Type             string
-	Strategy         string
-	TargetProfileIDs []string
-}
+type RouteRule = routing.RouteRule
+type RouteGroup = routing.RouteGroup
+type RouteStore = routing.RouteStore
+type EffectiveRoute = routing.EffectiveRoute
 
 type routeStoreFile struct {
 	Version int          `json:"version"`
@@ -239,213 +209,31 @@ func legacyRouteID(profileID, routeType, pattern string) string {
 	return "legacy_" + hex.EncodeToString(sum[:16])
 }
 
-func guessStandaloneRouteType(pattern string) string {
-	if strings.Contains(pattern, "/") {
-		return RouteTypeCIDR
-	}
-	if strings.HasPrefix(pattern, "*.") {
-		return RouteTypeDomain
-	}
-	if looksLikeIPv4Pattern(pattern) {
-		return RouteTypeIP
-	}
-	return RouteTypeDomain
-}
-
+func guessStandaloneRouteType(pattern string) string { return routing.GuessConfigRouteType(pattern) }
 func normalizeRoutePattern(routeType, pattern string) (string, error) {
-	pattern = strings.TrimSpace(pattern)
-	if pattern == "" {
-		return "", fmt.Errorf("匹配模式不能为空")
-	}
-	switch routeType {
-	case RouteTypeDomain:
-		pattern = strings.ToLower(strings.TrimRight(pattern, "."))
-		base := strings.TrimPrefix(pattern, "*.")
-		if base == "" || strings.ContainsAny(base, " /:") || strings.Contains(base, "*") {
-			return "", fmt.Errorf("无效域名模式: %s", pattern)
-		}
-		return pattern, nil
-	case RouteTypeIP:
-		parts := strings.Split(pattern, ".")
-		if len(parts) == 0 || len(parts) > 4 {
-			return "", fmt.Errorf("无效IP模式: %s", pattern)
-		}
-		for _, part := range parts {
-			if part == "*" {
-				continue
-			}
-			value, err := strconv.Atoi(part)
-			if err != nil || value < 0 || value > 255 {
-				return "", fmt.Errorf("无效IP模式: %s", pattern)
-			}
-		}
-		if len(parts) < 4 {
-			if parts[len(parts)-1] != "*" {
-				return "", fmt.Errorf("缩写IP模式必须以通配符结尾: %s", pattern)
-			}
-			for len(parts) < 4 {
-				parts = append(parts, "*")
-			}
-		}
-		return strings.Join(parts, "."), nil
-	case RouteTypeCIDR:
-		_, network, err := net.ParseCIDR(pattern)
-		if err != nil {
-			return "", fmt.Errorf("无效CIDR模式: %s", pattern)
-		}
-		return network.String(), nil
-	default:
-		return "", fmt.Errorf("不支持的路由类型: %s", routeType)
-	}
+	return routing.NormalizePattern(routeType, pattern)
 }
+func looksLikeIPv4Pattern(pattern string) bool { return routing.LooksLikeIPv4Pattern(pattern) }
 
-func looksLikeIPv4Pattern(pattern string) bool {
-	parts := strings.Split(strings.TrimSpace(pattern), ".")
-	if len(parts) == 0 || len(parts) > 4 {
-		return false
+func profileIDSet(profiles map[string]SSHProfile) map[string]struct{} {
+	ids := make(map[string]struct{}, len(profiles))
+	for id := range profiles {
+		ids[id] = struct{}{}
 	}
-	for _, part := range parts {
-		if part == "*" {
-			continue
-		}
-		value, err := strconv.Atoi(part)
-		if err != nil || value < 0 || value > 255 {
-			return false
-		}
-	}
-	return len(parts) == 4 || parts[len(parts)-1] == "*"
+	return ids
 }
-
-func normalizeAndValidatePolicy(strategy string, targetProfileIDs []string, profiles map[string]SSHProfile) (string, []string, error) {
-	strategy = strings.ToLower(strings.TrimSpace(strategy))
-	seenTargets := make(map[string]bool)
-	targets := make([]string, 0, len(targetProfileIDs))
-	for _, target := range targetProfileIDs {
-		target = strings.TrimSpace(target)
-		if target == "" {
-			continue
-		}
-		if seenTargets[target] {
-			return "", nil, fmt.Errorf("目标Profile重复: %s", target)
-		}
-		if _, ok := profiles[target]; !ok {
-			return "", nil, fmt.Errorf("目标Profile不存在: %s", target)
-		}
-		seenTargets[target] = true
-		targets = append(targets, target)
-	}
-	switch strategy {
-	case RouteStrategyFixed:
-		if len(targets) != 1 {
-			return "", nil, fmt.Errorf("fixed路由必须且只能指定一个目标Profile")
-		}
-	case RouteStrategyRandom:
-		if len(targets) < 2 {
-			return "", nil, fmt.Errorf("random路由至少需要两个目标Profile")
-		}
-	default:
-		return "", nil, fmt.Errorf("不支持的路由策略: %s", strategy)
-	}
-	return strategy, targets, nil
+func normalizeAndValidatePolicy(strategy string, targets []string, profiles map[string]SSHProfile) (string, []string, error) {
+	return routing.NormalizePolicy(strategy, targets, profileIDSet(profiles))
 }
-
 func NormalizeAndValidateRoute(rule RouteRule, profiles map[string]SSHProfile) (RouteRule, error) {
-	rule.ID = strings.TrimSpace(rule.ID)
-	rule.Type = strings.ToLower(strings.TrimSpace(rule.Type))
-	if rule.Type == "" {
-		rule.Type = guessStandaloneRouteType(strings.TrimSpace(rule.Pattern))
-	}
-	pattern, err := normalizeRoutePattern(rule.Type, rule.Pattern)
-	if err != nil {
-		return RouteRule{}, err
-	}
-	rule.Pattern = pattern
-	rule.Strategy = strings.ToLower(strings.TrimSpace(rule.Strategy))
-	hasStrategy := rule.Strategy != ""
-	hasTargets := len(rule.TargetProfileIDs) > 0
-	if hasStrategy != hasTargets {
-		return RouteRule{}, fmt.Errorf("规则策略和目标Profile必须同时配置，或同时省略以继承规则组")
-	}
-	if !hasStrategy {
-		rule.TargetProfileIDs = nil
-		return rule, nil
-	}
-	rule.Strategy, rule.TargetProfileIDs, err = normalizeAndValidatePolicy(rule.Strategy, rule.TargetProfileIDs, profiles)
-	if err != nil {
-		return RouteRule{}, err
-	}
-	return rule, nil
+	return routing.NormalizeRule(rule, profileIDSet(profiles))
 }
-
 func normalizeAndValidateGroup(group RouteGroup, profiles map[string]SSHProfile) (RouteGroup, error) {
-	group.ID = strings.TrimSpace(group.ID)
-	group.Name = strings.TrimSpace(group.Name)
-	group.Description = strings.TrimSpace(group.Description)
-	if group.ID == "" {
-		return RouteGroup{}, fmt.Errorf("group id不能为空")
-	}
-	if group.Name == "" {
-		return RouteGroup{}, fmt.Errorf("规则组名称不能为空")
-	}
-	var err error
-	group.Strategy, group.TargetProfileIDs, err = normalizeAndValidatePolicy(group.Strategy, group.TargetProfileIDs, profiles)
-	if err != nil {
-		return RouteGroup{}, fmt.Errorf("规则组默认出口无效: %w", err)
-	}
-	if group.Rules == nil {
-		group.Rules = []RouteRule{}
-	}
-	for i, rule := range group.Rules {
-		normalized, err := NormalizeAndValidateRoute(rule, profiles)
-		if err != nil {
-			return RouteGroup{}, fmt.Errorf("路由%s无效: %w", rule.ID, err)
-		}
-		if normalized.ID == "" {
-			return RouteGroup{}, fmt.Errorf("route id不能为空")
-		}
-		group.Rules[i] = normalized
-	}
-	return group, nil
+	return routing.NormalizeGroup(group, profileIDSet(profiles))
 }
-
-func routeUniquenessKey(rule RouteRule) string {
-	return strings.ToLower(rule.Type) + "\x00" + strings.ToLower(rule.Pattern)
-}
-
+func routeUniquenessKey(rule RouteRule) string { return routing.UniquenessKey(rule) }
 func validateRouteStore(store RouteStore, profiles map[string]SSHProfile) (RouteStore, error) {
-	seenGroupIDs := make(map[string]bool)
-	seenGroupNames := make(map[string]bool)
-	seenRouteIDs := make(map[string]bool)
-	seenPatterns := make(map[string]bool)
-	out := RouteStore{Version: RouteStoreVersion, Groups: make([]RouteGroup, 0, len(store.Groups))}
-	for _, group := range store.Groups {
-		normalized, err := normalizeAndValidateGroup(group, profiles)
-		if err != nil {
-			return RouteStore{}, err
-		}
-		if seenGroupIDs[normalized.ID] {
-			return RouteStore{}, fmt.Errorf("group id重复: %s", normalized.ID)
-		}
-		nameKey := strings.ToLower(normalized.Name)
-		if seenGroupNames[nameKey] {
-			return RouteStore{}, fmt.Errorf("规则组名称重复: %s", normalized.Name)
-		}
-		seenGroupIDs[normalized.ID] = true
-		seenGroupNames[nameKey] = true
-		for _, rule := range normalized.Rules {
-			if seenRouteIDs[rule.ID] {
-				return RouteStore{}, fmt.Errorf("route id重复: %s", rule.ID)
-			}
-			key := routeUniquenessKey(rule)
-			if seenPatterns[key] {
-				return RouteStore{}, fmt.Errorf("路由匹配模式重复: %s/%s", rule.Type, rule.Pattern)
-			}
-			seenRouteIDs[rule.ID] = true
-			seenPatterns[key] = true
-		}
-		out.Groups = append(out.Groups, normalized)
-	}
-	return out, nil
+	return routing.ValidateStore(store, profileIDSet(profiles))
 }
 
 func explicitRoute(rule RouteRule) bool {
@@ -453,25 +241,7 @@ func explicitRoute(rule RouteRule) bool {
 }
 
 func ResolveEffectiveRoutes(store RouteStore) []EffectiveRoute {
-	var routes []EffectiveRoute
-	for _, group := range store.Groups {
-		if !group.Enabled {
-			continue
-		}
-		for _, rule := range group.Rules {
-			if !rule.Enabled {
-				continue
-			}
-			strategy := group.Strategy
-			targets := group.TargetProfileIDs
-			if explicitRoute(rule) {
-				strategy = rule.Strategy
-				targets = rule.TargetProfileIDs
-			}
-			routes = append(routes, EffectiveRoute{ID: rule.ID, GroupID: group.ID, GroupName: group.Name, Pattern: rule.Pattern, Type: rule.Type, Strategy: strategy, TargetProfileIDs: append([]string(nil), targets...)})
-		}
-	}
-	return routes
+	return routing.ResolveEffectiveRoutes(store)
 }
 
 func migratedGroupForRules(rules []RouteRule) RouteGroup {
@@ -496,80 +266,12 @@ func ensureMigratedGroup(store *RouteStore, seed RouteRule) *RouteGroup {
 }
 
 func migrateRouteData(file routeStoreFile, profiles ProfileStore) (RouteStore, ProfileStore, bool, bool, error) {
-	store := RouteStore{Version: RouteStoreVersion, Groups: append([]RouteGroup(nil), file.Groups...)}
-	routesChanged := file.Version != RouteStoreVersion
-	profilesChanged := false
-	if file.Version == legacyRouteStoreVersion {
-		store.Groups = nil
-		if len(file.Routes) > 0 {
-			group := migratedGroupForRules(file.Routes)
-			group.Rules = append([]RouteRule(nil), file.Routes...)
-			store.Groups = []RouteGroup{group}
-		}
-	}
-
-	existingPatterns := make(map[string]RouteRule)
-	existingIDs := make(map[string]bool)
-	for _, group := range store.Groups {
-		for _, rule := range group.Rules {
-			existingPatterns[routeUniquenessKey(rule)] = rule
-			existingIDs[rule.ID] = true
-		}
-	}
-	profileIDs := make([]string, 0, len(profiles.Profiles))
-	for id := range profiles.Profiles {
-		profileIDs = append(profileIDs, id)
-	}
-	sort.Strings(profileIDs)
-	for _, profileID := range profileIDs {
-		profile := profiles.Profiles[profileID]
-		if len(profile.DomainRoutes) == 0 {
-			continue
-		}
-		legacyRoutes := append([]DomainRoute(nil), profile.DomainRoutes...)
-		sort.SliceStable(legacyRoutes, func(i, j int) bool {
-			left := strings.ToLower(strings.TrimSpace(legacyRoutes[i].Type)) + "\x00" + strings.ToLower(strings.TrimSpace(legacyRoutes[i].Pattern))
-			right := strings.ToLower(strings.TrimSpace(legacyRoutes[j].Type)) + "\x00" + strings.ToLower(strings.TrimSpace(legacyRoutes[j].Pattern))
-			return left < right
-		})
-		for _, legacy := range legacyRoutes {
-			routeType := strings.ToLower(strings.TrimSpace(legacy.Type))
-			if routeType == "" {
-				routeType = guessStandaloneRouteType(strings.TrimSpace(legacy.Pattern))
-			}
-			pattern, err := normalizeRoutePattern(routeType, legacy.Pattern)
-			if err != nil {
-				return store, profiles, false, false, fmt.Errorf("Profile %s 的旧路由无效: %w", profileID, err)
-			}
-			candidate := RouteRule{ID: legacyRouteID(profileID, routeType, pattern), Pattern: pattern, Type: routeType, Enabled: true, Strategy: RouteStrategyFixed, TargetProfileIDs: []string{profileID}}
-			key := routeUniquenessKey(candidate)
-			if existing, exists := existingPatterns[key]; exists {
-				if existing.ID == candidate.ID {
-					continue
-				}
-				return store, profiles, false, false, fmt.Errorf("旧路由迁移冲突: %s/%s 已被规则 %s 使用", routeType, pattern, existing.ID)
-			}
-			if existingIDs[candidate.ID] {
-				return store, profiles, false, false, fmt.Errorf("旧路由迁移ID冲突: %s", candidate.ID)
-			}
-			group := ensureMigratedGroup(&store, candidate)
-			group.Rules = append(group.Rules, candidate)
-			existingPatterns[key] = candidate
-			existingIDs[candidate.ID] = true
-			routesChanged = true
-		}
-		profile.DomainRoutes = nil
-		profiles.Profiles[profileID] = profile
-		profilesChanged = true
-	}
-	if store.Groups == nil {
-		store.Groups = []RouteGroup{}
-	}
-	validated, err := validateRouteStore(store, profiles.Profiles)
-	if err != nil {
-		return RouteStore{}, profiles, false, false, err
-	}
-	return validated, profiles, routesChanged, profilesChanged, nil
+ embedded := make(map[string][]routing.LegacyDomainRule, len(profiles.Profiles))
+ for id, profile := range profiles.Profiles { for _, rule := range profile.DomainRoutes { embedded[id] = append(embedded[id], routing.LegacyDomainRule{Pattern: rule.Pattern, Type: rule.Type}) } }
+ store, changed, cleared, err := routing.Migrate(routing.LegacyStore{Version: file.Version, Groups: file.Groups, Routes: file.Routes}, embedded, profileIDSet(profiles.Profiles))
+ if err != nil { return RouteStore{}, profiles, false, false, err }
+ for _, id := range cleared { profile := profiles.Profiles[id]; profile.DomainRoutes = nil; profiles.Profiles[id] = profile }
+ return store, profiles, changed, len(cleared) != 0, nil
 }
 
 func ListRoutes(appConfig *AppConfig) (RouteStore, error) {

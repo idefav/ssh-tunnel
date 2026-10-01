@@ -41,6 +41,9 @@ func SaveConfig() error {
 
 // UpdateConfigValue 更新配置项
 func UpdateConfigValue(key string, value interface{}) error {
+	if err := ValidateDNSConfigValue(key, value); err != nil {
+		return err
+	}
 	if configInstance == nil {
 		return fmt.Errorf("配置实例未初始化")
 	}
@@ -77,6 +80,9 @@ func NewAppConfig() *AppConfig {
 				HttpBasicPassword:            NewConfigItem(HTTP_BASIC_PASSWORD_KEY, "", "", "HTTP基本认证密码", ""),
 				EnableHttp:                   NewConfigItem(ENABLE_HTTP_KEY, "", false, "开启Http代理", false),
 				EnableSocks5:                 NewConfigItem(ENABLE_SOCKS5_KEY, "", true, "开启Socks5代理", false),
+				EnableDNS:                    NewConfigItem(ENABLE_DNS_KEY, "", false, "开启分组DNS（重启生效）", false),
+				DNSLocalAddress:              NewConfigItem(DNS_LOCAL_ADDRESS_KEY, "", "127.0.0.1:1053", "DNS监听地址（UDP/TCP，重启生效）", "127.0.0.1:1053"),
+				DNSUpstreams:                 NewConfigItem(DNS_UPSTREAMS_KEY, "", DefaultDNSUpstreams, "默认DNS上游（逗号分隔，重启生效）", DefaultDNSUpstreams),
 				EnableHttpOverSSH:            NewConfigItem(ENABLE_HTTP_OVER_SSH_KEY, "", false, "开启HTTP Over SSH", false),
 				EnableHttpDomainFilter:       NewConfigItem(ENABLE_HTTP_DOMAIN_FILTER_KEY, "", false, "启用HTTP域名过滤", false),
 				HttpDomainFilterFilePath:     NewConfigItem(HTTP_DOMAIN_FILTER_FILE_PATH_KEY, "", path.Join(defaultHomeDir, APP_NAME_HIDE, "domain.txt"), "HTTP域名过滤文件路径", ""),
@@ -122,6 +128,9 @@ func NewAppConfig() *AppConfig {
 				HttpBasicPassword:            NewConfigItem(HTTP_BASIC_PASSWORD_KEY, "", "", "HTTP基本认证密码", ""),
 				EnableHttp:                   NewConfigItem(ENABLE_HTTP_KEY, "", false, "开启Http代理", false),
 				EnableSocks5:                 NewConfigItem(ENABLE_SOCKS5_KEY, "", true, "开启Socks5代理", false),
+				EnableDNS:                    NewConfigItem(ENABLE_DNS_KEY, "", false, "开启分组DNS（重启生效）", false),
+				DNSLocalAddress:              NewConfigItem(DNS_LOCAL_ADDRESS_KEY, "", "127.0.0.1:1053", "DNS监听地址（UDP/TCP，重启生效）", "127.0.0.1:1053"),
+				DNSUpstreams:                 NewConfigItem(DNS_UPSTREAMS_KEY, "", DefaultDNSUpstreams, "默认DNS上游（逗号分隔，重启生效）", DefaultDNSUpstreams),
 				EnableHttpOverSSH:            NewConfigItem(ENABLE_HTTP_OVER_SSH_KEY, "", false, "开启HTTP Over SSH", false),
 				EnableHttpDomainFilter:       NewConfigItem(ENABLE_HTTP_DOMAIN_FILTER_KEY, "", false, "启用HTTP域名过滤", false),
 				HttpDomainFilterFilePath:     NewConfigItem(HTTP_DOMAIN_FILTER_FILE_PATH_KEY, "", path.Join(u.HomeDir, APP_NAME_HIDE, "domain.txt"), "HTTP域名过滤文件路径", ""),
@@ -190,6 +199,9 @@ func (appConfig *AppConfig) Update() {
 	appConfigInstance.HttpBasicPassword.SetValue(config.GetString(appConfigInstance.HttpBasicPassword.Key))
 	appConfigInstance.EnableHttp.SetValue(config.GetBool(appConfigInstance.EnableHttp.Key))
 	appConfigInstance.EnableSocks5.SetValue(config.GetBool(appConfigInstance.EnableSocks5.Key))
+	appConfigInstance.EnableDNS.SetValue(config.GetBool(ENABLE_DNS_KEY))
+	appConfigInstance.DNSLocalAddress.SetValue(config.GetString(DNS_LOCAL_ADDRESS_KEY))
+	appConfigInstance.DNSUpstreams.SetValue(config.GetString(DNS_UPSTREAMS_KEY))
 	appConfigInstance.EnableHttpOverSSH.SetValue(config.GetBool(appConfigInstance.EnableHttpOverSSH.Key))
 	appConfigInstance.EnableHttpDomainFilter.SetValue(config.GetBool(appConfigInstance.EnableHttpDomainFilter.Key))
 	appConfigInstance.HttpDomainFilterFilePath.SetValue(config.GetString(appConfigInstance.HttpDomainFilterFilePath.Key))
@@ -345,6 +357,9 @@ type AppConfig struct {
 	HttpBasicPassword            ConfigItem[string]
 	EnableHttp                   ConfigItem[bool]
 	EnableSocks5                 ConfigItem[bool]
+	EnableDNS                    ConfigItem[bool]
+	DNSLocalAddress              ConfigItem[string]
+	DNSUpstreams                 ConfigItem[string]
 	EnableHttpOverSSH            ConfigItem[bool]
 	EnableHttpDomainFilter       ConfigItem[bool]
 	HttpDomainFilterFilePath     ConfigItem[string]

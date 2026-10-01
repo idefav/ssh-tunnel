@@ -275,6 +275,9 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 		"HttpLocalAddress":             appConfig.HttpLocalAddress.GetValue(),
 		"EnableHttp":                   appConfig.EnableHttp.GetValue(),
 		"EnableSocks5":                 appConfig.EnableSocks5.GetValue(),
+		"EnableDNS":                    appConfig.EnableDNS.GetValue(),
+		"DNSLocalAddress":              appConfig.DNSLocalAddress.GetValue(),
+		"DNSUpstreams":                 appConfig.DNSUpstreams.GetValue(),
 		"EnableHttpOverSSH":            appConfig.EnableHttpOverSSH.GetValue(),
 		"HttpBasicAuthEnable":          appConfig.HttpBasicAuthEnable.GetValue(),
 		"HttpBasicUserName":            appConfig.HttpBasicUserName.GetValue(),
@@ -306,6 +309,9 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 
 	// 定义配置项元数据（包含实际配置键）
 	configMeta := map[string]ConfigMetadata{
+		"EnableDNS":                    {Type: "bool", Description: "启用分组DNS（重启进程生效）", Category: "DNS配置", ActualKey: appConfig.EnableDNS.Key},
+		"DNSLocalAddress":              {Type: "string", Description: "DNS监听IP:端口，支持UDP/TCP（重启进程生效）", Category: "DNS配置", ActualKey: appConfig.DNSLocalAddress.Key},
+		"DNSUpstreams":                 {Type: "string", Description: "默认DNS上游：1至2个IP:端口，逗号分隔（重启进程生效）", Category: "DNS配置", ActualKey: appConfig.DNSUpstreams.Key},
 		"ServerIp":                     {Type: "string", Description: "SSH服务器IP地址", Category: "服务器配置", Required: true, ActualKey: appConfig.ServerIp.Key},
 		"ServerSshPort":                {Type: "int", Description: "SSH服务器端口", Category: "服务器配置", Required: true, ActualKey: appConfig.ServerSshPort.Key},
 		"LoginUser":                    {Type: "string", Description: "SSH登录用户名", Category: "服务器配置", Required: true, ActualKey: appConfig.LoginUser.Key},
@@ -353,6 +359,9 @@ func ShowAppConfigView(response http.ResponseWriter, request *http.Request) {
 		"HttpLocalAddress":             appConfig.HttpLocalAddress.Key,
 		"EnableHttp":                   appConfig.EnableHttp.Key,
 		"EnableSocks5":                 appConfig.EnableSocks5.Key,
+		"EnableDNS":                    appConfig.EnableDNS.Key,
+		"DNSLocalAddress":              appConfig.DNSLocalAddress.Key,
+		"DNSUpstreams":                 appConfig.DNSUpstreams.Key,
 		"EnableHttpOverSSH":            appConfig.EnableHttpOverSSH.Key,
 		"HttpBasicAuthEnable":          appConfig.HttpBasicAuthEnable.Key,
 		"HttpBasicUserName":            appConfig.HttpBasicUserName.Key,

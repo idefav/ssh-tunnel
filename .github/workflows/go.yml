@@ -27,6 +27,9 @@ jobs:
     - name: Test
       run: go test -v ./...
 
+    - name: Test shared routing core
+      run: go -C core test -race ./...
+
   install-script-regression:
     runs-on: ${{ matrix.os }}
     strategy:

@@ -36,6 +36,23 @@ func TestParseTailLines(t *testing.T) {
 	}
 }
 
+func TestDNSOverrideDoesNotRequireProfileReconnect(t *testing.T) {
+	old := cfg.SSHProfile{ServerIp: "192.0.2.1", LoginUser: "test", DNSUpstreams: []string{"10.0.0.53:53"}}
+	next := old
+	next.DNSUpstreams = []string{"10.0.0.54:53"}
+	if profileRuntimeChanged(old, next) {
+		t.Fatal("DNS-only edit would disconnect TCP")
+	}
+	next.DNSUpstreams = nil
+	if profileRuntimeChanged(old, next) {
+		t.Fatal("clearing override would disconnect TCP")
+	}
+	next.ServerIp = "192.0.2.2"
+	if !profileRuntimeChanged(old, next) {
+		t.Fatal("SSH change must refresh runtime")
+	}
+}
+
 func TestReadLastLogLines(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -5,12 +5,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
+	"github.com/idefav/ssh-tunnel/core/health"
 )
 
 const profileHealthRetention = 24 * time.Hour
@@ -18,7 +18,7 @@ const profileHealthRetention = 24 * time.Hour
 var (
 	profileHealthMinuteBucket = []byte("profile_health_minute_v1")
 	profileHealthLatestBucket = []byte("profile_health_latest_v1")
-	profileLatencyBoundsMs    = [...]int64{10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000}
+	profileLatencyBoundsMs    = health.Bounds
 )
 
 const (
@@ -346,22 +346,7 @@ func (s *TrafficStore) ResetProfileHealth(profileID string) error {
 }
 
 func profileHealthP95(histogram [len(profileLatencyBoundsMs) + 1]uint64, successCount uint64) int64 {
-	if successCount == 0 {
-		return 0
-	}
-	target := uint64(math.Ceil(float64(successCount) * 0.95))
-	var cumulative uint64
-	for index, count := range histogram {
-		cumulative += count
-		if cumulative < target {
-			continue
-		}
-		if index < len(profileLatencyBoundsMs) {
-			return profileLatencyBoundsMs[index]
-		}
-		return profileLatencyBoundsMs[len(profileLatencyBoundsMs)-1] + 1
-	}
-	return 0
+	return health.P95(histogram,successCount)
 }
 
 func (s *TrafficStore) ProfileHealthSummaries(profiles map[string]string, failureThreshold uint64) (map[string]ProfileHealthSummary, error) {

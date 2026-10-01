@@ -669,10 +669,12 @@ func (t *Tunnel) PeekSSHClient() *ssh.Client {
 }
 
 func (t *Tunnel) ensurePool(ctx context.Context, source string) {
-	if !(t.enableSocks5 || t.enableHttpOverSSH) {
+	t.runtimeMu.RLock()
+	enabled, target, interval := t.enableSocks5 || t.enableHttpOverSSH || t.enableDNS, t.configuredPoolSize(), t.configuredReplenishInterval()
+	t.runtimeMu.RUnlock()
+	if !enabled {
 		return
 	}
-	target := t.configuredPoolSize()
 	for t.currentPoolSize() < target {
 		if ctx != nil && ctx.Err() != nil {
 			return
@@ -684,7 +686,7 @@ func (t *Tunnel) ensurePool(ctx context.Context, source string) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(t.configuredReplenishInterval()):
+		case <-time.After(interval):
 		}
 	}
 }
@@ -1000,7 +1002,15 @@ func (t *Tunnel) dialSSHConnUntracked(ctx context.Context, target string, retryS
 
 	for retryState.canAttempt() {
 		member := t.pickSSHMemberExcluding(retryState.exclude)
-		if member == nil || member.Client == nil {
+		// Pool retirement can clear Client after selection. Keep a protected
+		// snapshot; a concurrent Close then produces an error, never a nil dial.
+		t.sshPoolMu.Lock()
+		var client *ssh.Client
+		if member != nil {
+			client = member.Client
+		}
+		t.sshPoolMu.Unlock()
+		if client == nil {
 			if retryState.lastErr != nil {
 				return nil, retryState.lastMember, retryState.lastClass, retryState.reconnectTriggered, retryState.info(), retryState.lastErr
 			}
@@ -1010,7 +1020,7 @@ func (t *Tunnel) dialSSHConnUntracked(ctx context.Context, target string, retryS
 		retryState.recordAttempt(member)
 
 		timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-		conn, err := member.Client.DialContext(timeoutCtx, "tcp", target)
+		conn, err := client.DialContext(timeoutCtx, "tcp", target)
 		cancel()
 		if err == nil {
 			t.acquireMemberChannel(member)

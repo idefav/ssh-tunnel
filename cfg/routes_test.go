@@ -176,6 +176,8 @@ func TestRouteIDsAndAtomicVersion2Save(t *testing.T) {
 }
 
 func TestRouteGroupAndRuleCRUDMoveToggleCascadeAndReferences(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.properties")
 	if err := os.WriteFile(configPath, []byte("active.profile.id=jp\n"), 0600); err != nil {
@@ -243,6 +245,8 @@ func TestRouteGroupAndRuleCRUDMoveToggleCascadeAndReferences(t *testing.T) {
 
 func setupBatchRouteTest(t *testing.T, store RouteStore) string {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.properties")
 	if err := os.WriteFile(configPath, []byte("active.profile.id=jp\n"), 0600); err != nil {

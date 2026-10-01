@@ -8,6 +8,7 @@ require (
 	github.com/kardianos/service v1.2.2
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/crypto v0.48.0
+	golang.org/x/net v0.49.0
 )
 
 require (
@@ -30,7 +31,10 @@ require (
 )
 
 require (
+	github.com/idefav/ssh-tunnel/core v0.0.0
 	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.19.0
 	golang.org/x/sys v0.41.0
 )
+
+replace github.com/idefav/ssh-tunnel/core => ./core

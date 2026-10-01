@@ -11,6 +11,11 @@ http.local.address=127.0.0.1:1082
 socks5.enable=true
 http.enable=false
 
+# 分组DNS：全局设置重启进程生效，Profile的dnsUpstreams可覆盖
+dns.enable=false
+dns.local.address=127.0.0.1:1053
+dns.upstreams=1.1.1.1:53,8.8.8.8:53
+
 # 管理面板配置
 admin.enable=true
 admin.address=127.0.0.1:1083
